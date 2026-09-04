@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "verifiable-tools/call",
+  "params": {
+    "tool": "privateCreditCheck",
+    "inputCommitment": "0x<sha256 canonical arguments>",
+    "encryptionScheme": "x25519-aesgcm-demo-v1",
+    "encryptedArguments": "<base64 envelope>",
+    "proofFormat": "demo-sig-v1"
+  }
+}

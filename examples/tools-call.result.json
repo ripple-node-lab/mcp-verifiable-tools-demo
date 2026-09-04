@@ -1,0 +1,18 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "resultType": "complete",
+    "content": [{"type": "text", "text": "42"}],
+    "isError": false,
+    "_meta": {
+      "io.modelcontextprotocol/verifiable-tools": {
+        "proof": "0x<ed25519 signature>",
+        "proofFormat": "demo-sig-v1",
+        "circuitHash": "0x<sha256 descriptor>",
+        "verificationKeyUri": "http://127.0.0.1:3939/vk/0x<sha256 descriptor>",
+        "inputCommitment": "0x<sha256 canonical arguments>"
+      }
+    }
+  }
+}

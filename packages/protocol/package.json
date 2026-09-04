@@ -1,0 +1,6 @@
+{
+  "name": "@demo/protocol",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": { ".": { "types": "./dist/src/index.d.ts", "import": "./dist/src/index.js" } }
+}

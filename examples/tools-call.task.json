@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "resultType": "task",
+    "taskId": "task-example",
+    "status": "working",
+    "createdAt": "2026-08-11T06:00:00.000Z",
+    "lastUpdatedAt": "2026-08-11T06:00:00.000Z",
+    "ttlMs": 60000,
+    "pollIntervalMs": 100
+  }
+}
