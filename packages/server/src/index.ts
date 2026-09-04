@@ -29,9 +29,20 @@ export class DemoServer {
     this.httpServer = createServer((request, response) => {
       if (request.url === "/mcp") void handleMcpPost(this, request, response);
       else if (request.method === "GET" && request.url?.startsWith("/vk/")) {
-        response.statusCode = 200;
-        response.setHeader("content-type", "application/x-pem-file");
-        response.end(this.signingPublicKey);
+        const requestedCircuit = request.url.slice("/vk/".length);
+        const knownCircuits = [
+          circuitHash("add"),
+          circuitHash("riskScore"),
+          circuitHash("privateCreditCheck")
+        ];
+        if (!knownCircuits.includes(requestedCircuit)) {
+          response.statusCode = 404;
+          response.end();
+        } else {
+          response.statusCode = 200;
+          response.setHeader("content-type", "application/x-pem-file");
+          response.end(this.signingPublicKey);
+        }
       } else {
         response.statusCode = 404;
         response.end();
@@ -121,6 +132,7 @@ export class DemoServer {
     if (params.encryptionScheme !== "x25519-aesgcm-demo-v1") throw new JsonRpcProtocolError(-32602, "unsupported encryption scheme");
     const meta = isRecord(params._meta) ? params._meta as unknown as RequestMeta : undefined;
     const capability = verifiableCapability(meta?.[META_CLIENT_CAPABILITIES]);
+    if (capability?.blindExecution !== true) throw new JsonRpcProtocolError(-32602, "client did not declare blindExecution");
     const requested = typeof params.proofFormat === "string" ? params.proofFormat : undefined;
     const format = negotiateProofFormat(capability, ["demo-sig-v1", "demo-commit-v1"], requested);
     if (!format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format");

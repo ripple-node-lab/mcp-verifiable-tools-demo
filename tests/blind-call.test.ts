@@ -6,6 +6,7 @@ import { withServer } from "./helpers.js";
 test("blind private credit call works without Mcp-Name", async () => withServer(async (server) => {
   const client = new VerifiableClient(server.mcpUrl);
   await client.discover();
+  client.setCapabilities({ proofFormats: ["demo-sig-v1"], blindExecution: true });
   const args = { income: 100, debt: 20 };
   const encrypted = encryptArguments(args, (await client.discover()).blindPublicKey);
   const result = await client.blindCall(args);

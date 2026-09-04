@@ -6,7 +6,7 @@ import {
 import { DemoCommitVerifier, DemoSigVerifier, VerificationKeyRegistry } from "@demo/verifier";
 import { encryptArguments } from "./blind.js";
 import { pollTask, RpcRequest } from "./tasks.js";
-export interface DiscoverResult { proofFormats: string[]; serverProofFormats: string[]; blindPublicKey: string; }
+export interface DiscoverResult { proofFormats: string[]; serverProofFormats: string[]; blindPublicKey: string; blindExecution: boolean; }
 export class VerifiableClient {
   private capabilities = clientCapabilities(["demo-sig-v1", "demo-commit-v1"]);
   private readonly registry: VerificationKeyRegistry;
@@ -26,10 +26,11 @@ export class VerifiableClient {
     const extension = asRecord(extensions[EXTENSION_ID]);
     const formats = asStringArray(extension.proofFormats);
     const blindPublicKey = asString(extension.blindPublicKey);
+    const blindExecution = extension.blindExecution === true;
     this.serverInfo = asRecord(result._meta)?.["io.modelcontextprotocol/serverInfo"] as unknown as ServerInfo | undefined;
     const proofFormats = formats.filter((format) => (SUPPORTED_PROOF_FORMATS as readonly string[]).includes(format));
     if (proofFormats.length === 0) throw new Error("no mutually supported proof format");
-    this.discovered = { proofFormats, serverProofFormats: formats, blindPublicKey };
+    this.discovered = { proofFormats, serverProofFormats: formats, blindPublicKey, blindExecution };
     return this.discovered;
   }
   setCapabilities(capability: VerifiableToolsCapability, tasks = false): void {
@@ -65,6 +66,7 @@ export class VerifiableClient {
   }
   async blindCall(args: JsonValue, requestedProofFormat = "demo-sig-v1"): Promise<CallToolResult> {
     const discovery = this.discovered ?? await this.discover();
+    if (!discovery.blindExecution) throw new Error("server does not support blind execution");
     const encrypted = encryptArguments(args, discovery.blindPublicKey);
     const response = await this.request("verifiable-tools/call", {
       tool: "privateCreditCheck", inputCommitment: encrypted.inputCommitment, encryptionScheme: "x25519-aesgcm-demo-v1",

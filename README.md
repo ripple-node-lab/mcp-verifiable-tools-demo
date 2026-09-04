@@ -40,6 +40,10 @@ tool-to-circuit mapping does not match its expected mapping. In a real
 deployment, that mapping must come from an out-of-band trusted registry; this
 demo keeps it fixed in the protocol package.
 
+- The demo listens on plain `http://127.0.0.1` only. Any non-loopback
+  deployment must use TLS, because discovery (including the blind public key
+  and `verificationKeyUri`) can otherwise be replaced by a network attacker.
+
 ## Repository layout
 
 - `packages/protocol`: extension constants, types, metadata, and negotiation.

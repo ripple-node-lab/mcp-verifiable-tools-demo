@@ -49,6 +49,25 @@ test("blind commitment mismatch is invalid params", async () => withServer(async
   });
   assert.equal(response.error?.code, -32602);
 }));
+test("blind call requires declared blind execution", async () => withServer(async (server) => {
+  const client = new VerifiableClient(server.mcpUrl);
+  const discovery = await client.discover();
+  const encrypted = encryptArguments({ income: 100, debt: 20 }, discovery.blindPublicKey);
+  const params = {
+    tool: "privateCreditCheck",
+    inputCommitment: encrypted.inputCommitment,
+    encryptionScheme: "x25519-aesgcm-demo-v1",
+    encryptedArguments: encrypted.encryptedArguments,
+    proofFormat: "demo-sig-v1"
+  };
+  const omitted = await rpc(server, "verifiable-tools/call", params);
+  assert.equal(omitted.error?.code, -32602);
+  const disabled = await rpc(server, "verifiable-tools/call", {
+    ...params,
+    _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["demo-sig-v1"], { blindExecution: false }) }
+  });
+  assert.equal(disabled.error?.code, -32602);
+}));
 test("verification key pinning rejects a changed key", async () => {
   const first = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }) as string;
   const second = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }) as string;
@@ -114,3 +133,24 @@ test("verification key registry rejects disallowed origins", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+test("unknown verification key circuit returns 404", async () => withServer(async (server) => {
+  const response = await fetch(`${server.url}/vk/0xdeadbeef`);
+  assert.equal(response.status, 404);
+}));
+test("oversized blind ciphertext is invalid params", async () => withServer(async (server) => {
+  const client = new VerifiableClient(server.mcpUrl);
+  const discovery = await client.discover();
+  const encrypted = encryptArguments({ income: 100, debt: 20 }, discovery.blindPublicKey);
+  const envelope = JSON.parse(Buffer.from(encrypted.encryptedArguments, "base64").toString("utf8")) as Record<string, unknown>;
+  envelope.ciphertext = "A".repeat(64 * 1024 + 1);
+  const oversized = Buffer.from(JSON.stringify(envelope)).toString("base64");
+  const response = await rpc(server, "verifiable-tools/call", {
+    tool: "privateCreditCheck",
+    inputCommitment: encrypted.inputCommitment,
+    encryptionScheme: "x25519-aesgcm-demo-v1",
+    encryptedArguments: oversized,
+    proofFormat: "demo-sig-v1",
+    _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["demo-sig-v1"], { blindExecution: true }) }
+  });
+  assert.equal(response.error?.code, -32602);
+}));
