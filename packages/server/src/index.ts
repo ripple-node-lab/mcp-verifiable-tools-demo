@@ -1,16 +1,16 @@
 import { createServer, Server } from "node:http";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import {
-  CallToolResult, clientCapabilities, EXTENSION_ID, JsonRpcRequest, JsonRpcResponse, META_CLIENT_CAPABILITIES,
+  CallToolResult, EXTENSION_ID, JsonRpcRequest, JsonRpcResponse, META_CLIENT_CAPABILITIES,
   META_SERVER_INFO, PROTOCOL_VERSION, RequestMeta, TASKS_EXTENSION_ID, tasksDeclared, verifiableCapability,
-  negotiateProofFormat, isRecord, JsonValue, VerifiableToolsMeta, VerifiableCallParams
+  negotiateProofFormat, isRecord, JsonValue, JsonRpcProtocolError
 } from "@demo/protocol";
 import { DemoCommitProver, DemoSigProver, Prover } from "@demo/prover";
 import { discoverResponse } from "./discover.js";
 import { handleMcpPost, errorResponse, paramsRecord, send } from "./http.js";
 import { TaskStore } from "./tasks.js";
-import { circuitHash, executeTool, inputCommitment, makeResult, proverFor, toolList, ToolName } from "./tools.js";
-import { blindResult, decryptArguments } from "./blind.js";
+import { circuitHash, executeTool, inputCommitment, makeResult, toolList, ToolName } from "./tools.js";
+import { decryptArguments } from "./blind.js";
 export interface DemoServerOptions { port?: number; host?: string; }
 export class DemoServer {
   readonly httpServer: Server;
@@ -59,22 +59,22 @@ export class DemoServer {
       return errorResponse(request.id, -32601, "Method not found");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Internal error";
-      const code = message.startsWith("invalid") || message.includes("requires") || message.includes("does not match") || message.includes("unsupported") || message.includes("no mutually") ? -32602 : -32603;
+      const code = error instanceof JsonRpcProtocolError ? error.code : -32603;
       return errorResponse(request.id, code, message);
     }
   }
   private async callTool(request: JsonRpcRequest): Promise<JsonRpcResponse> {
     const params = paramsRecord(request.params);
-    if (!params || typeof params.name !== "string" || !params.arguments) throw new Error("invalid tool call parameters");
+    if (!params || typeof params.name !== "string" || !params.arguments) throw new JsonRpcProtocolError(-32602, "invalid tool call parameters");
     const tool = params.name as ToolName;
-    if (!["add", "riskScore", "privateCreditCheck"].includes(tool)) throw new Error("invalid tool name");
-    if (tool === "privateCreditCheck") throw new Error("privateCreditCheck requires verifiable-tools/call");
+    if (!["add", "riskScore", "privateCreditCheck"].includes(tool)) throw new JsonRpcProtocolError(-32602, "invalid tool name");
+    if (tool === "privateCreditCheck") throw new JsonRpcProtocolError(-32602, "privateCreditCheck requires verifiable-tools/call");
     const meta = params._meta;
     const requestMeta = isRecord(meta) ? meta as unknown as RequestMeta : undefined;
     const capability = verifiableCapability(requestMeta?.[META_CLIENT_CAPABILITIES]);
     const requested = isRecord(requestMeta?.[EXTENSION_ID]) && typeof requestMeta?.[EXTENSION_ID].requestedProofFormat === "string" ? requestMeta[EXTENSION_ID].requestedProofFormat : undefined;
     const format = negotiateProofFormat(capability, ["demo-sig-v1", "demo-commit-v1"], requested);
-    if (capability?.requireProof && !format) throw new Error("no mutually supported proof format");
+    if (capability?.requireProof && !format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format");
     const execute = async (): Promise<CallToolResult> => {
       const execution = executeTool(tool, params.arguments!);
       if (!format) return makeResult(execution.output);
@@ -88,37 +88,36 @@ export class DemoServer {
   private provenResult(tool: ToolName, args: JsonValue, output: string, format: string): CallToolResult {
     const commitment = inputCommitment(args);
     const prover: Prover = format === "demo-sig-v1" ? this.signingProver : new DemoCommitProver();
-    const meta = prover.prove({ circuitHash: circuitHash(tool), inputCommitment: commitment, output });
-    if (format === "demo-sig-v1") meta.verificationKeyUri = `${this.url}/vk/${meta.circuitHash}`;
+    const meta = prover.prove({ circuitHash: circuitHash(tool), inputCommitment: commitment, output, verificationKeyUri: format === "demo-sig-v1" ? `${this.url}/vk/${circuitHash(tool)}` : undefined });
     return makeResult(output, { [META_SERVER_INFO]: { name: "verifiable-tools-demo", version: "1.0.0" } as unknown as JsonValue, [EXTENSION_ID]: meta as unknown as JsonValue });
   }
   private getTask(request: JsonRpcRequest): JsonRpcResponse {
     const params = paramsRecord(request.params);
-    if (!params || typeof params.taskId !== "string") throw new Error("invalid task parameters");
+    if (!params || typeof params.taskId !== "string") throw new JsonRpcProtocolError(-32602, "invalid task parameters");
     const task = this.tasks.get(params.taskId);
-    if (!task) throw new Error("invalid taskId");
+    if (!task) throw new JsonRpcProtocolError(-32602, "invalid taskId");
     return { jsonrpc: "2.0", id: request.id, result: { resultType: "complete", ...task } as unknown as JsonValue };
   }
   private cancelTask(request: JsonRpcRequest): JsonRpcResponse {
     const params = paramsRecord(request.params);
-    if (!params || typeof params.taskId !== "string") throw new Error("invalid task parameters");
+    if (!params || typeof params.taskId !== "string") throw new JsonRpcProtocolError(-32602, "invalid task parameters");
     const task = this.tasks.cancel(params.taskId);
-    if (!task) throw new Error("invalid taskId");
+    if (!task) throw new JsonRpcProtocolError(-32602, "invalid taskId");
     return { jsonrpc: "2.0", id: request.id, result: { resultType: "complete", ...task } as unknown as JsonValue };
   }
   private blindCall(request: JsonRpcRequest): JsonRpcResponse {
     const params = paramsRecord(request.params);
-    if (!params || typeof params.tool !== "string" || typeof params.inputCommitment !== "string" || typeof params.encryptionScheme !== "string" || typeof params.encryptedArguments !== "string") throw new Error("invalid blind call parameters");
-    if (params.encryptionScheme !== "x25519-aesgcm-demo-v1") throw new Error("unsupported encryption scheme");
+    if (!params || typeof params.tool !== "string" || typeof params.inputCommitment !== "string" || typeof params.encryptionScheme !== "string" || typeof params.encryptedArguments !== "string") throw new JsonRpcProtocolError(-32602, "invalid blind call parameters");
+    if (params.encryptionScheme !== "x25519-aesgcm-demo-v1") throw new JsonRpcProtocolError(-32602, "unsupported encryption scheme");
     const meta = isRecord(params._meta) ? params._meta as unknown as RequestMeta : undefined;
     const capability = verifiableCapability(meta?.[META_CLIENT_CAPABILITIES]);
     const requested = typeof params.proofFormat === "string" ? params.proofFormat : undefined;
     const format = negotiateProofFormat(capability, ["demo-sig-v1", "demo-commit-v1"], requested);
-    if (!format) throw new Error("no mutually supported proof format");
+    if (!format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format");
     const args = decryptArguments(params.encryptedArguments, this.blindKeys);
-    if (inputCommitment(args) !== params.inputCommitment) throw new Error("inputCommitment does not match encrypted arguments");
+    if (inputCommitment(args) !== params.inputCommitment) throw new JsonRpcProtocolError(-32602, "inputCommitment does not match encrypted arguments");
     const tool = params.tool as ToolName;
-    if (tool !== "privateCreditCheck") throw new Error("invalid blind tool");
+    if (tool !== "privateCreditCheck") throw new JsonRpcProtocolError(-32602, "invalid blind tool");
     const execution = executeTool(tool, args);
     return { jsonrpc: "2.0", id: request.id, result: this.provenResult(tool, execution.arguments, execution.output, format) };
   }

@@ -1,6 +1,5 @@
 import { CallToolResult, JsonValue } from "@demo/protocol";
 import { canonicalJson } from "@demo/prover";
-import { DemoCommitProver, DemoSigProver, Prover } from "@demo/prover";
 import { add } from "./tools/add.js";
 import { privateCreditCheck } from "./tools/creditCheck.js";
 import { riskScore } from "./tools/riskScore.js";
@@ -32,9 +31,4 @@ export function makeResult(output: string, meta?: Record<string, JsonValue>): Ca
 }
 function isObject(value: JsonValue): value is { [key: string]: JsonValue } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-export function proverFor(format: string): Prover {
-  if (format === "demo-sig-v1") return new DemoSigProver();
-  if (format === "demo-commit-v1") return new DemoCommitProver();
-  throw new Error("unsupported proof format");
 }

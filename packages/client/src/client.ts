@@ -1,8 +1,10 @@
 import {
   CallToolResult, clientCapabilities, EXTENSION_ID, JsonValue, META_CLIENT_CAPABILITIES, PROTOCOL_VERSION,
-  RequestMeta, ServerInfo, TASKS_EXTENSION_ID, VerifiableToolsCapability
+  RequestMeta, ServerInfo, TASKS_EXTENSION_ID, VerifiableToolsCapability, verifiableCapability
 } from "@demo/protocol";
-import { DemoCommitVerifier, DemoSigVerifier, expectedInputCommitment, VerificationKeyRegistry } from "@demo/verifier";
+import { DemoCommitVerifier, DemoSigVerifier, VerificationKeyRegistry } from "@demo/verifier";
+import { encryptArguments } from "./blind.js";
+import { pollTask, RpcRequest } from "./tasks.js";
 export interface DiscoverResult { proofFormats: string[]; blindPublicKey: string; }
 export class VerifiableClient {
   private capabilities = clientCapabilities(["demo-sig-v1", "demo-commit-v1"]);
@@ -39,6 +41,7 @@ export class VerifiableClient {
   async verify(result: CallToolResult, args: JsonValue): Promise<boolean> {
     const meta = result._meta?.[EXTENSION_ID];
     if (!meta) return false;
+    if (!verifiableCapability(this.capabilities)?.proofFormats?.includes(meta.proofFormat ?? "")) return false;
     const context = { arguments: args, output: result.content[0].text };
     if (meta.proofFormat === "demo-sig-v1") return this.sigVerifier.verify(meta, context);
     if (meta.proofFormat === "demo-commit-v1") return this.commitVerifier.verify(meta, context);
@@ -51,36 +54,14 @@ export class VerifiableClient {
     return result;
   }
   async poll(task: TaskEnvelope): Promise<CallToolResult> {
-    while (true) {
-      const response = await this.request("tasks/get", { taskId: task.taskId, _meta: this.requestMeta(true) });
-      if (response.error) throw new Error(response.error.message);
-      const current = asRecord(response.result);
-      if (current.status === "completed" && current.result) return current.result as unknown as CallToolResult;
-      if (current.status !== "working") throw new Error(`task ${String(current.status)}`);
-      await new Promise<void>((resolve) => setTimeout(resolve, Number(current.pollIntervalMs)));
-    }
+    return pollTask(this.request.bind(this) as RpcRequest, task, this.requestMeta(true));
   }
   async blindCall(args: JsonValue, requestedProofFormat = "demo-sig-v1"): Promise<CallToolResult> {
     const discovery = this.discovered ?? await this.discover();
-    const keyPair = await import("node:crypto").then(({ generateKeyPairSync }) => generateKeyPairSync("x25519"));
-    const publicJwk = keyPair.publicKey.export({ type: "spki", format: "jwk" }) as { x?: string };
-    const serverPublic = await import("node:crypto").then(({ createPublicKey }) => createPublicKey({ key: { kty: "OKP", crv: "X25519", x: Buffer.from(discovery.blindPublicKey, "base64").toString("base64url") }, format: "jwk" }));
-    const shared = await import("node:crypto").then(({ diffieHellman }) => diffieHellman({ privateKey: keyPair.privateKey, publicKey: serverPublic }));
-    const { createCipheriv, hkdfSync, randomBytes } = await import("node:crypto");
-    const key = Buffer.from(hkdfSync("sha256", shared, Buffer.alloc(0), Buffer.from("x25519-aesgcm-demo-v1"), 32));
-    const iv = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", key, iv);
-    const encrypted = Buffer.concat([cipher.update(Buffer.from(canonicalJson(args))), cipher.final()]);
-    const envelope = {
-      epk: Buffer.from(publicJwk.x ?? "", "base64url").toString("base64"),
-      iv: iv.toString("base64"),
-      ciphertext: encrypted.toString("base64"),
-      tag: cipher.getAuthTag().toString("base64")
-    };
-    const commitment = expectedInputCommitment(args);
+    const encrypted = encryptArguments(args, discovery.blindPublicKey);
     const response = await this.request("verifiable-tools/call", {
-      tool: "privateCreditCheck", inputCommitment: commitment, encryptionScheme: "x25519-aesgcm-demo-v1",
-      encryptedArguments: Buffer.from(JSON.stringify(envelope)).toString("base64"), proofFormat: requestedProofFormat, _meta: this.requestMeta()
+      tool: "privateCreditCheck", inputCommitment: encrypted.inputCommitment, encryptionScheme: "x25519-aesgcm-demo-v1",
+      encryptedArguments: encrypted.encryptedArguments, proofFormat: requestedProofFormat, _meta: this.requestMeta()
     });
     if (response.error) throw new Error(response.error.message);
     const result = response.result as unknown as CallToolResult;
@@ -88,12 +69,8 @@ export class VerifiableClient {
     return result;
   }
   private requestMeta(tasks = false): RequestMeta {
-    if (tasks) {
-      const extension = this.capabilities.extensions?.[EXTENSION_ID];
-      this.capabilities.extensions = { ...this.capabilities.extensions, [TASKS_EXTENSION_ID]: {} };
-      void extension;
-    }
-    return { "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION, [META_CLIENT_CAPABILITIES]: this.capabilities, "io.modelcontextprotocol/clientInfo": { name: "demo-client", version: "1.0.0" } };
+    const capabilities = tasks ? { ...this.capabilities, extensions: { ...this.capabilities.extensions, [TASKS_EXTENSION_ID]: {} } } : this.capabilities;
+    return { "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION, [META_CLIENT_CAPABILITIES]: capabilities, "io.modelcontextprotocol/clientInfo": { name: "demo-client", version: "1.0.0" } };
   }
   private async request(method: string, params: unknown): Promise<{ result?: unknown; error?: { code: number; message: string } }> {
     const headers: Record<string, string> = { "content-type": "application/json", "MCP-Protocol-Version": PROTOCOL_VERSION, "Mcp-Method": method };
@@ -113,8 +90,3 @@ function asRecord(value: unknown): { [key: string]: JsonValue } {
 }
 function asString(value: JsonValue | undefined): string { if (typeof value !== "string") throw new Error("malformed discovery response"); return value; }
 function asStringArray(value: JsonValue | undefined): string[] { if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) throw new Error("malformed discovery response"); return value; }
-function canonicalJson(value: JsonValue): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value !== null && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key]!)}`).join(",")}}`;
-  return JSON.stringify(value);
-}

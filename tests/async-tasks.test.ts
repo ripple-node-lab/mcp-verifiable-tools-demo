@@ -11,6 +11,15 @@ test("riskScore is synchronous without tasks and asynchronous with tasks", async
   client.setCapabilities({ proofFormats: ["demo-sig-v1"] }, true);
   const task = await client.callTool("riskScore", { symbol: "AAPL" }, "demo-sig-v1");
   assert.equal(task.resultType, "task");
+  if (task.resultType !== "task") throw new Error("expected task");
+  const intermediate = await rpc(server, "tasks/get", { taskId: task.taskId }, {});
+  assert.equal(intermediate.result?.resultType, "complete");
+  assert.equal(["working", "completed"].includes(String(intermediate.result?.status)), true);
+  const cancellable = await client.callTool("riskScore", { symbol: "MSFT" }, "demo-sig-v1");
+  assert.equal(cancellable.resultType, "task");
+  if (cancellable.resultType !== "task") throw new Error("expected task");
+  const cancelled = await rpc(server, "tasks/cancel", { taskId: cancellable.taskId }, {});
+  assert.equal(cancelled.result?.status, "cancelled");
   const result = await client.callAndVerify("riskScore", { symbol: "AAPL" }, "demo-sig-v1");
   assert.equal(result.content[0].text, "86");
 }));

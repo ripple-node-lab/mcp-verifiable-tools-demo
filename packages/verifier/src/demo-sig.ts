@@ -1,4 +1,4 @@
-import { verify as verifySignature } from "node:crypto";
+import { createHash, verify as verifySignature } from "node:crypto";
 import { VerifiableToolsMeta } from "@demo/protocol";
 import { expectedInputCommitment } from "./verifier.js";
 import { VerificationKeyRegistry } from "./registry.js";
@@ -10,7 +10,7 @@ export class DemoSigVerifier implements Verifier {
     if (meta.proofFormat !== this.format || !meta.verificationKeyUri || meta.inputCommitment !== expectedInputCommitment(context.arguments)) return false;
     if (meta.inputCommitment === undefined || !meta.proof || !meta.circuitHash) return false;
     const key = await this.registry.get(meta.circuitHash, meta.verificationKeyUri);
-    const outputHash = (await import("node:crypto")).createHash("sha256").update(context.output).digest("hex");
+    const outputHash = createHash("sha256").update(context.output).digest("hex");
     const signature = Buffer.from(meta.proof.slice(2), "hex");
     return verifySignature(null, Buffer.from(meta.circuitHash + meta.inputCommitment + outputHash), key as Parameters<typeof verifySignature>[2], signature);
   }

@@ -13,6 +13,6 @@ export class DemoSigProver implements Prover {
   prove(input: ProveInput): VerifiableToolsMeta {
     const outputHash = createHash("sha256").update(input.output).digest("hex");
     const proof = sign(null, Buffer.from(input.circuitHash + input.inputCommitment + outputHash), this.privateKey);
-    return { proof: `0x${proof.toString("hex")}`, proofFormat: this.format, circuitHash: input.circuitHash, inputCommitment: input.inputCommitment, verificationKeyUri: "" };
+    return { proof: `0x${proof.toString("hex")}`, proofFormat: this.format, circuitHash: input.circuitHash, inputCommitment: input.inputCommitment, ...(input.verificationKeyUri ? { verificationKeyUri: input.verificationKeyUri } : {}) };
   }
 }

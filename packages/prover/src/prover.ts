@@ -3,6 +3,7 @@ export interface ProveInput {
   circuitHash: string;
   inputCommitment: string;
   output: string;
+  verificationKeyUri?: string;
 }
 export interface Prover {
   readonly format: string;
