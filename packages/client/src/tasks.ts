@@ -2,7 +2,9 @@ import { CallToolResult, JsonValue, RequestMeta } from "@demo/protocol";
 import type { TaskEnvelope } from "./client.js";
 export type RpcRequest = (method: string, params: unknown) => Promise<{ result?: unknown; error?: { code: number; message: string } }>;
 export async function pollTask(request: RpcRequest, task: TaskEnvelope, meta: RequestMeta): Promise<CallToolResult> {
+  const deadline = Date.now() + (task.ttlMs ?? 60000);
   while (true) {
+    if (Date.now() > deadline) throw new Error("task polling timed out");
     const response = await request("tasks/get", { taskId: task.taskId, _meta: meta });
     if (response.error) throw new Error(response.error.message);
     const current = asRecord(response.result);

@@ -1,19 +1,23 @@
 import {
   CallToolResult, clientCapabilities, EXTENSION_ID, JsonValue, META_CLIENT_CAPABILITIES, PROTOCOL_VERSION,
-  RequestMeta, ServerInfo, TASKS_EXTENSION_ID, VerifiableToolsCapability, verifiableCapability
+  RequestMeta, ServerInfo, SUPPORTED_PROOF_FORMATS, TASKS_EXTENSION_ID, VerifiableToolsCapability, verifiableCapability,
+  expectedCircuitHash
 } from "@demo/protocol";
 import { DemoCommitVerifier, DemoSigVerifier, VerificationKeyRegistry } from "@demo/verifier";
 import { encryptArguments } from "./blind.js";
 import { pollTask, RpcRequest } from "./tasks.js";
-export interface DiscoverResult { proofFormats: string[]; blindPublicKey: string; }
+export interface DiscoverResult { proofFormats: string[]; serverProofFormats: string[]; blindPublicKey: string; }
 export class VerifiableClient {
   private capabilities = clientCapabilities(["demo-sig-v1", "demo-commit-v1"]);
-  private readonly registry = new VerificationKeyRegistry();
-  private readonly sigVerifier = new DemoSigVerifier(this.registry);
+  private readonly registry: VerificationKeyRegistry;
+  private readonly sigVerifier: DemoSigVerifier;
   private readonly commitVerifier = new DemoCommitVerifier();
   private serverInfo: ServerInfo | undefined;
   private discovered: DiscoverResult | undefined;
-  constructor(private readonly endpoint: string) {}
+  constructor(private readonly endpoint: string) {
+    this.registry = new VerificationKeyRegistry([new URL(endpoint).origin]);
+    this.sigVerifier = new DemoSigVerifier(this.registry);
+  }
   async discover(): Promise<DiscoverResult> {
     const response = await this.request("server/discover", {});
     const result = asRecord(response.result);
@@ -23,7 +27,9 @@ export class VerifiableClient {
     const formats = asStringArray(extension.proofFormats);
     const blindPublicKey = asString(extension.blindPublicKey);
     this.serverInfo = asRecord(result._meta)?.["io.modelcontextprotocol/serverInfo"] as unknown as ServerInfo | undefined;
-    this.discovered = { proofFormats: formats, blindPublicKey };
+    const proofFormats = formats.filter((format) => (SUPPORTED_PROOF_FORMATS as readonly string[]).includes(format));
+    if (proofFormats.length === 0) throw new Error("no mutually supported proof format");
+    this.discovered = { proofFormats, serverProofFormats: formats, blindPublicKey };
     return this.discovered;
   }
   setCapabilities(capability: VerifiableToolsCapability, tasks = false): void {
@@ -38,10 +44,11 @@ export class VerifiableClient {
     if (isTask(result)) return result;
     return result as unknown as CallToolResult;
   }
-  async verify(result: CallToolResult, args: JsonValue): Promise<boolean> {
+  async verify(result: CallToolResult, args: JsonValue, tool: string): Promise<boolean> {
     const meta = result._meta?.[EXTENSION_ID];
     if (!meta) return false;
     if (!verifiableCapability(this.capabilities)?.proofFormats?.includes(meta.proofFormat ?? "")) return false;
+    if (meta.circuitHash !== expectedCircuitHash(tool)) return false;
     const context = { arguments: args, output: result.content[0].text };
     if (meta.proofFormat === "demo-sig-v1") return this.sigVerifier.verify(meta, context);
     if (meta.proofFormat === "demo-commit-v1") return this.commitVerifier.verify(meta, context);
@@ -50,7 +57,7 @@ export class VerifiableClient {
   async callAndVerify(name: string, args: JsonValue, requestedProofFormat?: string): Promise<CallToolResult> {
     const value = await this.callTool(name, args, requestedProofFormat);
     const result = isTask(value) ? await this.poll(value) : value;
-    if (!await this.verify(result, args)) throw new Error(`verification failed for ${name}`);
+    if (!await this.verify(result, args, name)) throw new Error(`verification failed for ${name}`);
     return result;
   }
   async poll(task: TaskEnvelope): Promise<CallToolResult> {
@@ -65,7 +72,7 @@ export class VerifiableClient {
     });
     if (response.error) throw new Error(response.error.message);
     const result = response.result as unknown as CallToolResult;
-    if (!await this.verify(result, args)) throw new Error("verification failed for blind call");
+    if (!await this.verify(result, args, "privateCreditCheck")) throw new Error("verification failed for blind call");
     return result;
   }
   private requestMeta(tasks = false): RequestMeta {
@@ -79,7 +86,7 @@ export class VerifiableClient {
     return await response.json() as { result?: unknown; error?: { code: number; message: string } };
   }
 }
-export interface TaskEnvelope { resultType: "task"; taskId: string; status: string; pollIntervalMs: number; }
+export interface TaskEnvelope { resultType: "task"; taskId: string; status: string; pollIntervalMs: number; ttlMs?: number; }
 function isTask(value: unknown): value is TaskEnvelope { return isRecord(value) && value.resultType === "task" && typeof value.taskId === "string"; }
 function isRecord(value: unknown): value is { [key: string]: unknown } {
   return typeof value === "object" && value !== null && !Array.isArray(value);

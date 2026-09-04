@@ -3,7 +3,15 @@ import { JsonRpcError, JsonRpcRequest, JsonRpcResponse, JsonValue } from "@demo/
 import type { DemoServer } from "./index.js";
 export async function readJson(request: IncomingMessage): Promise<unknown> {
   const chunks: Uint8Array[] = [];
-  for await (const chunk of request) chunks.push(chunk);
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.byteLength;
+    if (size > 1024 * 1024) {
+      request.destroy();
+      throw new Error("request body too large");
+    }
+    chunks.push(chunk);
+  }
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
 }
 export function send(response: ServerResponse, status: number, body: JsonRpcResponse): void {

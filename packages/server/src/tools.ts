@@ -1,4 +1,4 @@
-import { CallToolResult, JsonValue } from "@demo/protocol";
+import { CallToolResult, JsonRpcProtocolError, JsonValue, expectedCircuitHash } from "@demo/protocol";
 import { canonicalJson } from "@demo/prover";
 import { add } from "./tools/add.js";
 import { privateCreditCheck } from "./tools/creditCheck.js";
@@ -14,17 +14,17 @@ export function toolList(): JsonValue {
   ];
 }
 export function executeTool(name: ToolName, args: JsonValue): ToolExecution {
-  if (!isObject(args)) throw new Error("arguments must be an object");
+  if (!isObject(args)) throw new JsonRpcProtocolError(-32602, "arguments must be an object");
   if (name === "add" && typeof args.a === "number" && typeof args.b === "number") return { output: String(add(args.a, args.b)), arguments: args };
   if (name === "riskScore" && typeof args.symbol === "string") return { output: String(riskScore(args.symbol)), arguments: args };
   if (name === "privateCreditCheck" && typeof args.income === "number" && typeof args.debt === "number") return { output: privateCreditCheck(args.income, args.debt), arguments: args };
-  throw new Error(`invalid arguments for ${name}`);
+  throw new JsonRpcProtocolError(-32602, `invalid arguments for ${name}`);
 }
 export function inputCommitment(args: JsonValue): string {
   return `0x${createHash("sha256").update(canonicalJson(args)).digest("hex")}`;
 }
 export function circuitHash(name: ToolName): string {
-  return `0x${createHash("sha256").update(`verifiable-tools-demo:${name}:v1`).digest("hex")}`;
+  return expectedCircuitHash(name);
 }
 export function makeResult(output: string, meta?: Record<string, JsonValue>): CallToolResult {
   return { resultType: "complete", content: [{ type: "text", text: output }], isError: false, ...(meta ? { _meta: meta } : {}) };

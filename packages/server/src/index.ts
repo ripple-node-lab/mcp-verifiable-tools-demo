@@ -39,7 +39,17 @@ export class DemoServer {
     });
   }
   async listen(port = 0): Promise<string> {
-    await new Promise<void>((resolve) => this.httpServer.listen(port, this.host, () => resolve()));
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error): void => {
+        this.httpServer.removeListener("error", onError);
+        reject(error);
+      };
+      this.httpServer.once("error", onError);
+      this.httpServer.listen(port, this.host, () => {
+        this.httpServer.removeListener("error", onError);
+        resolve();
+      });
+    });
     const address = this.httpServer.address();
     this.port = typeof address === "object" && address !== null ? address.port : port;
     return this.url;
@@ -81,7 +91,7 @@ export class DemoServer {
       return this.provenResult(tool, execution.arguments, execution.output, format);
     };
     if (tool === "riskScore" && tasksDeclared(requestMeta?.[META_CLIENT_CAPABILITIES])) {
-      return { jsonrpc: "2.0", id: request.id, result: this.tasks.create(async () => new Promise<CallToolResult>((resolve) => setTimeout(() => void execute().then(resolve), 300))) };
+      return { jsonrpc: "2.0", id: request.id, result: this.tasks.create(async () => { await new Promise<void>((resolve) => setTimeout(resolve, 300)); return execute(); }) };
     }
     return { jsonrpc: "2.0", id: request.id, result: await execute() };
   }
@@ -127,3 +137,4 @@ export async function startServer(options: DemoServerOptions = {}): Promise<Demo
   await server.listen(options.port);
   return server;
 }
+export { TaskStore } from "./tasks.js";

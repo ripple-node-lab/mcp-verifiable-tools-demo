@@ -33,6 +33,13 @@ curl -sS http://127.0.0.1:3939/mcp \
 The extension identifier is `io.modelcontextprotocol/verifiable-tools`.
 The demo also advertises `io.modelcontextprotocol/tasks`.
 
+## Security notes
+
+The client pins verification keys by circuit hash and rejects results whose
+tool-to-circuit mapping does not match its expected mapping. In a real
+deployment, that mapping must come from an out-of-band trusted registry; this
+demo keeps it fixed in the protocol package.
+
 ## Repository layout
 
 - `packages/protocol`: extension constants, types, metadata, and negotiation.

@@ -5,7 +5,7 @@ import { VerificationKeyRegistry } from "./registry.js";
 import { Verifier, VerifyContext } from "./verifier.js";
 export class DemoSigVerifier implements Verifier {
   readonly format = "demo-sig-v1";
-  constructor(private readonly registry: VerificationKeyRegistry = new VerificationKeyRegistry()) {}
+  constructor(private readonly registry: VerificationKeyRegistry = new VerificationKeyRegistry([])) {}
   async verify(meta: VerifiableToolsMeta, context: VerifyContext): Promise<boolean> {
     if (meta.proofFormat !== this.format || !meta.verificationKeyUri || meta.inputCommitment !== expectedInputCommitment(context.arguments)) return false;
     if (meta.inputCommitment === undefined || !meta.proof || !meta.circuitHash) return false;

@@ -1,5 +1,6 @@
 import { EXTENSION_ID, META_CLIENT_CAPABILITIES, META_VERIFIABLE_TOOLS, TASKS_EXTENSION_ID } from "./constants.js";
 import { ClientCapabilities, JsonValue, RequestMeta, VerifiableToolsCapability } from "./types.js";
+import { createHash } from "node:crypto";
 
 export function clientCapabilities(proofFormats: string[], options: { blindExecution?: boolean; requireProof?: boolean; tasks?: boolean } = {}): ClientCapabilities {
   const extensions: { [key: string]: VerifiableToolsCapability | Record<string, never> } = {
@@ -33,4 +34,7 @@ export function requestMeta(capabilities: ClientCapabilities, clientInfo = { nam
 }
 export function isRecord(value: unknown): value is { [key: string]: JsonValue } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+export function expectedCircuitHash(tool: string): string {
+  return `0x${createHash("sha256").update(`verifiable-tools-demo:${tool}:v1`).digest("hex")}`;
 }

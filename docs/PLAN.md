@@ -134,6 +134,7 @@ mcp-verifiable-tools-demo/
 | 2 | `snarkjs-v2` バックエンド（circom `add` 回路を事前コンパイルして同梱）、`proofUri` の利用例 | 実 ZK 証明が 1 形式動く |
 | 3 | `ezkl-v1` / `risc0-v1` アダプタ雛形、Docker 化した TEE 風実行環境（`teeAttestation` に実 attestation 形式を入れる） | SEP 本文 Reference Implementation 節へのリンク |
 | 4 | `modelcontextprotocol/typescript-sdk` の Extension API へ移植し、SEP-2133 が求める「公式 SDK での参照実装」を満たす | SDK フォーク/ブランチ |
+| SEP 提出 | `docs/spec/verifiable-tools.md` の Reference Implementation 節に本リポジトリと SDK 実装へのリンクを追記し、`modelcontextprotocol/modelcontextprotocol` に SEP PR を提出 | SEP PR |
 
 ## 6. 仕様との対応表
 
@@ -153,3 +154,6 @@ mcp-verifiable-tools-demo/
 - `blindPublicKey` のような鍵配布フィールドを仕様書に追加するか（現状はデモ用フィールドとして扱う）。
 - `proofFormat` 文字列のレジストリをどう扱うか（仕様書 Open Questions と同じ）。
 - Phase 4 の SDK 移植先を TypeScript SDK にするか Python SDK にするか。
+- 公式化前の拡張識別子: 現状は `io.modelcontextprotocol/verifiable-tools` を使用しているが、SEP 受諾前の第三者実装は vendor prefix（例 `com.ripple-node-lab/verifiable-tools`）を使うべき。受諾されなかった場合は識別子を切り替える。
+- クライアント側の tool→circuitHash の信頼できる配布方法（現状はデモ用に protocol パッケージへ固定）。
+- `tasks/cancel` は状態のみ変更し producer を停止しない（実バックエンドでは cancellation token が必要、Phase 2 で対応）。

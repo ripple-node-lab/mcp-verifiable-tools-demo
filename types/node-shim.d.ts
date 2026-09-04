@@ -24,6 +24,7 @@ declare module "node:http" {
     method?: string;
     url?: string;
     headers: IncomingHttpHeaders;
+    destroy(): void;
     on(event: string, listener: (...args: never[]) => void): this;
     [Symbol.asyncIterator](): AsyncIterableIterator<Uint8Array>;
   }
@@ -63,6 +64,6 @@ declare module "node:crypto" {
   };
   export function hkdfSync(digest: string, key: Uint8Array, salt: Uint8Array, info: Uint8Array, length: number): ArrayBuffer;
 }
-declare module "node:events" { export class EventEmitter { on(event: string, listener: (...args: never[]) => void): this; emit(event: string, ...args: never[]): boolean; } }
+declare module "node:events" { export class EventEmitter { on(event: string, listener: (...args: never[]) => void): this; once(event: string, listener: (...args: never[]) => void): this; removeListener(event: string, listener: (...args: never[]) => void): this; emit(event: string, ...args: never[]): boolean; } }
 declare module "node:assert/strict" { const assert: { equal(actual: unknown, expected: unknown, message?: string): void; deepEqual(actual: unknown, expected: unknown, message?: string): void; ok(value: unknown, message?: string): void; rejects(fn: () => Promise<unknown>, message?: string): Promise<void> }; export default assert; }
 declare module "node:test" { type TestFn = (name: string, fn: () => void | Promise<void>) => void | Promise<void>; const test: TestFn; export default test; }
