@@ -1,0 +1,10 @@
+export const EXTENSION_ID = "io.modelcontextprotocol/verifiable-tools";
+export const TASKS_EXTENSION_ID = "io.modelcontextprotocol/tasks";
+export const PROTOCOL_VERSION = "2026-07-28";
+export const META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion";
+export const META_CLIENT_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities";
+export const META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo";
+export const META_SERVER_INFO = "io.modelcontextprotocol/serverInfo";
+export const META_VERIFIABLE_TOOLS = EXTENSION_ID;
+export const SUPPORTED_PROOF_FORMATS = ["demo-sig-v1", "demo-commit-v1"] as const;
+export const ENCRYPTION_SCHEME = "x25519-aesgcm-demo-v1";

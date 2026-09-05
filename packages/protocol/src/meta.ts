@@ -1,0 +1,40 @@
+import { EXTENSION_ID, META_CLIENT_CAPABILITIES, META_VERIFIABLE_TOOLS, TASKS_EXTENSION_ID } from "./constants.js";
+import { ClientCapabilities, JsonValue, RequestMeta, VerifiableToolsCapability } from "./types.js";
+import { createHash } from "node:crypto";
+
+export function clientCapabilities(proofFormats: string[], options: { blindExecution?: boolean; requireProof?: boolean; tasks?: boolean } = {}): ClientCapabilities {
+  const extensions: { [key: string]: VerifiableToolsCapability | Record<string, never> } = {
+    [EXTENSION_ID]: { proofFormats, ...(options.blindExecution === undefined ? {} : { blindExecution: options.blindExecution }), ...(options.requireProof === undefined ? {} : { requireProof: options.requireProof }) }
+  };
+  if (options.tasks) extensions[TASKS_EXTENSION_ID] = {};
+  return { extensions };
+}
+export function capabilitiesFromMeta(meta: RequestMeta | undefined): ClientCapabilities | undefined {
+  return meta?.[META_CLIENT_CAPABILITIES];
+}
+export function verifiableCapability(capabilities: ClientCapabilities | undefined): VerifiableToolsCapability | undefined {
+  const value = capabilities?.extensions?.[EXTENSION_ID];
+  return value && "proofFormats" in value ? value : value ? {} : undefined;
+}
+export function tasksDeclared(capabilities: ClientCapabilities | undefined): boolean {
+  return Boolean(capabilities?.extensions?.[TASKS_EXTENSION_ID]);
+}
+export function negotiateProofFormat(clientCap: VerifiableToolsCapability | undefined, serverFormats: readonly string[], requested?: string): string | undefined {
+  if (!clientCap) return undefined;
+  const clientFormats = clientCap.proofFormats ?? [];
+  if (requested !== undefined) return clientFormats.includes(requested) && serverFormats.includes(requested) ? requested : undefined;
+  return serverFormats.find((format) => clientFormats.includes(format));
+}
+export function requestMeta(capabilities: ClientCapabilities, clientInfo = { name: "demo-client", version: "1.0.0" }): RequestMeta {
+  return {
+    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+    "io.modelcontextprotocol/clientInfo": clientInfo,
+    [META_CLIENT_CAPABILITIES]: capabilities
+  };
+}
+export function isRecord(value: unknown): value is { [key: string]: JsonValue } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+export function expectedCircuitHash(tool: string): string {
+  return `0x${createHash("sha256").update(`verifiable-tools-demo:${tool}:v1`).digest("hex")}`;
+}

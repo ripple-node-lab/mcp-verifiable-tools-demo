@@ -1,0 +1,26 @@
+{
+  "jsonrpc": "2.0",
+  "id": "discover-1",
+  "result": {
+    "resultType": "complete",
+    "supportedVersions": ["2026-07-28"],
+    "capabilities": {
+      "tools": {},
+      "extensions": {
+        "io.modelcontextprotocol/verifiable-tools": {
+          "proofFormats": ["demo-sig-v1", "demo-commit-v1"],
+          "blindExecution": true,
+          "blindPublicKey": "<base64 X25519 public key>",
+          "blindEncryptionSchemes": ["x25519-aesgcm-demo-v1"]
+        },
+        "io.modelcontextprotocol/tasks": {}
+      }
+    },
+    "_meta": {
+      "io.modelcontextprotocol/serverInfo": {
+        "name": "verifiable-tools-demo",
+        "version": "1.0.0"
+      }
+    }
+  }
+}

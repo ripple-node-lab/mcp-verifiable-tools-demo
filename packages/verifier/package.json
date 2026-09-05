@@ -1,0 +1,7 @@
+{
+  "name": "@demo/verifier",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": { ".": { "types": "./dist/src/index.d.ts", "import": "./dist/src/index.js" } },
+  "dependencies": { "@demo/protocol": "1.0.0", "@demo/prover": "1.0.0" }
+}
