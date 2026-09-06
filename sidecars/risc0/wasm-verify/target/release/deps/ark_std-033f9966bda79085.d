@@ -1,0 +1,12 @@
+/home/ubuntu/repos/mcp-verifiable-tools-demo/sidecars/risc0/wasm-verify/target/release/deps/ark_std-033f9966bda79085.d: /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/io/mod.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/io/error.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/error.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/rand_helper.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/perf_trace.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/iterable/mod.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/iterable/rev.rs
+
+/home/ubuntu/repos/mcp-verifiable-tools-demo/sidecars/risc0/wasm-verify/target/release/deps/libark_std-033f9966bda79085.rmeta: /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/io/mod.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/io/error.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/error.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/rand_helper.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/perf_trace.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/iterable/mod.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/iterable/rev.rs
+
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/lib.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/io/mod.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/io/error.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/error.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/rand_helper.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/perf_trace.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/iterable/mod.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-std-0.5.0/src/iterable/rev.rs:

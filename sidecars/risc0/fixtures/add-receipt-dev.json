@@ -1,0 +1,16 @@
+{
+  "circuitHash": "0xe9e822f1e91ea14c21f72df178573f76a9b1c0e0d048deeed216a7e47a7fdfa7",
+  "inputCommitment": "0xcbeb5e9673b2ac12665726b4bbc07a00bd3619838f961292227696fbe343440f",
+  "nonce": "0x11223344556677889900aabbccddee11",
+  "outputCommitment": "0x5f0cd6507175ef4a9450721e54fa2e534fe911bff7f37afdbba0c41ebe1f9458",
+  "proof": "<dev>",
+  "proofFormat": "risc0-v1",
+  "publicInputs": [
+    "0x5f0cd6507175ef4a9450721e54fa2e534fe911bff7f37afdbba0c41ebe1f9458",
+    "0xcbeb5e9673b2ac12665726b4bbc07a00bd3619838f961292227696fbe343440f",
+    "0x11223344556677889900aabbccddee11",
+    "42",
+    "2",
+    "40"
+  ]
+}

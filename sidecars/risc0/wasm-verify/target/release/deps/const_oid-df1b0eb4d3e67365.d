@@ -1,0 +1,11 @@
+/home/ubuntu/repos/mcp-verifiable-tools-demo/sidecars/risc0/wasm-verify/target/release/deps/const_oid-df1b0eb4d3e67365.d: /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/checked.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/arcs.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/encoder.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/error.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/parser.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/../README.md
+
+/home/ubuntu/repos/mcp-verifiable-tools-demo/sidecars/risc0/wasm-verify/target/release/deps/libconst_oid-df1b0eb4d3e67365.rmeta: /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/checked.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/arcs.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/encoder.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/error.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/parser.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/../README.md
+
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/lib.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/checked.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/arcs.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/encoder.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/error.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/parser.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/const-oid-0.9.6/src/../README.md:

@@ -1,0 +1,10 @@
+/home/ubuntu/repos/mcp-verifiable-tools-demo/sidecars/risc0/wasm-verify/target/wasm32-unknown-unknown/release/deps/ark_groth16-0be9d384647c3e0b.d: /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/r1cs_to_qap.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/data_structures.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/generator.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/prover.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/verifier.rs
+
+/home/ubuntu/repos/mcp-verifiable-tools-demo/sidecars/risc0/wasm-verify/target/wasm32-unknown-unknown/release/deps/libark_groth16-0be9d384647c3e0b.rmeta: /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/r1cs_to_qap.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/data_structures.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/generator.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/prover.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/verifier.rs
+
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/lib.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/r1cs_to_qap.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/data_structures.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/generator.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/prover.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-groth16-0.5.0/src/verifier.rs:

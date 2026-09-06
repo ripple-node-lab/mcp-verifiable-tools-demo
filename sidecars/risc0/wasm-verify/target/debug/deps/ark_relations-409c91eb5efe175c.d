@@ -1,0 +1,9 @@
+/home/ubuntu/repos/mcp-verifiable-tools-demo/sidecars/risc0/wasm-verify/target/debug/deps/ark_relations-409c91eb5efe175c.d: /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/r1cs/mod.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/r1cs/impl_lc.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/r1cs/constraint_system.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/r1cs/error.rs
+
+/home/ubuntu/repos/mcp-verifiable-tools-demo/sidecars/risc0/wasm-verify/target/debug/deps/libark_relations-409c91eb5efe175c.rmeta: /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/lib.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/r1cs/mod.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/r1cs/impl_lc.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/r1cs/constraint_system.rs /home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/r1cs/error.rs
+
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/lib.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/r1cs/mod.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/r1cs/impl_lc.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/r1cs/constraint_system.rs:
+/home/ubuntu/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ark-relations-0.5.1/src/r1cs/error.rs:
