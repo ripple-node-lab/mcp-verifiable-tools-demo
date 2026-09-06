@@ -117,7 +117,7 @@ io.modelcontextprotocol/verifiable-tools
 
 | フィールド | 型 | 説明 |
 |---|---|---|
-| `proofFormats` | `string[]` | 対応する証明形式。`"{engine}-{majorVersion}"` の形式。例：`"ezkl-v1"`、`"risc0-v1"`、`"snarkjs-v2"`、`"tee-sgx-v1"` |
+| `proofFormats` | `string[]` | 対応する証明形式。`"{engine}-{majorVersion}"` の形式。例：`"ezkl-v1"`、`"risc0-v1"`、`"snarkjs-v2"`、`"tee-sgx-dcap-v1"` |
 | `blindExecution` | `boolean` | ブラインド／コミットメント入力によるツール実行に対応するか |
 | `requireProof` | `boolean` | クライアント側：true の場合、サーバーは可能な限り証明を返す。サーバー側：証明不能な呼び出しを拒否しうる |
 | `requireInputProvenance` | `boolean` | クライアント側：true の場合、外部データを消費する結果は `inputAttestations`（§7.4 入力 provenance）を必ず含む |
@@ -138,7 +138,7 @@ io.modelcontextprotocol/verifiable-tools
       "tools": {},
       "extensions": {
         "io.modelcontextprotocol/verifiable-tools": {
-          "proofFormats": ["ezkl-v1", "tee-sgx-v1"],
+          "proofFormats": ["ezkl-v1", "tee-sgx-dcap-v1"],
           "blindExecution": true,
           "blindEncryptionSchemes": ["hpke-v1"],
           "blindPublicKeys": { "hpke-v1": "<base64url X25519 public key>" },
@@ -389,9 +389,9 @@ verifiable-tools/prove
 | `proofFormat` | `string` | 任意 | 優先する証明形式 |
 | `nonce` | `string` | 任意 | 遅延証明に束縛する新鮮な nonce |
 
-`verifiable-tools/prove` は、`tools/call` と同じ MCP セッションおよびトランスポート上の通常の JSON-RPC リクエストである。これは双方が拡張をネゴシエートした後にのみ利用できる。`resultTtlMs` を広告していないサーバーは `-32601` で応答しなければならない。`resultId` は推測不能でなければならず（暗号学的に安全な乱数源から得た少なくとも 128 ビット）、プリンシパル（認可主体）および、トランスポートに存在する場合は元の呼び出しを行ったセッションに束縛されなければならない。サーバーは他の呼び出し元に対して、未知の識別子か認可されていない識別子かを区別せず、`data.reason: "resultNotFound"` を伴う `-32602` で応答しなければならない。`replyPublicKey` に暗号化して `content` を返したブラインド呼び出しの結果では、遅延応答も同じ方法で `content` を暗号化しなければならない。リクエストオプション（`proofFormat`、`nonce`）は `_meta` の下ではなく、`params` に直接置く。
+`verifiable-tools/prove` は、`tools/call` と同じ MCP セッションおよびトランスポート上の通常の JSON-RPC リクエストである。これは双方が拡張をネゴシエートした後にのみ利用できる。`resultTtlMs` を広告していないサーバーは `-32601` で応答しなければならない。`resultId` は推測不能でなければならず（暗号学的に安全な乱数源から得た少なくとも 128 ビット）、プリンシパル（認可主体）および、トランスポートに存在する場合は元の呼び出しを行ったセッションに束縛されなければならない。サーバーは他の呼び出し元に対して、未知の識別子か認可されていない識別子かを区別せず、`data.reason: "resultNotFound"` を伴う `-32602` で応答しなければならない。`replyPublicKey` に暗号化して `content` を返したブラインド呼び出しの結果では、遅延応答は§暗号化された応答に従い、`verifiable-tools/prove` リクエストの nonce（指定されていない場合は元の nonce）を使って同じ `originalContent` を再暗号化しなければならない。そのため暗号文は異なるが、平文に対して計算された `outputCommitment` は変わらない。リクエストオプション（`proofFormat`、`nonce`）は `_meta` の下ではなく、`params` に直接置く。
 
-応答は、元の `content` とバイト単位で一致し、`_meta` に証明が追加された `CallToolResult` か、後者に解決されるタスクのいずれかである。サーバーは、選択した証明形式に必要なプライベート witness（ZK 形式では平文引数、TEE 形式では封印された実行記録を含む）を含む十分な状態を、出力および nonce とともに保持し、広告した `resultTtlMs` の期間以上（`resultId` を返す場合は必須）、元の計算を証明できなければならない。`resultTtlMs` が経過した後、サーバーは `-32602` と `data.reason: "resultExpired"` で `resultId` を拒否し、保持していた witness を削除しなければならない。
+応答は、元の平文 `content`（暗号化された応答では `originalContent`）とバイト単位で一致し、`_meta` に証明が追加された `CallToolResult` か、後者に解決されるタスクのいずれかである。サーバーは、選択した証明形式に必要なプライベート witness（ZK 形式では平文引数、TEE 形式では封印された実行記録を含む）を含む十分な状態を、出力および nonce とともに保持し、広告した `resultTtlMs` の期間以上（`resultId` を返す場合は必須）、元の計算を証明できなければならない。`resultTtlMs` が経過した後、サーバーは `-32602` と `data.reason: "resultExpired"` で `resultId` を拒否し、保持していた witness を削除しなければならない。
 
 どのモードが適切かは、`proofPolicy` で表すツール単位の判断である。`always` は低頻度・高価値の呼び出し（シナリオ C）に適し、`onDemand` と `sampled` は、監査される可能性自体が抑止力となる高頻度呼び出し（シナリオ B）に適する。`sampled` のもとで、証明不能な結果を返していたことが発覚したサーバーは、同じ期間の過去の結果についてもクライアントから信頼されないものとして扱うべきである。
 
@@ -451,13 +451,13 @@ Mcp-Method: verifiable-tools/call
     "inputCommitment": "0xdeadbeef...",
     "encryptionScheme": "hpke-v1",
     "encryptedArguments": "0x0a1b...",
-    "proofFormat": "tee-sgx-v1",
+    "proofFormat": "tee-sgx-dcap-v1",
     "_meta": {
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
       "io.modelcontextprotocol/clientCapabilities": {
         "extensions": {
           "io.modelcontextprotocol/verifiable-tools": {
-            "proofFormats": ["tee-sgx-v1"],
+            "proofFormats": ["tee-sgx-dcap-v1"],
             "blindExecution": true
           }
         }
@@ -489,7 +489,7 @@ Mcp-Method: verifiable-tools/call
       },
       "io.modelcontextprotocol/verifiable-tools": {
         "proof": "0x8f3a...",
-        "proofFormat": "tee-sgx-v1",
+        "proofFormat": "tee-sgx-dcap-v1",
         "inputCommitment": "0xdeadbeef...",
         "outputCommitment": "0x...",
         "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e",
@@ -649,7 +649,7 @@ CI 結果と形式ごとのベンチマークは、各 Phase が実現した時�
 - 否定的テスト：無効な証明、`circuitHash` の不一致、未知の `proofFormat`、不正なブラインド入力。
 - 束縛テスト：本物の証明と改ざんした `content` の組み合わせを拒否（`outputCommitment`）、前回の呼び出しの証明を再送した場合に拒否（`nonce`）、salt なしまたは誤った salt のブラインドコミットメントを拒否。
 - provenance テスト：主証明が有効でも、必須の `inputAttestations` エントリが欠落または不正な結果を拒否。
-- 遅延証明テスト：`verifiable-tools/prove` がバイト単位で同一の `content` と検証可能な証明を返すこと、期限切れの `resultId` を拒否すること。
+- 遅延証明テスト：`verifiable-tools/prove` がバイト単位で同一の平文 `content` と検証可能な証明を返すこと、期限切れの `resultId` を拒否すること。
 - 記述子テスト：`circuitHash` がピン留め値と異なる `tools/list` エントリを黙って受け入れず、表面化すること。
 
 ## 17. 検討した代替案

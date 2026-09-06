@@ -120,7 +120,7 @@ Both client and server advertise the extension under the `extensions` capability
 
 | Field | Type | Description |
 |---|---|---|
-| `proofFormats` | `string[]` | Proof / attestation formats the party supports, identified as `"{engine}-{majorVersion}"` (e.g. `"ezkl-v1"`, `"risc0-v1"`, `"snarkjs-v2"`, `"tee-sgx-v1"`). |
+| `proofFormats` | `string[]` | Proof / attestation formats the party supports, identified as `"{engine}-{majorVersion}"` (e.g. `"ezkl-v1"`, `"risc0-v1"`, `"snarkjs-v2"`, `"tee-sgx-dcap-v1"`). |
 | `blindExecution` | `boolean` | Whether the party supports blind / committed-input tool calls. |
 | `requireProof` | `boolean` | For clients: if true, the server SHOULD return a proof when it can; servers MAY omit results for calls they cannot prove. |
 | `requireInputProvenance` | `boolean` | For clients: if true, results that consume external data MUST carry `inputAttestations` (see §Input provenance). |
@@ -141,7 +141,7 @@ Example `server/discover` response:
       "tools": {},
       "extensions": {
         "io.modelcontextprotocol/verifiable-tools": {
-          "proofFormats": ["ezkl-v1", "tee-sgx-v1"],
+          "proofFormats": ["ezkl-v1", "tee-sgx-dcap-v1"],
           "blindExecution": true,
           "blindEncryptionSchemes": ["hpke-v1"],
           "blindPublicKeys": { "hpke-v1": "<base64url X25519 public key>" },
@@ -248,7 +248,7 @@ Field definitions:
 |---|---|---|---|
 | `proof` | `string` | Recommended | The zero-knowledge proof or attestation, encoded as a hex string or base64. Servers MAY return a URI instead if the proof is large; see `proofUri`. |
 | `proofUri` | `string` (URI) | Optional | Location to fetch the proof artifact if it is too large for inline transport. |
-| `proofFormat` | `string` | Recommended | The engine and major version used to produce the proof, e.g. `"ezkl-v1"`, `"risc0-v1"`, `"tee-sgx-v1"`. |
+| `proofFormat` | `string` | Recommended | The engine and major version used to produce the proof, e.g. `"ezkl-v1"`, `"risc0-v1"`, `"tee-sgx-dcap-v1"`. |
 | `circuitHash` | `string` | Recommended | A cryptographic hash identifying the circuit, program, or Docker artifact that was executed. |
 | `verificationKeyUri` | `string` (URI) | Optional | Location of the verification key needed to check the proof. |
 | `publicInputs` | `array` | Conditional | Public inputs required to verify the proof, in the order `[outputCommitment, inputCommitment, nonce, ...format-specific]`. Index 2 is fixed: when the client supplied no nonce, `publicInputs[2]` MUST be the empty hex string `"0x"` so the format-specific tail always starts at index 3. Omitted for pure TEE attestations. |
@@ -392,9 +392,9 @@ verifiable-tools/prove
 | `proofFormat` | `string` | No | Preferred proof format. |
 | `nonce` | `string` | No | Fresh nonce to bind into the deferred proof. |
 
-`verifiable-tools/prove` is an ordinary JSON-RPC request on the same MCP session and transport as `tools/call`. It is available only after the extension has been negotiated by both parties; servers that have not advertised `resultTtlMs` MUST answer `-32601`. `resultId` MUST be unguessable (at least 128 bits from a cryptographically secure random source) and MUST be bound to the principal (authorization identity) and, where the transport has one, the session that made the original call; the server MUST answer `-32602` with `data.reason: "resultNotFound"` for any other caller, without distinguishing unknown from unauthorized identifiers. For results of blind calls whose `content` was returned encrypted to `replyPublicKey`, the deferred response MUST encrypt `content` the same way. Request options (`proofFormat`, `nonce`) live in `params` directly, not under `_meta`.
+`verifiable-tools/prove` is an ordinary JSON-RPC request on the same MCP session and transport as `tools/call`. It is available only after the extension has been negotiated by both parties; servers that have not advertised `resultTtlMs` MUST answer `-32601`. `resultId` MUST be unguessable (at least 128 bits from a cryptographically secure random source) and MUST be bound to the principal (authorization identity) and, where the transport has one, the session that made the original call; the server MUST answer `-32602` with `data.reason: "resultNotFound"` for any other caller, without distinguishing unknown from unauthorized identifiers. For results of blind calls whose `content` was returned encrypted to `replyPublicKey`, the deferred response MUST re-encrypt the same `originalContent` under §Encrypted replies using the nonce of the `verifiable-tools/prove` request (or the original nonce if none was supplied); the ciphertext therefore differs while `outputCommitment`, computed over the plaintext, is unchanged. Request options (`proofFormat`, `nonce`) live in `params` directly, not under `_meta`.
 
-The response is either a `CallToolResult` whose `content` is byte-identical to the original and whose `_meta` now contains the proof, or a task (`resultType: "task"`) that resolves to one. The server MUST retain enough state, including any private witness required by the selected proof format (the plaintext arguments for ZK formats; the sealed execution record for TEE formats), together with the output and nonce, to prove the original computation for at least the `resultTtlMs` it advertises (REQUIRED when emitting `resultId`); after `resultTtlMs` has elapsed the server MUST reject the `resultId` with `-32602` and `data.reason: "resultExpired"` and MUST delete the retained witness.
+The response is either a `CallToolResult` whose plaintext `content` (`originalContent` for encrypted replies) is byte-identical to the original and whose `_meta` now contains the proof, or a task (`resultType: "task"`) that resolves to one. The server MUST retain enough state, including any private witness required by the selected proof format (the plaintext arguments for ZK formats; the sealed execution record for TEE formats), together with the output and nonce, to prove the original computation for at least the `resultTtlMs` it advertises (REQUIRED when emitting `resultId`); after `resultTtlMs` has elapsed the server MUST reject the `resultId` with `-32602` and `data.reason: "resultExpired"` and MUST delete the retained witness.
 
 Which mode is appropriate is a per-tool decision expressed by `proofPolicy`. `always` suits low-volume, high-value calls (Scenario C); `onDemand` and `sampled` suit high-volume calls where the *possibility* of being audited is the deterrent (Scenario B). A server that is caught returning an unprovable result under `sampled` should be treated by the client as untrusted for all past results in the same period.
 
@@ -454,13 +454,13 @@ Example request:
     "inputCommitment": "0xdeadbeef...",
     "encryptionScheme": "hpke-v1",
     "encryptedArguments": "0x0a1b...",
-    "proofFormat": "tee-sgx-v1",
+    "proofFormat": "tee-sgx-dcap-v1",
     "_meta": {
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
       "io.modelcontextprotocol/clientCapabilities": {
         "extensions": {
           "io.modelcontextprotocol/verifiable-tools": {
-            "proofFormats": ["tee-sgx-v1"],
+            "proofFormats": ["tee-sgx-dcap-v1"],
             "blindExecution": true
           }
         }
@@ -492,7 +492,7 @@ Example response:
       },
       "io.modelcontextprotocol/verifiable-tools": {
         "proof": "0x8f3a...",
-        "proofFormat": "tee-sgx-v1",
+        "proofFormat": "tee-sgx-dcap-v1",
         "inputCommitment": "0xdeadbeef...",
         "outputCommitment": "0x...",
         "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e",
@@ -652,7 +652,7 @@ CI results and per-format benchmarks will be linked here as each phase lands.
 - Negative tests: invalid proofs, mismatched `circuitHash`, unknown `proofFormat`, and malformed blind inputs.
 - Binding tests: a genuine proof paired with altered `content` is rejected (`outputCommitment`); a proof replayed from a previous call is rejected (`nonce`); an unsalted or wrongly salted blind commitment is rejected.
 - Provenance tests: a result with a valid main proof but a missing or invalid required `inputAttestations` entry is rejected.
-- Deferred-proof tests: `verifiable-tools/prove` returns byte-identical `content` and a verifying proof; an expired `resultId` is rejected.
+- Deferred-proof tests: `verifiable-tools/prove` returns byte-identical plaintext `content` and a verifying proof; an expired `resultId` is rejected.
 - Descriptor tests: a `tools/list` entry whose `circuitHash` differs from the pinned value is surfaced, not silently accepted.
 
 ## Alternatives Considered
