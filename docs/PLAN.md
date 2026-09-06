@@ -2,7 +2,7 @@
 
 対象仕様: [`docs/spec/verifiable-tools.md`](spec/verifiable-tools.md)（英語 / SEP 提出用）、[`docs/spec/verifiable-tools.ja.md`](spec/verifiable-tools.ja.md)（日本語）
 関連 issue: https://github.com/zk-tokyo/advanced-cryptography-2026/issues/94
-技術選定の根拠: [#3 ZK / MPC / FHE ライブラリ調査](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/issues/3)、[#4 言語基盤の分析](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/issues/4)、[#6 ACP 2026 で学んだ技術要素](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/issues/6)
+技術選定の根拠: [#3 ZK / MPC / FHE ライブラリ調査](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/issues/3)、[#4 言語基盤の分析](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/issues/4)、[#6 ACP 2026 で学んだ技術要素](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/issues/6)、[#7 World ProveKit の調査と示唆](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/issues/7)
 
 ## 1. 目的
 
@@ -24,7 +24,7 @@ MCP SEP ガイドラインの「Prototype Requirements」と設計原則「Demon
   - `demo-sig-v1`: 「TEE Attestation 相当」のシミュレーション。Prover が `circuitHash || inputCommitment || outputHash` を Ed25519 署名する。`verificationKeyUri` から公開鍵を取得して検証する。
   - `demo-commit-v1`: 「ZK 証明相当」のシミュレーション。`publicInputs = [output, inputCommitment]`、`proof = SHA-256(circuitHash || publicInputs)`。証明としての健全性は無いが、フィールドの流れ（`publicInputs` / `circuitHash` / `verificationKeyUri`）を確認できる。
   - README で **これらは暗号学的な ZK ではないこと** を明記する。
-- **Phase 2 で実エンジンを追加する。** `snarkjs-v2`（Groth16, 小さな circom 回路の事前コンパイル済み `wasm` / `zkey` / `vk.json` を同梱）と Noir（UltraHonk）を npm だけで動く実 ZK バックエンドとする。`ezkl-v1` / `risc0-v1` / TEE / zkTLS は Phase 3 で sidecar として合成する（§5）。
+- **Phase 2 で実エンジンを追加する。** `snarkjs-v2`（Groth16, 小さな circom 回路の事前コンパイル済み `wasm` / `zkey` / `vk.json` を同梱）と Noir（UltraHonk）を npm だけで動く実 ZK バックエンドとする。Noir 回路を共通フロントエンドに固定し、同じ回路を Barretenberg（`noir-bb-v1`）と ProveKit（`provekit-v1`、WHIR ベース・transparent・PQ、#7）で証明・検証することで「バックエンドだけ差し替え可能」という設計意図を実演する。`ezkl-v1` / `risc0-v1` / `provekit-v1` / TEE / zkTLS は Phase 3 で sidecar として合成する（§5）。
 - **SDK 依存を避ける。** 公式 SDK の 2026-07-28 対応状況に左右されないよう、JSON-RPC 2.0 + Streamable HTTP（POST のみ）を薄く自前実装する。将来 `typescript-sdk` の Extension API に載せ替えられるよう、プロトコル処理は `packages/protocol` に隔離する。
 - **言語方針（#4 の結論）: プロトコル層・クライアント検証層は TypeScript、証明バックエンドは engine ごとに最適な言語をアダプタ経由で合成する。** 判断の軸は上記「本質は証明をどう運ぶか」と同じで、言語の境界も同じ場所に置く。
   - `packages/protocol` / `server` / `client` / `verifier` は TS を維持する。MCP の正典スキーマと Phase 4 の移植先（`typescript-sdk`）が TS であり、検証器は IDE / エージェントホスト（多くが TS）へ npm / WASM で配布できる必要があるため。
@@ -162,8 +162,8 @@ mcp-verifiable-tools-demo/
 |---|---|---|
 | 1（完了） | 上記構成の雛形 + `demo-sig-v1` / `demo-commit-v1` + 3 シナリオ + テスト + CI | `npm run demo` / `npm test` が通る |
 | 2-a 仕様改訂の追従（Phase 2 の先行タスク） | (1) `Prover.prove(input, { signal }): Promise<ProofArtifact>` / `Verifier.verify(...): Promise<...>` へ非同期化し `AbortSignal` を `tasks/cancel` に接続、`proofUri` 経路を `packages/server` に追加（#4 §4-1）。(2) `outputCommitment` / `nonce` / 塩付き `inputCommitment`（JCS）/ `tools/list` 記述子（`formats` による形式別 `circuitHash`）/ `resultId` + `verifiable-tools/prove` / `proofPolicy` を protocol・server・client に実装、`server/discover` の応答に `blindEncryptionSchemes` / `blindPublicKeys` / `resultTtlMs` を追加（Phase 1 の応答は改訂前仕様のまま）。(3) `x25519-aesgcm-demo-v1` を `hpke-v1`（`hpke-js`）へ置換。(4) §4.3 の binding / deferred / descriptor 否定テストを追加 | 既存 2 形式のまま、改訂仕様の全フィールドが `npm test` で検証される |
-| 2-b 実 ZK（in-process） | `snarkjs-v2`（Groth16、circom `add` 回路を事前コンパイルして `wasm` / `zkey` / `vk.json` を同梱。Week 1 の under-constrained 攻撃をレビュー観点にする）。第 2 形式として Noir（`@noir-lang/noir_js` + `@aztec/bb.js`, UltraHonk, トラステッドセットアップ不要）を採用し、同じ `add` を 2 系統で示す。両者は別 workspace（`packages/prover-snarkjs`, `packages/prover-noir`）に隔離するが `npm test` 既定に含める。各形式の proving 時間・メモリ・証明サイズ・検証時間・検証器依存サイズを `docs/BENCHMARKS.md` に記録 | 実 ZK 証明が 2 形式動き、計測値が公開される |
-| 3 sidecar 合成 | `packages/prover-sidecar`（TS アダプタ）+ `sidecars/{risc0,ezkl,nitro,tlsn}/Dockerfile`。`risc0-v1`: Rust host を Docker 化し `prove(circuitHash, witness) -> receipt` を HTTP で提供、検証は Rust sidecar `/verify` か `risc0-zkvm` verifier の WASM ビルド（可否を Phase 3 冒頭で PoC）。`ezkl-v1`: 生成は Python `ezkl` sidecar、検証は `@ezkljs/engine`（WASM）で TS 側（「生成は他言語、検証は TS」の非対称性を体現）。`tee-nitro-v1`: COSE_Sign1 attestation の検証（chain / PCR / user-data 鍵束縛 / nonce）を TS で実装し、ローカル CI ではモック attestation でフローを通す。`zktls-tlsn-v1`: `riskScore` の価格取得に TLSNotary sidecar を挟み `inputAttestations` を出す。CI は `npm test`（必須）と `docker compose --profile sidecar`（opt-in ジョブ）に分割 | SEP 本文 Reference Implementation 節の Phase 3 項目を埋める |
+| 2-b 実 ZK（in-process） | `snarkjs-v2`（Groth16、circom `add` 回路を事前コンパイルして `wasm` / `zkey` / `vk.json` を同梱。Week 1 の under-constrained 攻撃をレビュー観点にする）。第 2 形式として Noir（`@noir-lang/noir_js` + `@aztec/bb.js`, UltraHonk, トラステッドセットアップ不要）を採用し、同じ `add` を 2 系統で示す。両者は別 workspace（`packages/prover-snarkjs`, `packages/prover-noir`）に隔離するが `npm test` 既定に含める。Noir 側の回路（`.nr`）は Phase 3 の `provekit-v1` と共有できるよう `circuits/noir/` に置き、バックエンド固有物（`vk`, `.pkv`）だけを engine ごとに持つ。`proofUri` 経路（Phase 2-a (1)）は ProveKit の証明（最大 1MB 弱）が `_meta` インライン上限を超え得るため、Phase 2-b 着手前に完了していること（#7 §3.2）。各形式の proving 時間・メモリ・証明サイズ・検証時間・検証器依存サイズを `docs/BENCHMARKS.md` に記録 | 実 ZK 証明が 2 形式動き、計測値が公開される |
+| 3 sidecar 合成 | `packages/prover-sidecar`（TS アダプタ）+ `sidecars/{risc0,ezkl,nitro,tlsn}/Dockerfile`。`risc0-v1`: Rust host を Docker 化し `prove(circuitHash, witness) -> receipt` を HTTP で提供、検証は Rust sidecar `/verify` か `risc0-zkvm` verifier の WASM ビルド（可否を Phase 3 冒頭で PoC）。`ezkl-v1`: 生成は Python `ezkl` sidecar、検証は `@ezkljs/engine`（WASM）で TS 側（「生成は他言語、検証は TS」の非対称性を体現）。`tee-nitro-v1`: COSE_Sign1 attestation の検証（chain / PCR / user-data 鍵束縛 / nonce）を TS で実装し、ローカル CI ではモック attestation でフローを通す。`zktls-tlsn-v1`: `riskScore` の価格取得に TLSNotary sidecar を挟み `inputAttestations` を出す。`provekit-v1`: Phase 2-b の Noir 回路を `provekit-cli prepare / prove / verify` で処理する CLI sidecar（`circuitHash` = `.pkv` のハッシュ、`verificationKeyUri` は `.pkv`）。検証は `verifier-server` sidecar か `provekit-verifier` の WASM ビルド（可否を Phase 3 冒頭で PoC、risc0 と同じ扱い）。Groth16（`snarkjs-v2`, trusted setup・非 PQ・定数時間検証）と ProveKit（transparent・PQ・回路サイズ線形の検証）を並べ、形式ごとの信頼仮定の違いを実例として示す。CI は `npm test`（必須）と `docker compose --profile sidecar`（opt-in ジョブ）に分割 | SEP 本文 Reference Implementation 節の Phase 3 項目を埋める |
 | 4 SDK 移植 | `modelcontextprotocol/typescript-sdk` の Extension API へ `packages/protocol` を移植（正典）。Python SDK 版は `ezkl-v1` サーバー側の第 2 参照実装として位置づける（#4 §4-4） | SDK フォーク/ブランチ |
 | 発展（任意） | `fhe-tfhe-v1`（`node-seal` または TFHE-rs WASM でクライアント暗号化 → サーバー準同型評価。正しさは vFHE 待ちのため機密性のみのデモ）、MPC / co-SNARK prover（複数データプロバイダーの入力を秘密分散したまま証明。MP-SPDZ / MPyC / mpz sidecar） | Open Questions の材料 |
 | SEP 提出 | `docs/spec/verifiable-tools.md` の Reference Implementation 節に SDK 実装と計測結果へのリンクを追記し、`modelcontextprotocol/modelcontextprotocol` に SEP PR を提出（事前に MCP org の `experimental-ext-*` で incubation するかを判断） | SEP PR |
@@ -174,6 +174,7 @@ mcp-verifiable-tools-demo/
 |---|---|---|---|---|
 | 小回路 SNARK | `snarkjs` + Circom | Noir（`@noir-lang/noir_js` + `@aztec/bb.js`） | in-process（npm / WASM） | Groth16 は回路ごとのセットアップが必要。Noir は universal / setup 不要で TS 統合が公式 |
 | zkVM | RISC Zero（`risc0-v1`） | SP1 | sidecar（Rust, Docker） | TS 公式バインディング無し。receipt → Groth16 圧縮で証明サイズを ~0.2 KB に |
+| transparent / PQ SNARK | ProveKit（`provekit-v1`, WHIR + Spartan 変種, Noir フロントエンド） | — | sidecar（Rust CLI / `verifier-server`, Docker）。TS in-process 検証は WASM / npm 配布状況を要確認 | trusted setup 不要、ハッシュ仮定のみ、128-bit PQ。証明は 1MB 以内だが大きいため `proofUri` 前提。MIT、Least Authority 監査済み。`v1` ブランチが安定 API、v2（Goldilocks）で形式変更予定（#7） |
 | ZKML | ezkl（`ezkl-v1`） | — | 生成 sidecar（Python / CLI）、検証 in-process（`@ezkljs/engine`） | Scenario D（認証済みモデル推論）向け |
 | TEE | AWS Nitro Enclaves（`tee-nitro-v1`） | Intel SGX DCAP（`tee-sgx-dcap-v1`, 検証は sidecar）, AMD SEV-SNP | 生成 enclave、検証 in-process（`cbor` + `@peculiar/x509`） | 検証は TS で閉じる。生成は enclave 側 SDK |
 | 引数暗号化 | `hpke-js`（RFC 9180） | — | in-process | `x25519-aesgcm-demo-v1` を置換 |
@@ -209,7 +210,9 @@ mcp-verifiable-tools-demo/
 - 公式化前の拡張識別子: 現状は `io.modelcontextprotocol/verifiable-tools` を使用しているが、SEP 受諾前の第三者実装は vendor prefix（例 `com.ripple-node-lab/verifiable-tools`）を使うべき。受諾されなかった場合は識別子を切り替える。
 - `tools/list` 記述子は hint に留まるため、tool→`circuitHash` の帯域外レジストリ（署名付きマニフェスト / transparency log）の具体形。
 - `verifiable-tools/prove` の `resultTtlMs` 中にサーバーが保持すべき状態（入力そのものか、コミットメントと出力のみか）とブラインド呼び出しとの両立。
-- `risc0-zkvm` verifier の WASM ビルド可否、`@ezkljs/engine` の対応モデル規模、Nitro attestation 検証の TS 実装コスト（Phase 3 冒頭の PoC で確認）。
+- `risc0-zkvm` verifier の WASM ビルド可否、`@ezkljs/engine` の対応モデル規模、Nitro attestation 検証の TS 実装コスト、`provekit-verifier` / FFI の WASM・npm 配布状況（Phase 3 冒頭の PoC で確認）。
+- `proofFormat` ごとの信頼仮定（trusted setup の有無 / PQ 性 / 検証の succinct 性）をクライアントが判断できるようにする方法: capability に `trustAssumptions` 相当のメタデータを載せるか、format レジストリ側で表にするか（#7 §3.5。上記「`proofFormat` レジストリ」と併せて検討）。
+- 双方向 proof（client-attested inputs）: ブラインド呼び出しでは秘密入力の持ち主はクライアントなので、ProveKit 的な「秘密を持つ側がその場で証明する」モデルを取り入れ、クライアントが自分の入力について証明を付けてサーバーに渡す拡張を仕様の Open Question に加えるか（#7 §3.3）。
 - vFHE（`fhe-tfhe-v1` で正しさも保証する構成）と MPC / co-SNARK prover を Phase として起こすか、Open Question に留めるか。
 - Scenario A（ツール市場）向けに capability へ価格 / コストヒントを載せるか（経済的インセンティブの扱い、#94 コメント 3）。
 - SEP 受諾前に MCP org 内の experimental extension（`experimental-ext-*`、WG/IG 紐付け必須）として incubation を行うか。
