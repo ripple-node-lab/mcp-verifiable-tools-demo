@@ -101,6 +101,9 @@ intentionally insecure and demo-only; `.ptau` files and intermediate zkeys are
 ignored and are not committed. Run `npm run bench` to regenerate the
 machine-specific measurements in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 bb.js 5.2.0 emits a proof-generation status line to stdout for each proof.
+After changing a circuit, rebuild the artifacts first; the rebuild regenerates
+the Noir verification-key document and updates the pinned hashes. Then run
+`npm run build && npm test` to verify the generated artifacts and pins.
 
 ## 日本語
 

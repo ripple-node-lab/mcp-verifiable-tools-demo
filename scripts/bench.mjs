@@ -5,6 +5,7 @@ import { startServer } from "@demo/server";
 import { VerifiableClient } from "@demo/client";
 import { EXTENSION_ID } from "@demo/protocol";
 import { closeProverWorker as closeNoirWorker } from "@demo/prover-noir";
+import { destroy as destroyNoir } from "@demo/prover-noir";
 import { closeProverWorker as closeSnarkjsWorker } from "@demo/prover-snarkjs";
 
 const root = new URL("../", import.meta.url);
@@ -85,4 +86,5 @@ try {
   await server.close();
   closeSnarkjsWorker();
   closeNoirWorker();
+  await destroyNoir();
 }

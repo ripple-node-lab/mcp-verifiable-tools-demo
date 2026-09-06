@@ -1,7 +1,8 @@
 import { Barretenberg } from "@aztec/bb.js";
+import { PINNED_CIRCUITS } from "@demo/protocol";
 
 export const FORMAT = "noir-v1";
-export const circuitHash = "0x70d3e40690fb97fbcace5ce1d3114282e7dfff1387b125767b6a942e1ca3261e";
+export const circuitHash = PINNED_CIRCUITS.add.formats?.[FORMAT] ?? PINNED_CIRCUITS.add.default;
 let apiPromise: Promise<Barretenberg> | undefined;
 
 export async function getApi(): Promise<Barretenberg> {

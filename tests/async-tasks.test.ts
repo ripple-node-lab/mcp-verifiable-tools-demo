@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { VerifiableClient } from "@demo/client";
 import { TaskStore } from "@demo/server";
-import { clientCapabilities, META_CLIENT_CAPABILITIES } from "@demo/protocol";
+import { clientCapabilities, JsonRpcProtocolError, META_CLIENT_CAPABILITIES } from "@demo/protocol";
 import { withServer, rpc, expectTask } from "./helpers.js";
 test("riskScore is synchronous without tasks and asynchronous with tasks", async () => withServer(async (server) => {
   const plain = await rpc(server, "tools/call", { name: "riskScore", arguments: { symbol: "AAPL" }, _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["demo-sig-v1"]) } }, { "Mcp-Name": "riskScore" });
@@ -45,6 +45,21 @@ test("synchronous task producer failures mark the task failed", async () => {
   assert.equal(store.get(task.taskId)?.status, "failed");
   assert.equal(store.get(task.taskId)?.error?.message, "synchronous failure");
 });
+test("task failures preserve JSON-RPC protocol errors", async () => {
+  const store = new TaskStore();
+  const task = store.create(async () => { throw new JsonRpcProtocolError(-32602, "invalid arguments", { field: "a" }); });
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(store.get(task.taskId)?.error, { code: -32602, message: "invalid arguments", data: { field: "a" } });
+});
+test("tasks-declared ZK calls reject invalid add arguments immediately", async () => withServer(async (server) => {
+  const response = await rpc(server, "tools/call", {
+    name: "add",
+    arguments: { a: -1, b: 2 },
+    _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["snarkjs-v2"], { tasks: true }) }
+  }, { "Mcp-Name": "add" });
+  assert.equal(response.error?.code, -32602);
+  assert.equal(server.tasks.controllerCount, 0);
+}));
 test("working tasks abort when their TTL expires", async () => {
   const store = new TaskStore({ ttlMs: 10 });
   let aborted = false;

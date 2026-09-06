@@ -5,7 +5,7 @@ import {
   CallToolResult, EXTENSION_ID, HPKE_INFO_ARGS, HPKE_INFO_REPLY, JsonRpcRequest, JsonRpcResponse,
   META_CLIENT_CAPABILITIES, META_SERVER_INFO, RequestMeta, RESULT_TTL_MS, SUPPORTED_PROOF_FORMATS, b64u, hpkeOpen, hpkeSeal,
   inputCommitment, isRecord, isValidNonce, jcs, JsonValue, JsonRpcProtocolError, negotiateProofFormat, expectedCircuitHash,
-  outputCommitment, rawX25519Public, tasksDeclared, verifiableCapability
+  outputCommitment, parseAddArguments, rawX25519Public, tasksDeclared, verifiableCapability
 } from "@demo/protocol";
 import { DemoCommitProver, DemoSigProver, Prover } from "@demo/prover";
 import { prover as noirProver, artifacts as noirArtifacts, FORMAT as NOIR_FORMAT } from "@demo/prover-noir";
@@ -126,6 +126,9 @@ export class DemoServer {
     const toolFormats = toolProofFormats(tool);
     const format = negotiateProofFormat(capability, toolFormats, requested);
     if (capability?.requireProof && !format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format");
+    if (tool === "add" && isZkFormat(format ?? "") && !parseAddArguments(params.arguments)) {
+      throw new JsonRpcProtocolError(-32602, "invalid arguments for add");
+    }
     const execute = async (signal?: AbortSignal): Promise<CallToolResult> => {
       const execution = executeTool(tool, params.arguments!, isZkFormat(format ?? ""));
       if (tool === "priceQuote" && capability && !capability.requireProof) {

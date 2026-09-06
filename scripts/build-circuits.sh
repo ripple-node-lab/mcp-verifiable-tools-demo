@@ -20,6 +20,8 @@ case "$(nargo --version)" in
 esac
 
 circom "$SNARK_DIR/add.circom" --r1cs --wasm --sym -l "$ROOT/node_modules" -o "$SNARK_DIR"
+cp "$SNARK_DIR/add_js/add.wasm" "$SNARK_DIR/add.wasm"
+rm -rf "$SNARK_DIR/add_js" "$SNARK_DIR/add.sym"
 
 # This is an insecure single-party Powers of Tau ceremony for the demo only.
 # It is not suitable for production or security-sensitive deployments.
@@ -33,5 +35,8 @@ trap 'rm -rf "$TMP"' EXIT
 "$SNARKJS" zkey contribute "$SNARK_DIR/add_0000.zkey" "$SNARK_DIR/add_final.zkey" \
   --name="mcp-verifiable-tools-demo" -e="demo-only-zkey-entropy"
 "$SNARKJS" zkey export verificationkey "$SNARK_DIR/add_final.zkey" "$SNARK_DIR/vk.json"
+rm -f "$SNARK_DIR/add_0000.zkey"
 
 (cd "$NOIR_DIR" && nargo compile)
+node "$ROOT/scripts/write-noir-vk.mjs"
+node "$ROOT/scripts/update-pins.mjs"
