@@ -124,9 +124,9 @@ Both client and server advertise the extension under the `extensions` capability
 | `blindExecution` | `boolean` | Whether the party supports blind / committed-input tool calls. |
 | `requireProof` | `boolean` | For clients: if true, the server SHOULD return a proof when it can; servers MAY omit results for calls they cannot prove. |
 | `requireInputProvenance` | `boolean` | For clients: if true, results that consume external data MUST carry `inputAttestations` (see §Input provenance). |
-| `blindEncryptionSchemes` | `string[]` | For servers: `encryptionScheme` values accepted by `verifiable-tools/call`, e.g. `["hpke-v1"]`. |
-| `blindPublicKey` | `string` | For servers: base64url public key for the first listed scheme. See §Blind / committed-input tool calls for how it must be attested or pinned. |
-| `resultTtlMs` | `number` | For servers: how long a `resultId` stays provable via `verifiable-tools/prove` (see §Deferred proofs). |
+| `blindEncryptionSchemes` | `string[]` | For servers: `encryptionScheme` values accepted by `verifiable-tools/call`, e.g. `["hpke-v1"]`. REQUIRED when `blindExecution: true` on a server. |
+| `blindPublicKey` | `string` | For servers: base64url public key for the first listed scheme. See §Blind / committed-input tool calls for how it must be attested or pinned. REQUIRED when `blindExecution: true` on a server. |
+| `resultTtlMs` | `number` | For servers: how long a `resultId` stays provable via `verifiable-tools/prove`. REQUIRED when the server may emit `resultId`; clients MUST treat a `resultId` from a server that did not advertise `resultTtlMs` as unprovable. |
 
 Example `server/discover` response:
 
@@ -193,7 +193,7 @@ A client requesting verifiable output includes the extension under `extensions` 
 | Request option | Type | Description |
 |---|---|---|
 | `requestedProofFormat` | `string` | Preferred format among the negotiated intersection. |
-| `nonce` | `string` | Fresh client randomness (≥ 16 bytes, hex) that the server MUST bind into the proof and echo back. See §Result binding. |
+| `nonce` | `string` | Lower-case hex with `0x` prefix encoding 16–64 bytes (`^0x[0-9a-f]{32,128}$`). The server MUST bind it into the proof and echo it back. See §Result binding. |
 | `replyPublicKey` | `string` | For blind calls: client key to which the server encrypts `content` when the tool's output must also stay confidential. |
 
 On HTTP transports the request MUST also include:
@@ -262,11 +262,11 @@ The server MUST only emit `proofFormat` values it advertised in its capability o
 
 A proof is only useful if the client can tie it to the exact request it made and the exact result it received. Three bindings are defined.
 
-**Input binding.** `inputCommitment = "0x" || hex(SHA-256(salt || JCS(arguments)))` where `JCS` is the JSON Canonicalization Scheme ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)) and `salt` is 32 random bytes chosen by the client. For plain `tools/call` the client MAY use an empty salt (the arguments are already visible to the server); for `verifiable-tools/call` the salt MUST be non-empty and MUST be carried inside `encryptedArguments`, so that the commitment is *hiding* and a network observer cannot brute-force low-entropy arguments from the commitment.
+**Input binding.** `inputCommitment = "0x" || hex(SHA-256(salt || JCS(arguments)))` where `JCS` is the JSON Canonicalization Scheme ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)). `salt` is either empty or exactly 32 bytes from a cryptographically secure random source. For plain `tools/call` the salt MUST be empty (no request field carries it, and the arguments are visible to the server anyway), so `inputCommitment = "0x" || hex(SHA-256(JCS(arguments)))`. For `verifiable-tools/call` the salt MUST be 32 random bytes and MUST be carried inside `encryptedArguments`, so that the commitment is *hiding* and a network observer cannot brute-force low-entropy arguments from the commitment. Servers MUST reject a blind call whose decrypted salt is not 32 bytes with `-32602`.
 
-**Output binding.** `outputCommitment = "0x" || hex(SHA-256(JCS(content)))` over the `content` array of the `CallToolResult`. When `publicInputs` is present, the first element MUST be `outputCommitment` (or the output value itself when the format's public inputs are the raw output; the format definition says which).
+**Output binding.** `outputCommitment = "0x" || hex(SHA-256(JCS(content)))` over the `content` array of the `CallToolResult`. When `publicInputs` is present, `publicInputs[0]` MUST always be `outputCommitment`; formats whose circuit exposes the raw output as a public signal include it additionally in the format-specific tail.
 
-**Request binding.** A client MAY include a fresh random `nonce` in `params._meta["io.modelcontextprotocol/verifiable-tools"].nonce`. If present, the server MUST bind it into the proof (as a public input, or in the signed/attested payload) and echo it in the result metadata. Clients that need freshness (any tool whose correct answer changes over time, e.g. prices, balances, health checks) SHOULD always send a nonce; otherwise a server can replay a proof that was valid for an earlier call.
+**Request binding.** A client MAY include a fresh random `nonce` in `params._meta["io.modelcontextprotocol/verifiable-tools"].nonce`. A valid nonce is lower-case hex with a `0x` prefix encoding 16–64 bytes (`^0x[0-9a-f]{32,128}$`). If present, the server MUST bind it into the proof (as a public input, or in the signed/attested payload) and echo it in the result metadata. The server MUST reject a request whose `nonce` is present but does not match this grammar with `-32602`. Uniqueness is the client's responsibility: the server does not track nonces; the client MUST generate a fresh nonce per request and MUST reject a result whose echoed nonce it did not issue for that request. Clients that need freshness (any tool whose correct answer changes over time, e.g. prices, balances, health checks) SHOULD always send a nonce; otherwise a server can replay a proof that was valid for an earlier call.
 
 A verifier therefore checks, in order: (1) `proofFormat` was negotiated; (2) `circuitHash` matches the pinned hash for the tool (§Tool descriptor metadata); (3) `inputCommitment` equals its own recomputation; (4) `outputCommitment` equals `SHA-256(JCS(content))`; (5) `nonce` matches what it sent; (6) the proof / attestation verifies under the pinned verification key.
 
@@ -387,7 +387,9 @@ verifiable-tools/prove
 | `proofFormat` | `string` | No | Preferred proof format. |
 | `nonce` | `string` | No | Fresh nonce to bind into the deferred proof. |
 
-The response is either a `CallToolResult` whose `content` is byte-identical to the original and whose `_meta` now contains the proof, or a task (`resultType: "task"`) that resolves to one. The server MUST retain enough state (inputs or their commitment, output, nonce) to prove the original computation for at least the `resultTtlMs` it advertises in its capability object; after that it MAY return `-32602` with `data.reason: "resultExpired"`.
+`verifiable-tools/prove` is an ordinary JSON-RPC request on the same MCP session and transport as `tools/call`. It is available only after the extension has been negotiated by both parties; servers that have not advertised `resultTtlMs` MUST answer `-32601`. `resultId` MUST be unguessable (at least 128 bits from a cryptographically secure random source) and MUST be bound to the principal (authorization identity) and, where the transport has one, the session that made the original call; the server MUST answer `-32602` with `data.reason: "resultNotFound"` for any other caller, without distinguishing unknown from unauthorized identifiers. For results of blind calls whose `content` was returned encrypted to `replyPublicKey`, the deferred response MUST encrypt `content` the same way. Request options (`proofFormat`, `nonce`) live in `params` directly, not under `_meta`.
+
+The response is either a `CallToolResult` whose `content` is byte-identical to the original and whose `_meta` now contains the proof, or a task (`resultType: "task"`) that resolves to one. The server MUST retain enough state (inputs or their commitment, output, nonce) to prove the original computation for at least the `resultTtlMs` it advertises (REQUIRED when emitting `resultId`); after that it MAY return `-32602` with `data.reason: "resultExpired"`.
 
 Which mode is appropriate is a per-tool decision expressed by `proofPolicy`. `always` suits low-volume, high-value calls (Scenario C); `onDemand` and `sampled` suit high-volume calls where the *possibility* of being audited is the deterrent (Scenario B). A server that is caught returning an unprovable result under `sampled` should be treated by the client as untrusted for all past results in the same period.
 
@@ -450,7 +452,8 @@ Example request:
         "extensions": {
           "io.modelcontextprotocol/verifiable-tools": {
             "proofFormats": ["tee-sgx-v1"],
-            "blindExecution": true
+            "blindExecution": true,
+            "nonce": "0x5f1c..."
           }
         }
       }
@@ -480,6 +483,9 @@ Example response:
         "proof": "0x8f3a...",
         "proofFormat": "tee-sgx-v1",
         "inputCommitment": "0xdeadbeef...",
+        "outputCommitment": "0x...",
+        "nonce": "0x5f1c...",
+        "publicInputs": ["0x<outputCommitment>", "0x<inputCommitment>", "0x5f1c..."],
         "teeAttestation": "0x9c2f..."
       }
     }
@@ -602,7 +608,8 @@ This extension is **fully backward compatible**.
 - **Availability**: If `requireProof: true` is set and the server cannot generate a proof, the server may refuse the call. Clients SHOULD handle this gracefully.
 - **Replay**: Without a `nonce`, a valid proof for an earlier call is also a valid proof for the current one. Clients MUST send a nonce for any tool whose correct output is time-dependent, and MUST reject results whose echoed nonce differs.
 - **Output substitution**: Without `outputCommitment` bound into the proof, a server can pair a genuine proof with a different `content`. Verifiers MUST recompute `outputCommitment` from `content`.
-- **Hiding commitments**: An unsalted hash of low-entropy arguments (an account number, a yes/no flag) is trivially inverted by anyone who sees the commitment. Blind calls MUST use a salted commitment.
+- **Hiding commitments**: An unsalted hash of low-entropy arguments (an account number, a yes/no flag) is trivially inverted by anyone who sees the commitment. Blind calls MUST use a 32-byte random salt.
+- **Deferred-proof retrieval**: `resultId` is a bearer capability to retained `content`. It MUST be unguessable, scoped to the original caller, and expire with `resultTtlMs`.
 - **Input provenance**: A verified proof over fabricated inputs is worthless. Clients acting on externally sourced data SHOULD require `inputAttestations` and verify them independently of the main proof.
 - **Descriptor trust**: `tools/list` metadata is server-controlled. Pin `circuitHash` / keys out of band or on first use; treat changes as security events.
 - **Randomness reuse**: Ed25519 is deterministic, but Schnorr/ECDSA-style signing in custom TEE code, and Beaver-triple or mask reuse in MPC-based provers, leak keys or inputs when randomness is reused. Implementations MUST use fresh randomness per proof and SHOULD include a negative test for reuse.
@@ -653,7 +660,6 @@ CI results and per-format benchmarks will be linked here as each phase lands.
 - How should clients handle revocation of verification keys or TEE signing keys?
 - Should this extension also apply to `resources/read` and `prompts/get`, or remain scoped to `tools/call`?
 - What is the canonical encoding for `publicInputs` to maximize interoperability across ZKP libraries? (This revision fixes `publicInputs[0]` and the commitment construction; field-element encoding for the remaining entries is still per-format.)
-- Should `blindPublicKey` / `blindEncryptionSchemes` be normative capability fields or remain implementation-defined?
 - Verifiable FHE: `fhe-tfhe-v1` is reserved, but FHE alone gives confidentiality without correctness. What is the minimum viable vFHE construction (proof over the homomorphic evaluation, or TEE-hosted FHE evaluation) worth standardizing?
 - MPC / co-SNARK provers: when inputs come from several parties (Scenario A with multiple data providers), should the extension describe a multi-prover `inputCommitment` (one commitment per party) or leave that to the format?
 - Economics: should the capability object carry a price or cost hint per `proofFormat` so that agents in a tool market (Scenario A) can choose between `always`, `onDemand`, and `sampled` automatically?

@@ -121,9 +121,9 @@ io.modelcontextprotocol/verifiable-tools
 | `blindExecution` | `boolean` | ブラインド／コミットメント入力によるツール実行に対応するか |
 | `requireProof` | `boolean` | クライアント側：true の場合、サーバーは可能な限り証明を返す。サーバー側：証明不能な呼び出しを拒否しうる |
 | `requireInputProvenance` | `boolean` | クライアント側：true の場合、外部データを消費する結果は `inputAttestations`（§7.4 入力 provenance）を必ず含む |
-| `blindEncryptionSchemes` | `string[]` | サーバー側：`verifiable-tools/call` が受け付ける `encryptionScheme` の値。例：`["hpke-v1"]` |
-| `blindPublicKey` | `string` | サーバー側：最初に列挙された方式の base64url 公開鍵。どのように Attestation で束縛またはピン留めするかは §9 を参照 |
-| `resultTtlMs` | `number` | サーバー側：`resultId` が `verifiable-tools/prove` によって証明可能な期間（§8.1 遅延証明を参照） |
+| `blindEncryptionSchemes` | `string[]` | サーバー側：`verifiable-tools/call` が受け付ける `encryptionScheme` の値。例：`["hpke-v1"]`。サーバーで `blindExecution: true` の場合は必須 |
+| `blindPublicKey` | `string` | サーバー側：最初に列挙された方式の base64url 公開鍵。どのように Attestation で束縛またはピン留めするかは §9 を参照。サーバーで `blindExecution: true` の場合は必須 |
+| `resultTtlMs` | `number` | サーバー側：`resultId` が `verifiable-tools/prove` によって証明可能な期間。サーバーが `resultId` を返す可能性がある場合は必須であり、クライアントは `resultTtlMs` を広告していないサーバーからの `resultId` を証明不能として扱わなければならない |
 
 `server/discover` 応答例：
 
@@ -190,7 +190,7 @@ io.modelcontextprotocol/verifiable-tools
 | リクエストオプション | 型 | 説明 |
 |---|---|---|
 | `requestedProofFormat` | `string` | ネゴシエートされた共通集合から選ぶ優先形式 |
-| `nonce` | `string` | クライアントが生成する新鮮な乱数（16 バイト以上、hex）。サーバーは証明に束縛して返さなければならない。§7.2 結果の束縛を参照 |
+| `nonce` | `string` | `0x` プレフィックス付きの小文字 hex で、16〜64 バイトをエンコードするもの（`^0x[0-9a-f]{32,128}$`）。サーバーは証明に束縛して返さなければならない。§7.2 結果の束縛を参照 |
 | `replyPublicKey` | `string` | ブラインド呼び出し用。ツール出力も機密にする必要がある場合に、サーバーが `content` を暗号化する先のクライアント鍵 |
 
 HTTP トランスポート使用時は以下のヘッダーが必要：
@@ -259,11 +259,11 @@ Mcp-Name: calculateRisk
 
 クライアントが送信した正確なリクエストと、受信した正確な結果に証明を結び付けられて初めて、証明は有用になる。3 つの束縛を定義する。
 
-**入力束縛。** `inputCommitment = "0x" || hex(SHA-256(salt || JCS(arguments)))`。ここで `JCS` は JSON Canonicalization Scheme（[RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)）であり、`salt` はクライアントが選ぶ 32 バイトのランダム値である。通常の `tools/call` では引数がサーバーに見えているため、クライアントは空の salt を使ってもよい。`verifiable-tools/call` ではコミットメントを*隠蔽する*ため、salt は空であってはならず、ネットワーク観測者が低エントロピーの引数をコミットメントから総当たりできないよう `encryptedArguments` 内に含めなければならない。
+**入力束縛。** `inputCommitment = "0x" || hex(SHA-256(salt || JCS(arguments)))`。ここで `JCS` は JSON Canonicalization Scheme（[RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)）である。`salt` は空、または暗号学的に安全な乱数源から得た正確に 32 バイトのいずれかである。通常の `tools/call` では salt は空でなければならない（salt を運ぶリクエストフィールドはなく、そもそも引数はサーバーに見えているため）。したがって `inputCommitment = "0x" || hex(SHA-256(JCS(arguments)))` となる。`verifiable-tools/call` では salt は 32 バイトのランダム値でなければならず、コミットメントを*隠蔽する*ため `encryptedArguments` 内に含めなければならない。これによりネットワーク観測者が低エントロピーの引数をコミットメントから総当たりすることを防ぐ。サーバーは、復号した salt が 32 バイトでないブラインド呼び出しを `-32602` で拒否しなければならない。
 
-**出力束縛。** `outputCommitment = "0x" || hex(SHA-256(JCS(content)))`。`CallToolResult` の `content` 配列を対象とする。`publicInputs` が存在する場合、最初の要素は `outputCommitment` でなければならない（形式の公開入力が生の出力である場合は出力値そのものでもよく、どちらを使うかは形式定義で指定する）。
+**出力束縛。** `outputCommitment = "0x" || hex(SHA-256(JCS(content)))`。`CallToolResult` の `content` 配列を対象とする。`publicInputs` が存在する場合、`publicInputs[0]` は常に `outputCommitment` でなければならない。回路が生の出力を公開シグナルとして公開する形式では、形式固有の tail にそれを追加で含める。
 
-**リクエスト束縛。** クライアントは `params._meta["io.modelcontextprotocol/verifiable-tools"].nonce` に新鮮な乱数 `nonce` を含めてもよい。含めた場合、サーバーはそれを証明（公開入力、または署名／Attestation 対象ペイロード）に束縛し、結果メタデータにエコーしなければならない。鮮度が必要なクライアント（価格、残高、ヘルスチェックなど、正しい回答が時間で変わるツール）は常に nonce を送るべきである。そうしなければ、サーバーは以前の呼び出しで有効だった証明を再送できる。
+**リクエスト束縛。** クライアントは `params._meta["io.modelcontextprotocol/verifiable-tools"].nonce` に新鮮な乱数 `nonce` を含めてもよい。有効な nonce は `0x` プレフィックス付きの小文字 hex で、16〜64 バイトをエンコードするもの（`^0x[0-9a-f]{32,128}$`）である。含めた場合、サーバーはそれを証明（公開入力、または署名／Attestation 対象ペイロード）に束縛し、結果メタデータにエコーしなければならない。サーバーは、存在する `nonce` がこの文法に一致しないリクエストを `-32602` で拒否しなければならない。一意性はクライアントの責任である。サーバーは nonce を追跡せず、クライアントはリクエストごとに新しい nonce を生成し、そのリクエストで発行していない nonce が結果でエコーされた場合は拒否しなければならない。鮮度が必要なクライアント（価格、残高、ヘルスチェックなど、正しい回答が時間で変わるツール）は常に nonce を送るべきである。そうしなければ、サーバーは以前の呼び出しで有効だった証明を再送できる。
 
 したがって検証者は、次の順で確認する。(1) `proofFormat` がネゴシエート済みであること、(2) `circuitHash` がツールに対してピン留めされたハッシュと一致すること（§7.3 ツール記述子メタデータ）、(3) `inputCommitment` を自分で再計算した値と一致すること、(4) `outputCommitment` が `SHA-256(JCS(content))` と一致すること、(5) `nonce` が送信値と一致すること、(6) ピン留めされた検証鍵で証明／Attestation が検証できること。
 
@@ -384,7 +384,9 @@ verifiable-tools/prove
 | `proofFormat` | `string` | 任意 | 優先する証明形式 |
 | `nonce` | `string` | 任意 | 遅延証明に束縛する新鮮な nonce |
 
-応答は、元の `content` とバイト単位で一致し、`_meta` に証明が追加された `CallToolResult` か、後者に解決されるタスクのいずれかである。サーバーは、capability オブジェクトで広告した `resultTtlMs` の期間以上、元の計算を証明できる十分な状態（入力またはそのコミットメント、出力、nonce）を保持しなければならない。その期間を過ぎた場合は、`data.reason: "resultExpired"` を伴う `-32602` を返してもよい。
+`verifiable-tools/prove` は、`tools/call` と同じ MCP セッションおよびトランスポート上の通常の JSON-RPC リクエストである。これは双方が拡張をネゴシエートした後にのみ利用できる。`resultTtlMs` を広告していないサーバーは `-32601` で応答しなければならない。`resultId` は推測不能でなければならず（暗号学的に安全な乱数源から得た少なくとも 128 ビット）、プリンシパル（認可主体）および、トランスポートに存在する場合は元の呼び出しを行ったセッションに束縛されなければならない。サーバーは他の呼び出し元に対して、未知の識別子か認可されていない識別子かを区別せず、`data.reason: "resultNotFound"` を伴う `-32602` で応答しなければならない。`replyPublicKey` に暗号化して `content` を返したブラインド呼び出しの結果では、遅延応答も同じ方法で `content` を暗号化しなければならない。リクエストオプション（`proofFormat`、`nonce`）は `_meta` の下ではなく、`params` に直接置く。
+
+応答は、元の `content` とバイト単位で一致し、`_meta` に証明が追加された `CallToolResult` か、後者に解決されるタスクのいずれかである。サーバーは、広告した `resultTtlMs` の期間以上（`resultId` を返す場合は必須）、元の計算を証明できる十分な状態（入力またはそのコミットメント、出力、nonce）を保持しなければならない。その期間を過ぎた場合は、`data.reason: "resultExpired"` を伴う `-32602` を返してもよい。
 
 どのモードが適切かは、`proofPolicy` で表すツール単位の判断である。`always` は低頻度・高価値の呼び出し（シナリオ C）に適し、`onDemand` と `sampled` は、監査される可能性自体が抑止力となる高頻度呼び出し（シナリオ B）に適する。`sampled` のもとで、証明不能な結果を返していたことが発覚したサーバーは、同じ期間の過去の結果についてもクライアントから信頼されないものとして扱うべきである。
 
@@ -447,7 +449,8 @@ Mcp-Method: verifiable-tools/call
         "extensions": {
           "io.modelcontextprotocol/verifiable-tools": {
             "proofFormats": ["tee-sgx-v1"],
-            "blindExecution": true
+            "blindExecution": true,
+            "nonce": "0x5f1c..."
           }
         }
       }
@@ -477,6 +480,9 @@ Mcp-Method: verifiable-tools/call
         "proof": "0x8f3a...",
         "proofFormat": "tee-sgx-v1",
         "inputCommitment": "0xdeadbeef...",
+        "outputCommitment": "0x...",
+        "nonce": "0x5f1c...",
+        "publicInputs": ["0x<outputCommitment>", "0x<inputCommitment>", "0x5f1c..."],
         "teeAttestation": "0x9c2f..."
       }
     }
@@ -599,7 +605,8 @@ MCP `2026-07-28` で公式の長時間タスクモデルが確立した。本拡
 - **可用性**：`requireProof: true` かつサーバーが証明できない場合、サーバーは呼び出しを拒否しうる。クライアントはこれを適切に処理すべき。
 - **リプレイ**：`nonce` がなければ、以前の呼び出しに対する有効な証明は現在の呼び出しにも有効になってしまう。正しい出力が時間依存するツールでは、クライアントは nonce を送信し、エコーされた nonce が異なる結果を拒否しなければならない。
 - **出力の差し替え**：証明に `outputCommitment` が束縛されていなければ、サーバーは本物の証明を別の `content` と組み合わせられる。検証者は `content` から `outputCommitment` を再計算しなければならない。
-- **隠蔽コミットメント**：低エントロピーの引数（口座番号、yes/no フラグなど）に対する salt なしハッシュは、コミットメントを見た者が容易に逆算できる。ブラインド呼び出しでは salt 付きコミットメントを使わなければならない。
+- **隠蔽コミットメント**：低エントロピーの引数（口座番号、yes/no フラグなど）に対する salt なしハッシュは、コミットメントを見た者が容易に逆算できる。ブラインド呼び出しでは 32 バイトのランダム salt を使わなければならない。
+- **遅延証明の取得**：`resultId` は保持された `content` への bearer capability である。推測不能で、元の呼び出し元にスコープされ、`resultTtlMs` とともに期限切れにならなければならない。
 - **入力 provenance**：捏造された入力に対する検証済み証明には価値がない。外部データに基づき行動するクライアントは `inputAttestations` を要求し、主証明とは独立に検証すべきである。
 - **記述子の信頼**：`tools/list` のメタデータはサーバーが制御する。`circuitHash`／鍵は帯域外または初回利用時にピン留めし、変更をセキュリティイベントとして扱う。
 - **乱数の再利用**：Ed25519 は決定的だが、カスタム TEE コードの Schnorr／ECDSA 方式署名や、MPC ベースの prover における Beaver トリプル／マスクの再利用は、乱数再利用時に鍵または入力を漏洩させる。実装は証明ごとに新鮮な乱数を使わなければならず、再利用に対する否定的テストを含めるべきである。
@@ -650,7 +657,6 @@ CI 結果と形式ごとのベンチマークは、各 Phase が実現した時�
 - 検証鍵や TEE 署名鍵の失効をクライアントがどう扱うべきか。
 - 本拡張を `resources/read` や `prompts/get` まで広げるべきか、`tools/call` に限定すべきか。
 - 複数の ZKP ライブラリ間で相互運用性を最大化するための `publicInputs` の標準エンコーディングは何か。（本改訂では `publicInputs[0]` とコミットメント構成を固定した。残りのフィールド要素エンコーディングは形式ごとに定める。）
-- `blindPublicKey`／`blindEncryptionSchemes` は規範的な capability フィールドとすべきか、それとも実装定義のままにすべきか。
 - 検証可能 FHE：`fhe-tfhe-v1` は予約されているが、FHE 単独では正しさなしの機密性しか得られない。標準化に値する最小限の vFHE 構成（準同型評価に対する証明、または TEE ホスト型 FHE 評価）は何か。
 - MPC／co-SNARK prover：複数当事者から入力が来る場合（複数データプロバイダーを持つシナリオ A）、拡張でマルチプロバーの `inputCommitment`（当事者ごとに 1 つ）を記述すべきか、それとも形式に委ねるべきか。
 - 経済性：ツール市場（シナリオ A）のエージェントが `always`、`onDemand`、`sampled` を自動選択できるよう、capability オブジェクトに `proofFormat` ごとの価格またはコストヒントを持たせるべきか。
