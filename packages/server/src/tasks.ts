@@ -35,6 +35,8 @@ export class TaskStore {
     for (const [taskId, task] of this.tasks) {
       if (Date.parse(task.lastUpdatedAt) + task.ttlMs >= now) continue;
       if (task.status === "working") {
+        this.controllers.get(taskId)?.abort();
+        this.controllers.delete(taskId);
         task.status = "failed";
         task.lastUpdatedAt = new Date(now).toISOString();
       } else {

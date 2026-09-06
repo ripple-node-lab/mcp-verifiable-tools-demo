@@ -6,8 +6,9 @@ export class DemoSigVerifier implements Verifier {
   readonly format = "demo-sig-v1";
   constructor(private readonly registry: VerificationKeyRegistry = new VerificationKeyRegistry([])) {}
   async verify(meta: VerifiableToolsMeta, context: VerifyContext): Promise<boolean> {
-    if (meta.proofFormat !== this.format || !meta.verificationKeyUri || !meta.proof || !meta.circuitHash || !meta.outputCommitment) return false;
-    const key = await this.registry.get(meta.circuitHash, meta.verificationKeyUri);
+    const verificationKeyUri = context.verificationKeyUri ?? meta.verificationKeyUri;
+    if (meta.proofFormat !== this.format || !verificationKeyUri || !meta.proof || !meta.circuitHash || !meta.outputCommitment) return false;
+    const key = await this.registry.get(meta.circuitHash, verificationKeyUri);
     const signature = Buffer.from(meta.proof.slice(2), "hex");
     return verifySignature(null, Buffer.from(meta.circuitHash + meta.inputCommitment + meta.outputCommitment + (meta.nonce ?? "0x")), key as Parameters<typeof verifySignature>[2], signature) &&
       Array.isArray(meta.publicInputs) && meta.publicInputs.length === 3 &&

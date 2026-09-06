@@ -4,7 +4,7 @@ import { privateCreditCheck } from "./tools/creditCheck.js";
 import { riskScore } from "./tools/riskScore.js";
 export type ToolName = "add" | "riskScore" | "privateCreditCheck" | "priceQuote";
 export interface ToolExecution { output: string; arguments: JsonValue; }
-export type DescriptorOverride = (tool: string, descriptor: ToolDescriptorMeta) => ToolDescriptorMeta;
+export type DescriptorOverride = (tool: string, descriptor: ToolDescriptorMeta) => ToolDescriptorMeta | undefined;
 export function toolList(baseUrl: string, override?: DescriptorOverride): JsonValue {
   const definitions: Array<{ name: ToolName; description: string; inputSchema: JsonValue; proofPolicy: ToolDescriptorMeta["proofPolicy"]; blind: boolean }> = [
     { name: "add", description: "Add two numbers", inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } }, required: ["a", "b"] }, proofPolicy: "always", blind: false },
@@ -22,7 +22,8 @@ export function toolList(baseUrl: string, override?: DescriptorOverride): JsonVa
       blind,
       formats: { "demo-sig-v1": { verificationKeyUri: `${baseUrl}/vk/${hash}` }, "demo-commit-v1": {} }
     };
-    return { name, description, inputSchema, _meta: { [EXTENSION_ID]: (override?.(name, descriptor) ?? descriptor) as unknown as JsonValue } };
+    const overridden = override ? override(name, descriptor) : descriptor;
+    return { name, description, inputSchema, ...(overridden ? { _meta: { [EXTENSION_ID]: overridden as unknown as JsonValue } } : {}) };
   });
 }
 export function executeTool(name: ToolName, args: JsonValue): ToolExecution {

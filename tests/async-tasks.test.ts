@@ -38,3 +38,13 @@ test("completed tasks expire from the task store", async () => {
   await new Promise<void>((resolve) => setTimeout(resolve, 20));
   assert.equal(store.get(task.taskId), undefined);
 });
+test("working tasks abort when their TTL expires", async () => {
+  const store = new TaskStore({ ttlMs: 10 });
+  let aborted = false;
+  const task = store.create(async (signal) => await new Promise((resolve) => {
+    signal.addEventListener("abort", () => { aborted = true; resolve({ resultType: "complete", content: [{ type: "text", text: "aborted" }], isError: false }); }, { once: true });
+  }));
+  await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  assert.equal(store.get(task.taskId)?.status, "failed");
+  assert.equal(aborted, true);
+});

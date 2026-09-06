@@ -158,7 +158,7 @@ test("oversized blind ciphertext is invalid params", async () => withServer(asyn
   const client = new VerifiableClient(server.mcpUrl);
   const discovery = await client.discover();
   const encrypted = encryptArguments({ income: 100, debt: 20 }, discovery.blindPublicKeys["hpke-v1"], "privateCreditCheck");
-  const oversized = b64u(new Uint8Array([...Buffer.from(encrypted.encryptedArguments, "base64url"), ...new Uint8Array(64 * 1024 + 1)]));
+  const oversized = b64u(new Uint8Array([...Buffer.from(encrypted.encryptedArguments, "base64url"), ...new Uint8Array(128 * 1024)]));
   const response = await rpc(server, "verifiable-tools/call", {
     tool: "privateCreditCheck",
     inputCommitment: encrypted.inputCommitment,

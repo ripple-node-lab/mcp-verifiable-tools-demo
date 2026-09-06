@@ -5,6 +5,7 @@ export interface VerifyContext {
   nonce?: string;
   salt?: Uint8Array;
   expectedCircuitHash: string;
+  verificationKeyUri?: string;
   registry?: VerificationKeyRegistryLike;
 }
 export interface VerificationKeyRegistryLike { get(circuitHash: string, uri: string): Promise<unknown>; }

@@ -17,6 +17,22 @@ test("deferred price quote can be proved and expires", async () => withServerOpt
   const expired = await rpc(server, "verifiable-tools/prove", { resultId });
   assert.equal(expired.error?.data?.reason, "resultExpired");
 }));
+test("plain price quotes do not retain deferred witnesses without capability", async () => withServer(async (server) => {
+  const response = await rpc(server, "tools/call", { name: "priceQuote", arguments: { symbol: "AAPL" } }, { "Mcp-Name": "priceQuote" });
+  const result = expectComplete(response.result as never);
+  assert.equal(result._meta?.["io.modelcontextprotocol/verifiable-tools"], undefined);
+}));
+test("expired deferred witnesses are swept without traffic", async () => withServerOptions({ resultTtlMs: 50 }, async (server) => {
+  const client = new VerifiableClient(server.mcpUrl);
+  await client.discover();
+  const initial = expectComplete((await client.callTool("priceQuote", { symbol: "AAPL" })).result);
+  const resultId = initial._meta?.["io.modelcontextprotocol/verifiable-tools"]?.resultId;
+  assert.equal(typeof resultId, "string");
+  await new Promise<void>((resolve) => setTimeout(resolve, 120));
+  assert.equal(server.results.witnessCount, 0);
+  const expired = await rpc(server, "verifiable-tools/prove", { resultId });
+  assert.equal(expired.error?.data?.reason, "resultExpired");
+}));
 
 test("unknown deferred result IDs and unsupported formats are rejected", async () => withServer(async (server) => {
   const unknown = await rpc(server, "verifiable-tools/prove", { resultId: "00".repeat(16) });

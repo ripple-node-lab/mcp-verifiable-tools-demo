@@ -35,6 +35,20 @@ export function requestMeta(capabilities: ClientCapabilities, clientInfo = { nam
 export function isRecord(value: unknown): value is { [key: string]: JsonValue } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-export function expectedCircuitHash(tool: string): string {
+function circuitHash(tool: string): string {
   return `0x${createHash("sha256").update(`verifiable-tools-demo:${tool}:v1`).digest("hex")}`;
+}
+function pinned(tool: string): { default: string; formats: { [format: string]: string } } {
+  const hash = circuitHash(tool);
+  return { default: hash, formats: { "demo-sig-v1": hash, "demo-commit-v1": hash } };
+}
+export const PINNED_CIRCUITS: { [tool: string]: { default: string; formats?: { [format: string]: string } } } = {
+  add: pinned("add"),
+  riskScore: pinned("riskScore"),
+  privateCreditCheck: pinned("privateCreditCheck"),
+  priceQuote: pinned("priceQuote")
+};
+export function expectedCircuitHash(tool: string, format?: string): string {
+  const pin = PINNED_CIRCUITS[tool];
+  return pin?.formats?.[format ?? ""] ?? pin?.default ?? circuitHash(tool);
 }

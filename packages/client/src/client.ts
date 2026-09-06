@@ -34,9 +34,11 @@ export class VerifiableClient {
     for (const item of tools) {
       const tool = asRecord(item);
       const name = asString(tool.name);
-      const descriptor = asRecord(asRecord(tool._meta)[EXTENSION_ID]) as unknown as ToolDescriptorMeta;
+      const extensionMeta = isRecord(tool._meta) ? tool._meta[EXTENSION_ID] : undefined;
+      if (!isRecord(extensionMeta)) continue;
+      const descriptor = extensionMeta as unknown as ToolDescriptorMeta;
       const expected = expectedCircuitHash(name);
-      if (descriptor.circuitHash !== expected || (descriptor.formats && Object.values(descriptor.formats).some((format) => format.circuitHash !== undefined && format.circuitHash !== expected))) throw new Error(`tool descriptor circuitHash mismatch for ${name}`);
+      if (descriptor.circuitHash !== expected || (descriptor.formats && Object.entries(descriptor.formats).some(([format, value]) => value.circuitHash !== undefined && value.circuitHash !== expectedCircuitHash(name, format)))) throw new Error(`tool descriptor circuitHash mismatch for ${name}`);
       this.descriptors.set(name, descriptor);
     }
     this.discovered = { proofFormats, serverProofFormats: formats, blindPublicKeys, blindEncryptionSchemes, blindExecution, resultTtlMs };
@@ -53,9 +55,15 @@ export class VerifiableClient {
     return { result: response.result as CallToolResult | TaskEnvelope, nonce };
   }
   async verify(result: CallToolResult, args: JsonValue, tool: string, options: { nonce?: string; salt?: Uint8Array } = {}): Promise<VerifyOutcome> {
+    const meta = result._meta?.[EXTENSION_ID];
     const formats = verifiableCapability(this.capabilities)?.proofFormats ?? [];
     const verifiers = [...(formats.includes("demo-sig-v1") ? [this.sigVerifier] : []), ...(formats.includes("demo-commit-v1") ? [this.commitVerifier] : [])];
-    return verifyResult(result._meta?.[EXTENSION_ID], { arguments: args, content: result.content, nonce: options.nonce, salt: options.salt, expectedCircuitHash: expectedCircuitHash(tool) }, verifiers);
+    const descriptor = this.descriptors.get(tool);
+    const format = meta?.proofFormat;
+    const verificationKeyUri = format === undefined || descriptor === undefined
+      ? undefined
+      : descriptor.formats?.[format]?.verificationKeyUri ?? descriptor.verificationKeyUri;
+    return verifyResult(meta, { arguments: args, content: result.content, nonce: options.nonce, salt: options.salt, expectedCircuitHash: expectedCircuitHash(tool, format), verificationKeyUri }, verifiers);
   }
   async callAndVerify(name: string, args: JsonValue, proofFormat?: string): Promise<CallToolResult> {
     const value = await this.callTool(name, args, { proofFormat });

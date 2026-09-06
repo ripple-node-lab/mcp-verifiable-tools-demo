@@ -12,3 +12,22 @@ test("descriptor circuit hash mismatch is rejected", async () => withServerOptio
   const client = new VerifiableClient(server.mcpUrl);
   await assert.rejects(() => client.discover());
 }));
+test("descriptor-less tools are allowed", async () => withServerOptions({ descriptorOverride: (tool, descriptor) => tool === "add" ? undefined : descriptor }, async (server) => {
+  const client = new VerifiableClient(server.mcpUrl);
+  await client.discover();
+  assert.equal(client.descriptor("add"), undefined);
+}));
+test("per-format descriptor circuit hashes are pinned", async () => {
+  await assert.rejects(() => withServerOptions({
+    descriptorOverride: (tool, descriptor) => tool === "add"
+      ? { ...descriptor, formats: { ...descriptor.formats, "demo-sig-v1": { circuitHash: expectedCircuitHash("riskScore", "demo-sig-v1") } } }
+      : descriptor
+  }, async (server) => new VerifiableClient(server.mcpUrl).discover()));
+  await withServerOptions({
+    descriptorOverride: (tool, descriptor) => tool === "add"
+      ? { ...descriptor, formats: { ...descriptor.formats, "demo-sig-v1": { circuitHash: expectedCircuitHash(tool, "demo-sig-v1") } } }
+      : descriptor
+  }, async (server) => {
+    await new VerifiableClient(server.mcpUrl).discover();
+  });
+});

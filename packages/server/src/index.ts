@@ -53,7 +53,10 @@ export class DemoServer {
     this.port = typeof address === "object" && address !== null ? address.port : port;
     return this.url;
   }
-  async close(): Promise<void> { await new Promise<void>((resolve, reject) => this.httpServer.close((error) => error ? reject(error) : resolve())); }
+  async close(): Promise<void> {
+    this.results.close();
+    await new Promise<void>((resolve, reject) => this.httpServer.close((error) => error ? reject(error) : resolve()));
+  }
   get url(): string { return `http://${this.host}:${this.port}`; }
   get mcpUrl(): string { return `${this.url}/mcp`; }
   get blindPublicKeyBase64(): string { return this.blindPublicKey; }
@@ -89,7 +92,7 @@ export class DemoServer {
     if (capability?.requireProof && !format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format");
     const execute = async (signal?: AbortSignal): Promise<CallToolResult> => {
       const execution = executeTool(tool, params.arguments!);
-      if (tool === "priceQuote" && !capability?.requireProof) {
+      if (tool === "priceQuote" && capability && !capability.requireProof) {
         const content = [{ type: "text" as const, text: execution.output }];
         const resultId = this.results.put({ tool, arguments: execution.arguments, content, nonce });
         return makeResult(execution.output, { [META_SERVER_INFO]: { name: "verifiable-tools-demo", version: "1.0.0" }, [EXTENSION_ID]: { resultId } });
@@ -134,6 +137,7 @@ export class DemoServer {
   private async blindCall(request: JsonRpcRequest): Promise<JsonRpcResponse> {
     const params = paramsRecord(request.params);
     if (!params || typeof params.tool !== "string" || typeof params.inputCommitment !== "string" || params.encryptionScheme !== "hpke-v1" || typeof params.encryptedArguments !== "string") throw new JsonRpcProtocolError(-32602, "invalid blind call parameters");
+    if (params.encryptedArguments.length > 128 * 1024) throw new JsonRpcProtocolError(-32602, "invalid encrypted arguments");
     const requestMeta = isRecord(params._meta) ? params._meta as unknown as RequestMeta : undefined;
     const extensionMeta = isRecord(requestMeta?.[EXTENSION_ID]) ? requestMeta[EXTENSION_ID] : undefined;
     const nonce = extensionMeta?.nonce;
