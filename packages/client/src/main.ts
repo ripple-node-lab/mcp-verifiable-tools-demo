@@ -2,21 +2,26 @@ import { startServer } from "@demo/server";
 import { closeProverWorker as closeNoirWorker, destroy as destroyNoir } from "@demo/prover-noir";
 import { closeProverWorker as closeSnarkjsWorker } from "@demo/prover-snarkjs";
 import { VerifiableClient } from "./client.js";
+import { TlsnProvenanceVerifier } from "@demo/prover-sidecar";
 import { EXTENSION_ID } from "@demo/protocol";
 const server = await startServer({
   port: 0,
   risc0SidecarUrl: process.env.RISC0_SIDECAR_URL,
   risc0TimeoutMs: process.env.RISC0_SIDECAR_TIMEOUT_MS ? Number(process.env.RISC0_SIDECAR_TIMEOUT_MS) : undefined,
   ezklSidecarUrl: process.env.EZKL_SIDECAR_URL,
+  tlsnSidecarUrl: process.env.TLSN_SIDECAR_URL,
 });
 try {
-  const client = new VerifiableClient(server.mcpUrl);
+  const tlsnOrigin = process.env.TLSN_SIDECAR_URL ? new URL(process.env.TLSN_SIDECAR_URL).origin : undefined;
+  const client = new VerifiableClient(server.mcpUrl, { allowedKeyOrigins: tlsnOrigin ? [tlsnOrigin] : [] });
+  if (process.env.TLSN_SIDECAR_URL) client.addProvenanceVerifier(new TlsnProvenanceVerifier({ baseUrl: process.env.TLSN_SIDECAR_URL }));
   const discovery = await client.discover();
   const add = await client.callAndVerify("add", { a: 20, b: 22 }, "demo-sig-v1");
   console.log(`1. sync add: ${add.content[0].text} (verified demo-sig-v1)`);
   client.setCapabilities({ proofFormats: discovery.proofFormats }, true);
   const risk = await client.callAndVerify("riskScore", { symbol: "AAPL" }, "demo-commit-v1");
-  console.log(`2. async riskScore: ${risk.content[0].text} (verified demo-commit-v1)`);
+  const riskProvenance = risk._meta?.[EXTENSION_ID]?.inputAttestations?.[0]?.type ?? "none";
+  console.log(`2. async riskScore: ${risk.content[0].text} (verified demo-commit-v1, provenance ${riskProvenance})`);
   client.setCapabilities({ proofFormats: discovery.proofFormats, blindExecution: true });
   const credit = await client.blindCall({ income: 100000, debt: 30000 }, { encryptReply: true });
   console.log(`3. blind privateCreditCheck: ${credit.content[0].text} (verified demo-sig-v1)`);
@@ -74,6 +79,20 @@ try {
     console.log(`9. zk add (ezkl-v1 sidecar): ${call.result.content[0].text} (verified, proof ${proofBytes} bytes, prove ${proveMs.toFixed(2)} ms, verify ${verifyMs.toFixed(2)} ms)`);
   } else {
     console.log("9. zk add (ezkl-v1 sidecar): skipped (EZKL_SIDECAR_URL unset)");
+  }
+  if (process.env.TLSN_SIDECAR_URL) {
+    client.setCapabilities({ proofFormats: discovery.proofFormats, requireInputProvenance: true }, true);
+    const call = await client.callTool("riskScore", { symbol: "AAPL" }, { proofFormat: "demo-commit-v1" });
+    const result = call.result.resultType === "task" ? await client.poll(call.result) : call.result;
+    if (result.resultType !== "complete") throw new Error("unexpected riskScore task");
+    const outcome = await client.verify(result, { symbol: "AAPL" }, "riskScore", { nonce: call.nonce });
+    if (!outcome.ok) throw new Error(`tlsn provenance verification failed: ${outcome.reason}`);
+    const attestation = result._meta?.[EXTENSION_ID]?.inputAttestations?.[0];
+    const proofBytes = typeof attestation?.proof === "string" ? Buffer.from(attestation.proof, "base64url").byteLength : 0;
+    console.log(`10. zktls riskScore: ${result.content[0].text} (verified demo-commit-v1, provenance ${attestation?.type}, presentation ${proofBytes} bytes)`);
+    client.setCapabilities({ proofFormats: discovery.proofFormats });
+  } else {
+    console.log("10. zktls riskScore: skipped (TLSN_SIDECAR_URL unset)");
   }
 } catch (error: unknown) {
   console.error(error instanceof Error ? error.message : "demo failed");

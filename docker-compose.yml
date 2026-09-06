@@ -44,3 +44,20 @@ services:
       interval: 5s
       timeout: 10s
       retries: 30
+  sidecar-tlsn:
+    profiles: ["tlsn"]
+    build:
+      context: .
+      dockerfile: sidecars/tlsn/Dockerfile
+    environment:
+      PORT: "4400"
+      HOST: "0.0.0.0"
+      PUBLIC_URL: http://127.0.0.1:4400
+      MAX_CONCURRENT_ATTESTATIONS: ${MAX_CONCURRENT_ATTESTATIONS:-1}
+    ports:
+      - "4400:4400"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4400/healthz"]
+      interval: 5s
+      timeout: 10s
+      retries: 30

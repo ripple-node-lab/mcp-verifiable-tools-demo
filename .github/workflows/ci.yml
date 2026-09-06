@@ -62,3 +62,18 @@ jobs:
       - run: EZKL_SIDECAR_URL=http://127.0.0.1:4300 node --test tests/dist/ezkl-sidecar.test.js
       - if: always()
         run: docker compose --profile ezkl down
+  tlsn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: docker compose --profile tlsn up --build -d --wait
+      - run: npm ci
+      - run: npm run build
+      - run: TLSN_SIDECAR_URL=http://127.0.0.1:4400 node --test tests/dist/tlsn-sidecar.test.js
+      - if: always()
+        run: docker compose --profile tlsn down

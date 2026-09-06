@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import {
   CallToolResult, EXTENSION_ID, HPKE_INFO_ARGS, HPKE_INFO_REPLY, JsonRpcRequest, JsonRpcResponse,
   META_CLIENT_CAPABILITIES, META_SERVER_INFO, RequestMeta, RESULT_TTL_MS, b64u, hpkeOpen, hpkeSeal,
-  inputCommitment, isRecord, isValidNonce, jcs, JsonValue, JsonRpcProtocolError, negotiateProofFormat, expectedCircuitHash,
+  inputCommitment, InputAttestation, isRecord, isValidNonce, jcs, JsonValue, JsonRpcProtocolError, negotiateProofFormat, expectedCircuitHash,
   outputCommitment, parseAddArguments, parseEzklAddArguments, rawX25519Public, tasksDeclared, verifiableCapability
 } from "@demo/protocol";
 import { DemoCommitProver, DemoSigProver, Prover, TeeNitroProver, TeeNitroProverOptions, mockNitroFixturesDir } from "@demo/prover";
@@ -18,6 +18,7 @@ import { errorResponse, handleMcpPost, paramsRecord } from "./http.js";
 import { ResultStore } from "./prove.js";
 import { TaskStore } from "./tasks.js";
 import { circuitHash, executeTool, isZkFormat, makeResult, toolList, ToolName, DescriptorOverride } from "./tools.js";
+import { OraclePriceFeed, PriceFeed, TlsnPriceFeed, priceFromAttestation } from "./pricefeed.js";
 
 export interface DemoServerOptions {
   port?: number;
@@ -31,6 +32,8 @@ export interface DemoServerOptions {
   ezklSidecarUrl?: string;
   taskTtlMs?: number;
   teeNitro?: false | TeeNitroProverOptions;
+  priceFeed?: PriceFeed;
+  tlsnSidecarUrl?: string;
   formatDescriptors?: { [format: string]: ToolFormatDescriptor };
 }
 const TASK_TTL_HEADROOM_MS = 30_000;
@@ -49,6 +52,8 @@ export class DemoServer {
   private readonly verificationKeyOverrides: { [hash: string]: Uint8Array | string };
   private readonly formatDescriptors: { [format: string]: ToolFormatDescriptor };
   private readonly provers = new Map<string, Prover>();
+  private readonly priceFeed: PriceFeed;
+  private readonly oracleKeyPem?: string;
   private port = 0;
   constructor(options: DemoServerOptions = {}) {
     this.host = options.host ?? "127.0.0.1";
@@ -73,11 +78,18 @@ export class DemoServer {
       if (this.provers.has(prover.format)) throw new Error(`duplicate prover format: ${prover.format}`);
       this.provers.set(prover.format, prover);
     }
+    this.priceFeed = options.priceFeed ??
+      (options.tlsnSidecarUrl ? new TlsnPriceFeed({ baseUrl: options.tlsnSidecarUrl }) : new OraclePriceFeed(() => this.url));
+    this.oracleKeyPem = this.priceFeed instanceof OraclePriceFeed ? String(this.priceFeed.publicKey.export({ type: "spki", format: "pem" })) : undefined;
     this.signingPublicKey = String(this.signingProver.publicKey.export({ type: "spki", format: "pem" }));
     this.blindPublicKey = b64u(rawX25519Public(this.blindKeys.publicKey));
     this.httpServer = createServer((request, response) => {
       if (request.url === "/mcp") void handleMcpPost(this, request, response);
       else if (request.method === "GET" && request.url?.startsWith("/vk/")) void this.serveVerificationKey(request.url.slice(4), response);
+      else if (request.method === "GET" && request.url === "/oracle-keys/demo") {
+        if (this.oracleKeyPem === undefined) { response.statusCode = 404; response.end(); }
+        else { response.statusCode = 200; response.setHeader("content-type", "application/x-pem-file"); response.end(this.oracleKeyPem); }
+      }
       else { response.statusCode = 404; response.end(); }
     });
   }
@@ -163,14 +175,30 @@ export class DemoServer {
       throw new JsonRpcProtocolError(-32602, "invalid arguments for add (ezkl-v1 supports 0..2^24)");
     }
     const execute = async (signal?: AbortSignal): Promise<CallToolResult> => {
-      const execution = executeTool(tool, params.arguments!, isZkFormat(format ?? ""));
+      let price: number | undefined;
+      let inputAttestations: InputAttestation[] | undefined;
+      if (tool === "riskScore") {
+        if (!isRecord(params.arguments) || typeof params.arguments.symbol !== "string") {
+          throw new JsonRpcProtocolError(-32602, "invalid arguments for riskScore");
+        }
+        try {
+          const attestation = await this.priceFeed.fetch(params.arguments.symbol, signal);
+          price = priceFromAttestation(attestation, params.arguments.symbol);
+          inputAttestations = [attestation];
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          if (capability?.requireInputProvenance === true) throw new JsonRpcProtocolError(-32603, "input provenance unavailable");
+          throw error;
+        }
+      }
+      const execution = executeTool(tool, params.arguments!, isZkFormat(format ?? ""), { price });
       if (tool === "priceQuote" && capability && !capability.requireProof) {
         const content = [{ type: "text" as const, text: execution.output }];
         const resultId = this.results.put({ tool, arguments: execution.arguments, content, nonce });
         return makeResult(execution.output, { [META_SERVER_INFO]: { name: "verifiable-tools-demo", version: "1.0.0" }, [EXTENSION_ID]: { resultId } });
       }
       if (!format) return makeResult(execution.output);
-      return this.provenResult(tool, execution.arguments, execution.output, format, nonce, undefined, signal);
+      return this.provenResult(tool, execution.arguments, execution.output, format, nonce, undefined, signal, undefined, inputAttestations);
     };
     if (tasksDeclared(requestMeta?.[META_CLIENT_CAPABILITIES]) && (tool === "riskScore" || isZkFormat(format ?? ""))) {
       return { jsonrpc: "2.0", id: request.id, result: this.tasks.create(async (signal) => {
@@ -184,7 +212,7 @@ export class DemoServer {
     }
     return { jsonrpc: "2.0", id: request.id, result: await execute() };
   }
-  private async provenResult(tool: ToolName, args: JsonValue, output: string, format: string, nonce?: string, salt?: Uint8Array, signal?: AbortSignal, content?: CallToolResult["content"]): Promise<CallToolResult> {
+  private async provenResult(tool: ToolName, args: JsonValue, output: string, format: string, nonce?: string, salt?: Uint8Array, signal?: AbortSignal, content?: CallToolResult["content"], inputAttestations?: InputAttestation[]): Promise<CallToolResult> {
     const originalContent = content ?? [{ type: "text" as const, text: output }];
     const input = inputCommitment(args, salt);
     const outputHash = outputCommitment(originalContent);
@@ -194,7 +222,7 @@ export class DemoServer {
     const descriptor = this.formatDescriptors[format]?.(formatHash) ?? {};
     const effectiveHash = descriptor.circuitHash ?? formatHash;
     const verificationKeyUri = descriptor.verificationKeyUri ?? (format === "demo-sig-v1" || isZkFormat(format) ? `${this.url}/vk/${effectiveHash}` : undefined);
-    const meta = await prover.prove({ arguments: args, circuitHash: effectiveHash, inputCommitment: input, outputCommitment: outputHash, nonce, output, verificationKeyUri }, { signal });
+    const meta = await prover.prove({ arguments: args, circuitHash: effectiveHash, inputCommitment: input, outputCommitment: outputHash, nonce, output, verificationKeyUri, inputAttestations }, { signal });
     return { resultType: "complete", content: originalContent, isError: false, _meta: { [META_SERVER_INFO]: { name: "verifiable-tools-demo", version: "1.0.0" }, [EXTENSION_ID]: meta as unknown as RequestMeta[typeof EXTENSION_ID] } };
   }
   private getTask(request: JsonRpcRequest): JsonRpcResponse {

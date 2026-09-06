@@ -1,5 +1,5 @@
 import { createPublicKey, generateKeyPairSync, sign } from "node:crypto";
-import { Prover, ProveInput } from "./prover.js";
+import { Prover, ProveInput, attestationCommits } from "./prover.js";
 import { VerifiableToolsMeta } from "@demo/protocol";
 export class DemoSigProver implements Prover {
   readonly publicKey: ReturnType<typeof createPublicKey>;
@@ -11,7 +11,8 @@ export class DemoSigProver implements Prover {
   }
   async prove(input: ProveInput, options: { signal?: AbortSignal } = {}): Promise<VerifiableToolsMeta> {
     if (options.signal?.aborted) throw new DOMException("aborted", "AbortError");
-    const proof = sign(null, Buffer.from(input.circuitHash + input.inputCommitment + input.outputCommitment + (input.nonce ?? "0x")), this.privateKey);
+    const commits = attestationCommits(input);
+    const proof = sign(null, Buffer.from(input.circuitHash + input.inputCommitment + input.outputCommitment + (input.nonce ?? "0x") + commits.join("")), this.privateKey);
     return {
       proof: `0x${proof.toString("hex")}`,
       proofFormat: this.format,
@@ -20,7 +21,8 @@ export class DemoSigProver implements Prover {
       outputCommitment: input.outputCommitment,
       ...(input.nonce === undefined ? {} : { nonce: input.nonce }),
       ...(input.verificationKeyUri ? { verificationKeyUri: input.verificationKeyUri } : {}),
-      publicInputs: [input.outputCommitment, input.inputCommitment, input.nonce ?? "0x"]
+      publicInputs: [input.outputCommitment, input.inputCommitment, input.nonce ?? "0x", ...commits],
+      ...(commits.length === 0 ? {} : { inputAttestations: input.inputAttestations })
     };
   }
 }

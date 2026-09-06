@@ -1,10 +1,11 @@
 import { EXTENSION_ID, META_CLIENT_CAPABILITIES, META_VERIFIABLE_TOOLS, TASKS_EXTENSION_ID } from "./constants.js";
-import { ClientCapabilities, JsonValue, RequestMeta, VerifiableToolsCapability } from "./types.js";
+import { ClientCapabilities, InputAttestation, JsonValue, RequestMeta, VerifiableToolsCapability } from "./types.js";
 import { createHash } from "node:crypto";
+import { sha256Hex } from "./jcs.js";
 
-export function clientCapabilities(proofFormats: string[], options: { blindExecution?: boolean; requireProof?: boolean; tasks?: boolean } = {}): ClientCapabilities {
+export function clientCapabilities(proofFormats: string[], options: { blindExecution?: boolean; requireProof?: boolean; tasks?: boolean; requireInputProvenance?: boolean } = {}): ClientCapabilities {
   const extensions: { [key: string]: VerifiableToolsCapability | Record<string, never> } = {
-    [EXTENSION_ID]: { proofFormats, ...(options.blindExecution === undefined ? {} : { blindExecution: options.blindExecution }), ...(options.requireProof === undefined ? {} : { requireProof: options.requireProof }) }
+    [EXTENSION_ID]: { proofFormats, ...(options.blindExecution === undefined ? {} : { blindExecution: options.blindExecution }), ...(options.requireProof === undefined ? {} : { requireProof: options.requireProof }), ...(options.requireInputProvenance === undefined ? {} : { requireInputProvenance: options.requireInputProvenance }) }
   };
   if (options.tasks) extensions[TASKS_EXTENSION_ID] = {};
   return { extensions };
@@ -32,6 +33,21 @@ export function requestMeta(capabilities: ClientCapabilities, clientInfo = { nam
     [META_CLIENT_CAPABILITIES]: capabilities
   };
 }
+// "0x" + sha256(utf8(data)) — the attestation commitment bound into publicInputs.
+export function attestationCommitment(data: string): string {
+  return sha256Hex(data);
+}
+
+export function parseInputAttestation(value: JsonValue): InputAttestation | undefined {
+  if (!isRecord(value)) return undefined;
+  const { type, source, commitment, data, proof, proofUri, notaryKeyUri, verificationKeyUri } = value;
+  if (typeof type !== "string" || typeof source !== "string" ||
+      typeof commitment !== "string" || !/^0x[0-9a-f]{64}$/.test(commitment) ||
+      typeof data !== "string") return undefined;
+  if ([proof, proofUri, notaryKeyUri, verificationKeyUri].some((v) => v !== undefined && typeof v !== "string")) return undefined;
+  return value as unknown as InputAttestation;
+}
+
 export function isRecord(value: unknown): value is { [key: string]: JsonValue } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CborValue, VerifiableToolsMeta, cborEncode, coseSign1Encode } from "@demo/protocol";
-import { Prover, ProveInput } from "./prover.js";
+import { Prover, ProveInput, attestationCommits } from "./prover.js";
 
 export interface TeeNitroProverOptions {
   leafCertPem: string;
@@ -65,7 +65,8 @@ export class TeeNitroProver implements Prover {
   }
   async prove(input: ProveInput, options: { signal?: AbortSignal } = {}): Promise<VerifiableToolsMeta> {
     if (options.signal?.aborted) throw new DOMException("aborted", "AbortError");
-    const proof = sign(null, Buffer.from(input.circuitHash + input.inputCommitment + input.outputCommitment + (input.nonce ?? "0x")), this.enclavePrivateKey);
+    const commits = attestationCommits(input);
+    const proof = sign(null, Buffer.from(input.circuitHash + input.inputCommitment + input.outputCommitment + (input.nonce ?? "0x") + commits.join("")), this.enclavePrivateKey);
     const doc = new Map<CborValue, CborValue>([
       ["module_id", this.moduleId],
       ["digest", "SHA384"],
@@ -89,7 +90,8 @@ export class TeeNitroProver implements Prover {
       inputCommitment: input.inputCommitment,
       outputCommitment: input.outputCommitment,
       ...(input.nonce === undefined ? {} : { nonce: input.nonce }),
-      publicInputs: [input.outputCommitment, input.inputCommitment, input.nonce ?? "0x"],
+      publicInputs: [input.outputCommitment, input.inputCommitment, input.nonce ?? "0x", ...commits],
+      ...(commits.length === 0 ? {} : { inputAttestations: input.inputAttestations }),
       teeAttestation: `0x${Buffer.from(attestation).toString("hex")}`
     };
   }
