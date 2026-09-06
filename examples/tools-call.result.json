@@ -11,7 +11,10 @@
         "proofFormat": "demo-sig-v1",
         "circuitHash": "0x<sha256 descriptor>",
         "verificationKeyUri": "http://127.0.0.1:3939/vk/0x<sha256 descriptor>",
-        "inputCommitment": "0x<sha256 canonical arguments>"
+        "inputCommitment": "0x<sha256 canonical arguments>",
+        "outputCommitment": "0x<sha256 content>",
+        "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e",
+        "publicInputs": ["0x<outputCommitment>", "0x<inputCommitment>", "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"]
       }
     }
   }

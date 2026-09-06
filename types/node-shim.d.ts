@@ -44,8 +44,9 @@ declare module "node:crypto" {
   export interface KeyObject { export(options: { type: "spki"; format: "pem" | "der" | "jwk" }): string | Buffer | Uint8Array | JsonWebKey; }
   export function randomBytes(size: number): Buffer;
   export function randomUUID(): string;
-  export interface JsonWebKey { kty: string; x?: string; crv?: string; }
+  export interface JsonWebKey { kty: string; x?: string; crv?: string; d?: string; }
   export function createHash(algorithm: string): { update(data: string | Uint8Array): { digest(encoding: "hex"): string; digest(): Buffer } };
+  export function createHmac(algorithm: string, key: Uint8Array): { update(data: string | Uint8Array): { digest(): Buffer } };
   export function generateKeyPairSync(type: string): { publicKey: KeyObject; privateKey: KeyObject };
   export function createPublicKey(options: { key: JsonWebKey; format: "jwk" } | { key: string; format: "pem" }): KeyObject;
   export function createPrivateKey(options: { key: JsonWebKey; format: "jwk" }): KeyObject;
@@ -53,11 +54,13 @@ declare module "node:crypto" {
   export function verify(algorithm: null, data: Uint8Array, key: KeyObject, signature: Uint8Array): boolean;
   export function diffieHellman(options: { privateKey: KeyObject; publicKey: KeyObject }): Buffer;
   export function createCipheriv(algorithm: string, key: Uint8Array, iv: Uint8Array): {
+    setAAD(data: Uint8Array): void;
     update(data: Uint8Array): Buffer;
     final(): Buffer;
     getAuthTag(): Buffer;
   };
   export function createDecipheriv(algorithm: string, key: Uint8Array, iv: Uint8Array): {
+    setAAD(data: Uint8Array): void;
     setAuthTag(tag: Uint8Array): void;
     update(data: Uint8Array): Buffer;
     final(): Buffer;
@@ -65,5 +68,5 @@ declare module "node:crypto" {
   export function hkdfSync(digest: string, key: Uint8Array, salt: Uint8Array, info: Uint8Array, length: number): ArrayBuffer;
 }
 declare module "node:events" { export class EventEmitter { on(event: string, listener: (...args: never[]) => void): this; once(event: string, listener: (...args: never[]) => void): this; removeListener(event: string, listener: (...args: never[]) => void): this; emit(event: string, ...args: never[]): boolean; } }
-declare module "node:assert/strict" { const assert: { equal(actual: unknown, expected: unknown, message?: string): void; deepEqual(actual: unknown, expected: unknown, message?: string): void; ok(value: unknown, message?: string): void; rejects(fn: () => Promise<unknown>, message?: string): Promise<void> }; export default assert; }
+declare module "node:assert/strict" { const assert: { equal(actual: unknown, expected: unknown, message?: string): void; deepEqual(actual: unknown, expected: unknown, message?: string): void; ok(value: unknown, message?: string): void; rejects(fn: () => Promise<unknown>, message?: string): Promise<void>; throws(fn: () => unknown, message?: string): void }; export default assert; }
 declare module "node:test" { type TestFn = (name: string, fn: () => void | Promise<void>) => void | Promise<void>; const test: TestFn; export default test; }

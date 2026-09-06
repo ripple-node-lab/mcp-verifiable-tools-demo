@@ -7,8 +7,10 @@ export interface VerifiableToolsCapability {
   proofFormats?: string[];
   blindExecution?: boolean;
   requireProof?: boolean;
-  blindPublicKey?: string;
   blindEncryptionSchemes?: string[];
+  blindPublicKeys?: { [scheme: string]: string };
+  resultTtlMs?: number;
+  requireInputProvenance?: boolean;
 }
 export interface ClientCapabilities {
   extensions?: { [key: string]: VerifiableToolsCapability | Record<string, never> };
@@ -22,7 +24,28 @@ export interface VerifiableToolsMeta {
   verificationKeyUri?: string;
   publicInputs?: JsonValue[];
   inputCommitment?: string;
+  outputCommitment?: string;
+  nonce?: string;
+  resultId?: string;
+  encryptedContent?: boolean;
+  proofUri?: string;
+  teeAttestation?: string;
+  inputAttestations?: JsonValue[];
   requestedProofFormat?: string;
+}
+export interface ToolDescriptorMeta {
+  circuitHash: string;
+  proofFormats: string[];
+  proofPolicy: "always" | "onDemand" | "sampled";
+  verificationKeyUri?: string;
+  blind: boolean;
+  formats?: { [format: string]: { circuitHash?: string; verificationKeyUri?: string } };
+}
+export interface ProveParams {
+  resultId: string;
+  proofFormat?: string;
+  nonce?: string;
+  _meta?: RequestMeta;
 }
 export interface RequestMeta {
   [META_PROTOCOL_VERSION]?: string;
@@ -33,7 +56,7 @@ export interface RequestMeta {
 }
 export interface CallToolResult {
   resultType: "complete";
-  content: [{ type: "text"; text: string }];
+  content: Array<{ type: "text"; text: string }>;
   isError: boolean;
   _meta?: RequestMeta;
 }
@@ -63,6 +86,7 @@ export interface VerifiableCallParams {
   encryptionScheme: string;
   encryptedArguments: string;
   proofFormat?: string;
+  replyPublicKey?: string;
   _meta?: RequestMeta;
 }
 export interface JsonRpcRequest {

@@ -19,8 +19,8 @@ export function send(response: ServerResponse, status: number, body: JsonRpcResp
   response.setHeader("content-type", "application/json");
   response.end(JSON.stringify(body));
 }
-export function errorResponse(id: string | number | null, code: number, message: string): JsonRpcResponse {
-  const error: JsonRpcError = { code, message };
+export function errorResponse(id: string | number | null, code: number, message: string, data?: JsonValue): JsonRpcResponse {
+  const error: JsonRpcError = { code, message, ...(data === undefined ? {} : { data }) };
   return { jsonrpc: "2.0", id, error };
 }
 export function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {

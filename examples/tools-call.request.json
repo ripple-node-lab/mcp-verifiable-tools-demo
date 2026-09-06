@@ -9,7 +9,7 @@
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
       "io.modelcontextprotocol/clientCapabilities": {
         "extensions": {
-          "io.modelcontextprotocol/verifiable-tools": {"proofFormats": ["demo-sig-v1"]}
+          "io.modelcontextprotocol/verifiable-tools": {"proofFormats": ["demo-sig-v1"], "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"}
         }
       }
     }
