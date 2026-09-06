@@ -63,7 +63,10 @@ The specification now includes use-case narrative and result-binding fields
 (`outputCommitment` / `nonce` / `tools/list` descriptors / `inputAttestations` /
 deferred proofs), implemented here through Phase 2-a of [docs/PLAN.md](docs/PLAN.md).
 The demo proof formats are not zero-knowledge; `hpke-v1` is real RFC 9180 base mode
-implemented with `node:crypto` and self-tested against the RFC vector.
+implemented with `node:crypto` and self-tested against the RFC vector. Expired
+`resultId` values return `resultExpired` for 2×TTL after expiry because of the
+retained tombstone, then return `resultNotFound`; principal/session binding is
+not implemented because this demo has no authentication.
 
 ## 日本語
 
@@ -77,7 +80,10 @@ ZK 証明ではなく、`hpke-v1` は `node:crypto` による RFC 9180 base mode
 仕様にはユースケースの説明と結果束縛フィールド（`outputCommitment` / `nonce` /
 `tools/list` 記述子 / `inputAttestations` / 遅延証明）も含まれており、
 docs/PLAN.md の Phase 2-a で実装済みです。なお、デモは `resultId` の principal
-binding（認可主体への束縛）を実装していません。
+binding（認可主体への束縛）を実装していません。期限切れの `resultId` は、
+保持された tombstone により期限切れ後 2×TTL の間は `resultExpired` を返し、
+その後は `resultNotFound` を返します。デモには認証がないため、principal/session
+binding は実装していません。
 
 ### クイックスタート
 

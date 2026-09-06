@@ -38,6 +38,13 @@ test("completed tasks expire from the task store", async () => {
   await new Promise<void>((resolve) => setTimeout(resolve, 20));
   assert.equal(store.get(task.taskId), undefined);
 });
+test("synchronous task producer failures mark the task failed", async () => {
+  const store = new TaskStore();
+  const task = store.create(() => { throw new Error("synchronous failure"); });
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  assert.equal(store.get(task.taskId)?.status, "failed");
+  assert.equal(store.get(task.taskId)?.error?.message, "synchronous failure");
+});
 test("working tasks abort when their TTL expires", async () => {
   const store = new TaskStore({ ttlMs: 10 });
   let aborted = false;

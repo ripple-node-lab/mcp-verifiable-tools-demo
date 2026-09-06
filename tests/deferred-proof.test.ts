@@ -54,3 +54,15 @@ test("requireProof proves price quote immediately", async () => withServer(async
   const result = expectComplete(value.result);
   assert.equal(result._meta?.["io.modelcontextprotocol/verifiable-tools"]?.resultId, undefined);
 }));
+test("client prove negotiates its configured proof format", async () => withServer(async (server) => {
+  const client = new VerifiableClient(server.mcpUrl);
+  await client.discover();
+  client.setCapabilities({ proofFormats: ["demo-commit-v1"] });
+  const initial = expectComplete((await client.callTool("priceQuote", { symbol: "AAPL" })).result);
+  const resultId = initial._meta?.["io.modelcontextprotocol/verifiable-tools"]?.resultId;
+  assert.equal(typeof resultId, "string");
+  const proved = await client.prove(resultId as string);
+  const result = expectComplete(proved.result);
+  assert.equal(result._meta?.["io.modelcontextprotocol/verifiable-tools"]?.proofFormat, "demo-commit-v1");
+  assert.equal((await client.verify(result, { symbol: "AAPL" }, "priceQuote", { nonce: proved.nonce })).ok, true);
+}));

@@ -19,6 +19,7 @@ export class VerifiableClient {
   private descriptors = new Map<string, ToolDescriptorMeta>();
   constructor(private readonly endpoint: string) { this.registry = new VerificationKeyRegistry([new URL(endpoint).origin]); this.sigVerifier = new DemoSigVerifier(this.registry); }
   async discover(): Promise<DiscoverResult> {
+    this.descriptors.clear();
     const response = await this.request("server/discover", {});
     const result = asRecord(response.result);
     const extension = asRecord(asRecord(asRecord(result.capabilities).extensions)[EXTENSION_ID]);
@@ -38,7 +39,8 @@ export class VerifiableClient {
       if (!isRecord(extensionMeta)) continue;
       const descriptor = extensionMeta as unknown as ToolDescriptorMeta;
       const expected = expectedCircuitHash(name);
-      if (descriptor.circuitHash !== expected || (descriptor.formats && Object.entries(descriptor.formats).some(([format, value]) => value.circuitHash !== undefined && value.circuitHash !== expectedCircuitHash(name, format)))) throw new Error(`tool descriptor circuitHash mismatch for ${name}`);
+      const formats = isRecord(descriptor.formats) ? Object.entries(descriptor.formats) : [];
+      if (descriptor.circuitHash !== expected || formats.some(([format, value]) => isRecord(value) && typeof value.circuitHash === "string" && value.circuitHash !== expectedCircuitHash(name, format))) throw new Error(`tool descriptor circuitHash mismatch for ${name}`);
       this.descriptors.set(name, descriptor);
     }
     this.discovered = { proofFormats, serverProofFormats: formats, blindPublicKeys, blindEncryptionSchemes, blindExecution, resultTtlMs };
@@ -92,7 +94,7 @@ export class VerifiableClient {
   }
   async prove(resultId: string, options: { proofFormat?: string; nonce?: string } = {}): Promise<CallResponse> {
     const nonce = options.nonce ?? freshNonce();
-    const response = await this.request("verifiable-tools/prove", { resultId, ...(options.proofFormat ? { proofFormat: options.proofFormat } : {}), nonce });
+    const response = await this.request("verifiable-tools/prove", { resultId, ...(options.proofFormat ? { proofFormat: options.proofFormat } : {}), nonce, _meta: this.requestMeta() });
     if (response.error) throw new Error(response.error.message);
     return { result: response.result as CallToolResult, nonce };
   }
