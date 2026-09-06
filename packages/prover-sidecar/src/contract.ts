@@ -10,3 +10,13 @@ export interface SidecarHealth { status: "ok"; formats: string[]; }
 export interface SidecarVerifyRequest { meta: VerifiableToolsMeta; expectedCircuitHash: string; }
 export interface SidecarVerifyResponse { ok: boolean; reason?: string; }
 export type { ProveInput, VerifiableToolsMeta };
+
+export const MAX_RESPONSE = 1 << 20;
+
+export async function readJsonBounded(response: Response): Promise<unknown> {
+  const declared = Number(response.headers.get("content-length") ?? 0);
+  if (declared > MAX_RESPONSE) throw new Error("sidecar response too large");
+  const body = await response.arrayBuffer();
+  if (body.byteLength > MAX_RESPONSE) throw new Error("sidecar response too large");
+  return JSON.parse(new TextDecoder().decode(body));
+}

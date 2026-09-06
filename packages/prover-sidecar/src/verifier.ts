@@ -1,6 +1,6 @@
 import { Verifier, VerifyContext } from "@demo/verifier";
 import { VerifiableToolsMeta } from "@demo/protocol";
-import { SidecarVerifyResponse } from "./contract.js";
+import { SidecarVerifyResponse, readJsonBounded } from "./contract.js";
 
 export class SidecarVerifier implements Verifier {
   private readonly baseUrl: string;
@@ -20,7 +20,7 @@ export class SidecarVerifier implements Verifier {
         signal: AbortSignal.timeout(this.timeoutMs)
       });
       if (!response.ok) return false;
-      const body = await response.json() as SidecarVerifyResponse;
+      const body = await readJsonBounded(response) as SidecarVerifyResponse;
       return body.ok === true;
     } catch { return false; }
   }

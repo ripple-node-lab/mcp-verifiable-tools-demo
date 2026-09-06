@@ -19,13 +19,17 @@ function head(major: number, value: number): Uint8Array {
   return bytes;
 }
 
-export function cborEncode(value: CborValue): Uint8Array {
-  const parts: Uint8Array[] = [];
-  write(value, parts, 0);
+function flatten(parts: Uint8Array[]): Uint8Array {
   const output = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
   let offset = 0;
   for (const part of parts) { output.set(part, offset); offset += part.length; }
   return output;
+}
+
+export function cborEncode(value: CborValue): Uint8Array {
+  const parts: Uint8Array[] = [];
+  write(value, parts, 0);
+  return flatten(parts);
 }
 
 function write(value: CborValue, parts: Uint8Array[], depth: number): void {
@@ -57,7 +61,11 @@ function write(value: CborValue, parts: Uint8Array[], depth: number): void {
 
 // RFC 8949 §4.2.1: sort by encoded key length, then bytewise; reject duplicate encodings.
 function writeMap(entries: [CborValue, CborValue][], parts: Uint8Array[], depth: number): void {
-  const encoded = entries.map(([key, item]) => ({ key: cborEncode(key), item }));
+  const encoded = entries.map(([key, item]) => {
+    const keyParts: Uint8Array[] = [];
+    write(key, keyParts, depth + 1);
+    return { key: flatten(keyParts), item };
+  });
   encoded.sort((a, b) => a.key.length - b.key.length || lexCompare(a.key, b.key));
   for (let index = 1; index < encoded.length; index++) {
     const previous = encoded[index - 1].key;
@@ -109,9 +117,15 @@ function readItem(bytes: Uint8Array, view: DataView, state: { offset: number }, 
   } else throw new Error("cbor: unsupported additional information");
   if (major === 0) return length;
   if (major === 1) return -1 - length;
+  // Major 6: the argument is a tag number, not a byte/item count.
+  if (major === 6) return new CborTag(length, readItem(bytes, view, state, depth + 1));
   if (length > bytes.length - state.offset) throw new Error("cbor: length exceeds input");
   if (major === 2) return take(bytes, state, length);
-  if (major === 3) return new TextDecoder().decode(take(bytes, state, length));
+  if (major === 3) {
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(take(bytes, state, length));
+    } catch { throw new Error("cbor: invalid utf-8"); }
+  }
   if (major === 4) {
     const items: CborValue[] = [];
     for (let index = 0; index < length; index++) items.push(readItem(bytes, view, state, depth + 1));
@@ -122,7 +136,7 @@ function readItem(bytes: Uint8Array, view: DataView, state: { offset: number }, 
     for (let index = 0; index < length; index++) map.set(readItem(bytes, view, state, depth + 1), readItem(bytes, view, state, depth + 1));
     return map;
   }
-  return new CborTag(length, readItem(bytes, view, state, depth + 1));
+  throw new Error("cbor: unsupported major type");
 }
 
 function take(bytes: Uint8Array, state: { offset: number }, count: number): Uint8Array {

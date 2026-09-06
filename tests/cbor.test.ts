@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CborValue, cborDecode, cborEncode } from "@demo/protocol";
+import { CborTag, CborValue, cborDecode, cborEncode } from "@demo/protocol";
 
 const hex = (value: string): Uint8Array => new Uint8Array(Buffer.from(value, "hex"));
 const toHex = (value: Uint8Array): string => Buffer.from(value).toString("hex");
@@ -56,6 +56,25 @@ test("cbor sorts nested map keys deterministically", () => {
 test("cbor rejects duplicate encoded map keys", () => {
   const dup = new Map<CborValue, CborValue>([[new Uint8Array([1]), 1], [new Uint8Array([1]), 2]]);
   assert.throws(() => cborEncode(dup));
+});
+
+test("cbor treats major-6 argument as a tag number, not a length", () => {
+  const small = cborDecode(hex("d81800"));
+  assert.deepEqual(small, new CborTag(24, 0));
+  assert.equal(toHex(cborEncode(small)), "d81800");
+  const large = new CborTag(1000, "x");
+  assert.equal(toHex(cborEncode(large)), "d903e86178");
+  assert.deepEqual(cborDecode(cborEncode(large)), large);
+});
+
+test("cbor applies the depth limit to map keys", () => {
+  let deep: CborValue = [];
+  for (let index = 0; index < 40; index++) deep = [deep];
+  assert.throws(() => cborEncode(new Map<CborValue, CborValue>([[deep, 1]])), /depth limit/);
+});
+
+test("cbor rejects invalid utf-8 in text strings", () => {
+  assert.throws(() => cborDecode(hex("62fffe")), /invalid utf-8/);
 });
 
 test("cbor rejects integers beyond 2^53", () => {

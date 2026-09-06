@@ -88,6 +88,32 @@ test("a closed sidecar yields a JSON-RPC error and the server keeps answering di
   });
 });
 
+test("SidecarProver times out on a silent sidecar and aborts on the caller's signal", async () => {
+  const hung = createServer(() => { /* never respond */ });
+  await new Promise<void>((resolve) => hung.listen(0, "127.0.0.1", resolve));
+  const address = hung.address();
+  const url = `http://127.0.0.1:${typeof address === "object" && address !== null ? address.port : 0}`;
+  const prover = new SidecarProver({ baseUrl: url, format: SIDECAR_FORMAT, timeoutMs: 50 });
+  const input: ProveInput = { arguments: {}, circuitHash: "0x", inputCommitment: "0x", outputCommitment: "0x", output: "1" };
+  try {
+    try {
+      await prover.prove(input);
+      assert.ok(false, "expected timeout error");
+    } catch (error: unknown) {
+      assert.ok(error instanceof Error && error.message === "sidecar /prove timed out");
+    }
+    const abort = new AbortController();
+    const pending = prover.prove(input, { signal: abort.signal });
+    setTimeout(() => abort.abort(), 10);
+    try {
+      await pending;
+      assert.ok(false, "expected AbortError");
+    } catch (error: unknown) {
+      assert.ok(error instanceof DOMException && (error as DOMException).name === "AbortError");
+    }
+  } finally { await new Promise<void>((resolve) => hung.close(() => resolve())); }
+});
+
 test("SidecarProver rejects with AbortError on an aborted signal", async () => {
   const prover = new SidecarProver({ baseUrl: "http://127.0.0.1:1", format: SIDECAR_FORMAT });
   const input: ProveInput = { arguments: {}, circuitHash: "0x", inputCommitment: "0x", outputCommitment: "0x", output: "1" };

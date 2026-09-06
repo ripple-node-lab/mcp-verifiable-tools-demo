@@ -1,5 +1,6 @@
 import { Prover, ProveInput } from "@demo/prover";
 import { VerifiableToolsMeta } from "@demo/protocol";
+import { readJsonBounded } from "./contract.js";
 
 export class SidecarProver implements Prover {
   private readonly baseUrl: string;
@@ -11,7 +12,8 @@ export class SidecarProver implements Prover {
     this.timeoutMs = options.timeoutMs ?? 30_000;
   }
   async prove(input: ProveInput, options: { signal?: AbortSignal } = {}): Promise<VerifiableToolsMeta> {
-    const signals = [AbortSignal.timeout(this.timeoutMs), ...(options.signal ? [options.signal] : [])];
+    const timeout = AbortSignal.timeout(this.timeoutMs);
+    const signals = [timeout, ...(options.signal ? [options.signal] : [])];
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}/prove`, {
@@ -21,11 +23,12 @@ export class SidecarProver implements Prover {
         signal: AbortSignal.any(signals)
       });
     } catch (error: unknown) {
-      if (options.signal?.aborted || error instanceof DOMException) throw new DOMException("aborted", "AbortError");
+      if (options.signal?.aborted) throw new DOMException("aborted", "AbortError");
+      if (timeout.aborted) throw new Error("sidecar /prove timed out");
       throw error;
     }
     if (!response.ok) throw new Error(`sidecar /prove failed: ${response.status}`);
-    const meta = await response.json() as VerifiableToolsMeta;
+    const meta = await readJsonBounded(response) as VerifiableToolsMeta;
     if (meta.proofFormat !== this.format ||
       meta.circuitHash !== input.circuitHash ||
       meta.inputCommitment !== input.inputCommitment ||
