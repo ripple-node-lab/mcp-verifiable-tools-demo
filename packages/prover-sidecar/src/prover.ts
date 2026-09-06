@@ -33,7 +33,8 @@ export class SidecarProver implements Prover {
       meta.circuitHash !== input.circuitHash ||
       meta.inputCommitment !== input.inputCommitment ||
       meta.outputCommitment !== input.outputCommitment ||
-      meta.nonce !== input.nonce) {
+      meta.nonce !== input.nonce ||
+      JSON.stringify(meta.inputAttestations) !== JSON.stringify(input.inputAttestations)) {
       throw new Error("sidecar returned mismatched proof metadata");
     }
     return meta;

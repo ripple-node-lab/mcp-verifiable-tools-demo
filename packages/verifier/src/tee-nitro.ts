@@ -111,9 +111,11 @@ export class TeeNitroVerifier implements Verifier {
     try {
       const enclaveKey = createPublicKey({ key: doc.publicKey, format: "der", type: "spki" });
       const signature = Buffer.from((meta.proof ?? "").slice(2), "hex");
-      const message = Buffer.from((meta.circuitHash ?? "") + (meta.inputCommitment ?? "") + (meta.outputCommitment ?? "") + (meta.nonce ?? "0x"));
-      const publicInputsOk = Array.isArray(meta.publicInputs) && meta.publicInputs.length === 3 &&
-        meta.publicInputs[0] === meta.outputCommitment && meta.publicInputs[1] === meta.inputCommitment && meta.publicInputs[2] === (meta.nonce ?? "0x");
+      const commits = (meta.inputAttestations ?? []).map((attestation) => attestation?.commitment);
+      const message = Buffer.from((meta.circuitHash ?? "") + (meta.inputCommitment ?? "") + (meta.outputCommitment ?? "") + (meta.nonce ?? "0x") + commits.join(""));
+      const publicInputsOk = Array.isArray(meta.publicInputs) && meta.publicInputs.length === 3 + commits.length &&
+        meta.publicInputs[0] === meta.outputCommitment && meta.publicInputs[1] === meta.inputCommitment && meta.publicInputs[2] === (meta.nonce ?? "0x") &&
+        meta.publicInputs.slice(3).every((entry, i) => entry === commits[i]);
       if (!publicInputsOk || !verifySignature(null, message, enclaveKey, signature)) return fail("signatureInvalid");
     } catch { return fail("signatureInvalid"); }
     return { ok: true };

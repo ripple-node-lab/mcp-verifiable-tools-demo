@@ -29,9 +29,11 @@ export function createMockSidecarServer(): { server: Server; prover: DemoSigProv
   const verifyMeta = (meta: VerifiableToolsMeta, expectedCircuitHash: string): { ok: boolean; reason?: string } => {
     if (meta.proofFormat !== SIDECAR_FORMAT || !meta.proof || !meta.circuitHash || !meta.inputCommitment || !meta.outputCommitment) return { ok: false, reason: "malformed meta" };
     if (meta.circuitHash !== expectedCircuitHash) return { ok: false, reason: "circuitHashMismatch" };
-    const ok = verifySignature(null, Buffer.from(meta.circuitHash + meta.inputCommitment + meta.outputCommitment + (meta.nonce ?? "0x")), prover.publicKey, Buffer.from(meta.proof.slice(2), "hex")) &&
-      Array.isArray(meta.publicInputs) && meta.publicInputs.length === 3 &&
-      meta.publicInputs[0] === meta.outputCommitment && meta.publicInputs[1] === meta.inputCommitment && meta.publicInputs[2] === (meta.nonce ?? "0x");
+    const commits = (meta.inputAttestations ?? []).map((attestation) => (attestation as { commitment?: string }).commitment);
+    const ok = verifySignature(null, Buffer.from(meta.circuitHash + meta.inputCommitment + meta.outputCommitment + (meta.nonce ?? "0x") + commits.join("")), prover.publicKey, Buffer.from(meta.proof.slice(2), "hex")) &&
+      Array.isArray(meta.publicInputs) && meta.publicInputs.length === 3 + commits.length &&
+      meta.publicInputs[0] === meta.outputCommitment && meta.publicInputs[1] === meta.inputCommitment && meta.publicInputs[2] === (meta.nonce ?? "0x") &&
+      meta.publicInputs.slice(3).every((entry, i) => entry === commits[i]);
     return ok ? { ok: true } : { ok: false, reason: "signatureInvalid" };
   };
   const server = createServer((request, response) => {

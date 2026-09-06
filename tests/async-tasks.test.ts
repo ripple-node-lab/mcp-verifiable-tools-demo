@@ -18,7 +18,7 @@ test("riskScore is synchronous without tasks and asynchronous with tasks", async
   const cancelled = await rpc(server, "tasks/cancel", { taskId: cancellable.taskId });
   assert.equal(cancelled.result?.status, "cancelled");
   const result = await client.callAndVerify("riskScore", { symbol: "AAPL" }, "demo-sig-v1");
-  assert.equal(result.content[0].text, "86");
+  assert.equal(result.content[0].text, "72");
 }));
 test("tasks cancel aborts the producer and remains cancelled", async () => withServer(async (server) => {
   const client = new VerifiableClient(server.mcpUrl);

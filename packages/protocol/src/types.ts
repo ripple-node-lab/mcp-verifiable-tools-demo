@@ -30,8 +30,18 @@ export interface VerifiableToolsMeta {
   encryptedContent?: boolean;
   proofUri?: string;
   teeAttestation?: string;
-  inputAttestations?: JsonValue[];
+  inputAttestations?: InputAttestation[];
   requestedProofFormat?: string;
+}
+export interface InputAttestation {
+  type: string;              // "oracle-sig-v1" | "zktls-tlsn-v1" | ...
+  source: string;            // URL of the data source
+  commitment: string;        // "0x" + sha256(utf8(data))
+  data: string;              // revealed payload (raw response body). Demo extension of the spec.
+  proof?: string;            // base64url artifact
+  proofUri?: string;
+  notaryKeyUri?: string;
+  verificationKeyUri?: string;
 }
 export interface ToolDescriptorMeta {
   circuitHash: string;
@@ -40,6 +50,7 @@ export interface ToolDescriptorMeta {
   verificationKeyUri?: string;
   blind: boolean;
   formats?: { [format: string]: { circuitHash?: string; verificationKeyUri?: string } };
+  externalInputs?: boolean;  // demo extension: the tool consumes external data → requireInputProvenance applies
 }
 export interface ProveParams {
   resultId: string;

@@ -6,7 +6,7 @@ import {
   isRecord, jcs, unb64u, verifiableCapability
 } from "@demo/protocol";
 import { mockNitroFixturesDir } from "@demo/prover";
-import { DemoCommitVerifier, DemoSigVerifier, TeeNitroVerifier, TeeNitroVerifierOptions, VerificationKeyRegistry, Verifier, VerifyOutcome, verifyResult } from "@demo/verifier";
+import { DemoCommitVerifier, DemoSigVerifier, OracleSigVerifier, ProvenanceVerifier, TeeNitroVerifier, TeeNitroVerifierOptions, VerificationKeyRegistry, Verifier, VerifyOutcome, verifyResult } from "@demo/verifier";
 import { NoirVerifier } from "@demo/prover-noir";
 import { Risc0Verifier } from "@demo/prover-risc0";
 import { EzklVerifier } from "@demo/prover-ezkl";
@@ -18,6 +18,7 @@ export interface DiscoverResult { proofFormats: string[]; serverProofFormats: st
 export interface CallResponse { result: CallToolResult | TaskEnvelope; nonce: string; }
 export interface VerifiableClientOptions {
   verifiers?: Verifier[];
+  provenanceVerifiers?: ProvenanceVerifier[];
   allowedKeyOrigins?: string[];
   teeNitro?: TeeNitroVerifierOptions | false;
 }
@@ -31,6 +32,7 @@ export class VerifiableClient {
   private readonly risc0Verifier = new Risc0Verifier();
   private readonly ezklVerifier = new EzklVerifier();
   private readonly extraVerifiers: Verifier[];
+  private readonly provenanceVerifiers: ProvenanceVerifier[];
   private readonly teeNitroOption: TeeNitroVerifierOptions | false | undefined;
   private teeVerifier: TeeNitroVerifier | undefined;
   private discovered: DiscoverResult | undefined;
@@ -39,6 +41,7 @@ export class VerifiableClient {
     this.registry = new VerificationKeyRegistry([new URL(endpoint).origin, ...(options.allowedKeyOrigins ?? [])]);
     this.sigVerifier = new DemoSigVerifier(this.registry);
     this.extraVerifiers = options.verifiers ?? [];
+    this.provenanceVerifiers = options.provenanceVerifiers ?? [new OracleSigVerifier()];
     this.teeNitroOption = options.teeNitro;
     const formats = ["snarkjs-v2", "noir-v1", "risc0-v1", "ezkl-v1", "demo-sig-v1", "demo-commit-v1", ...(this.teeNitroOption === false ? [] : ["tee-nitro-v1"]), ...this.extraVerifiers.map((verifier) => verifier.format)];
     this.capabilities = clientCapabilities([...new Set(formats)]);
@@ -86,7 +89,8 @@ export class VerifiableClient {
     return this.discovered;
   }
   descriptor(tool: string): ToolDescriptorMeta | undefined { return this.descriptors.get(tool); }
-  setCapabilities(capability: VerifiableToolsCapability, tasks = false): void { this.capabilities = clientCapabilities(capability.proofFormats ?? [], { blindExecution: capability.blindExecution, requireProof: capability.requireProof, tasks }); }
+  setCapabilities(capability: VerifiableToolsCapability, tasks = false): void { this.capabilities = clientCapabilities(capability.proofFormats ?? [], { blindExecution: capability.blindExecution, requireProof: capability.requireProof, requireInputProvenance: capability.requireInputProvenance, tasks }); }
+  addProvenanceVerifier(verifier: ProvenanceVerifier): void { this.provenanceVerifiers.push(verifier); }
   async callTool(name: string, args: JsonValue, options: { proofFormat?: string; nonce?: string } = {}): Promise<CallResponse> {
     const nonce = options.nonce ?? freshNonce();
     const meta = this.requestMeta();
@@ -117,7 +121,8 @@ export class VerifiableClient {
       ? undefined
       : descriptor.formats?.[format]?.verificationKeyUri ?? descriptor.verificationKeyUri;
     const formatHash = format === undefined ? undefined : descriptor?.formats?.[format]?.circuitHash;
-    return verifyResult(meta, { arguments: args, content: result.content, nonce: options.nonce, salt: options.salt, expectedCircuitHash: formatHash ?? expectedCircuitHash(tool, format), verificationKeyUri, registry: this.registry }, verifiers);
+    return verifyResult(meta, { arguments: args, content: result.content, nonce: options.nonce, salt: options.salt, expectedCircuitHash: formatHash ?? expectedCircuitHash(tool, format), verificationKeyUri, registry: this.registry }, verifiers,
+      { required: verifiableCapability(this.capabilities)?.requireInputProvenance === true && descriptor?.externalInputs === true, verifiers: this.provenanceVerifiers, registry: this.registry });
   }
   async callAndVerify(name: string, args: JsonValue, proofFormat?: string): Promise<CallToolResult> {
     const value = await this.callTool(name, args, { proofFormat });

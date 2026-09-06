@@ -1,4 +1,4 @@
-import { JsonValue, VerifiableToolsMeta } from "@demo/protocol";
+import { InputAttestation, JsonValue, VerifiableToolsMeta } from "@demo/protocol";
 import { createHash } from "node:crypto";
 export interface ProveInput {
   arguments: JsonValue;
@@ -8,6 +8,11 @@ export interface ProveInput {
   nonce?: string;
   output: string;
   verificationKeyUri?: string;
+  inputAttestations?: InputAttestation[];
+}
+// Attestation commitments appended to publicInputs and covered by the proof.
+export function attestationCommits(input: ProveInput): string[] {
+  return (input.inputAttestations ?? []).map((attestation) => attestation.commitment);
 }
 export interface Prover {
   readonly format: string;

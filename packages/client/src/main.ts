@@ -16,7 +16,7 @@ try {
   console.log(`1. sync add: ${add.content[0].text} (verified demo-sig-v1)`);
   client.setCapabilities({ proofFormats: discovery.proofFormats }, true);
   const risk = await client.callAndVerify("riskScore", { symbol: "AAPL" }, "demo-commit-v1");
-  console.log(`2. async riskScore: ${risk.content[0].text} (verified demo-commit-v1)`);
+  console.log(`2. async riskScore: ${risk.content[0].text} (verified demo-commit-v1, provenance oracle-sig-v1)`);
   client.setCapabilities({ proofFormats: discovery.proofFormats, blindExecution: true });
   const credit = await client.blindCall({ income: 100000, debt: 30000 }, { encryptReply: true });
   console.log(`3. blind privateCreditCheck: ${credit.content[0].text} (verified demo-sig-v1)`);
