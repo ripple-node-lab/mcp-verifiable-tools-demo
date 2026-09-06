@@ -1,6 +1,6 @@
-import { EXTENSION_ID, PROTOCOL_VERSION, RESULT_TTL_MS, SUPPORTED_PROOF_FORMATS, TASKS_EXTENSION_ID, META_SERVER_INFO } from "@demo/protocol";
+import { EXTENSION_ID, PROTOCOL_VERSION, SUPPORTED_PROOF_FORMATS, TASKS_EXTENSION_ID, META_SERVER_INFO } from "@demo/protocol";
 import { JsonRpcResponse } from "@demo/protocol";
-export function discoverResponse(id: string | number | null, blindPublicKey: string): JsonRpcResponse {
+export function discoverResponse(id: string | number | null, blindPublicKey: string, resultTtlMs: number): JsonRpcResponse {
   return {
     jsonrpc: "2.0",
     id,
@@ -15,7 +15,7 @@ export function discoverResponse(id: string | number | null, blindPublicKey: str
             blindExecution: true,
             blindEncryptionSchemes: ["hpke-v1"],
             blindPublicKeys: { "hpke-v1": blindPublicKey },
-            resultTtlMs: RESULT_TTL_MS
+            resultTtlMs
           },
           [TASKS_EXTENSION_ID]: {}
         }

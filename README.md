@@ -1,14 +1,15 @@
 # MCP Verifiable Tools Demo
 
-This repository is a dependency-free Phase 1 reference demo for the
+This repository is a dependency-free Phase 1 + Phase 2-a reference demo for the
 `io.modelcontextprotocol/verifiable-tools` extension on MCP `2026-07-28`.
 It demonstrates capability negotiation, locally verified tool results,
 asynchronous proof generation through Tasks, and blind committed-input calls.
 
 > **DISCLAIMER:** `demo-sig-v1` and `demo-commit-v1` are teaching/demo formats,
-> not cryptographic zero-knowledge proofs. `x25519-aesgcm-demo-v1` is a small
-> demonstration encryption scheme, not HPKE. Do not use this implementation
-> for production security. See the [plan](docs/PLAN.md), especially §2.
+> not cryptographic zero-knowledge proofs. `hpke-v1` is RFC 9180 base mode
+> implemented with `node:crypto`; it is provided for reference, not as a
+> production security deployment. Do not use this implementation for production
+> security. See the [plan](docs/PLAN.md), especially §2.
 
 ## Quick start
 
@@ -71,6 +72,8 @@ implemented with `node:crypto` and self-tested against the RFC vector.
 MCP `2026-07-28` 上で `io.modelcontextprotocol/verifiable-tools` 拡張の
 ネゴシエーション、証明メタデータのローカル検証、Tasks による非同期処理、
 暗号化した引数によるブラインド実行を示す依存ゼロのデモです。
+Phase 1 + Phase 2-a の実装を含み、`demo-sig-v1` と `demo-commit-v1` は
+ZK 証明ではなく、`hpke-v1` は `node:crypto` による RFC 9180 base mode です。
 仕様にはユースケースの説明と結果束縛フィールド（`outputCommitment` / `nonce` /
 `tools/list` 記述子 / `inputAttestations` / 遅延証明）も含まれており、
 docs/PLAN.md の Phase 2-a で実装済みです。なお、デモは `resultId` の principal

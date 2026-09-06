@@ -30,7 +30,3 @@ export async function verifyResult(meta: VerifiableToolsMeta | undefined, contex
 export function assertVerifiable(meta: VerifiableToolsMeta | undefined): asserts meta is VerifiableToolsMeta {
   if (!meta?.proof || !meta.proofFormat || !meta.circuitHash) throw new Error("missing verifiable proof metadata");
 }
-import { canonicalJson, sha256 } from "@demo/prover";
-export function expectedInputCommitment(args: JsonValue): string {
-  return `0x${sha256(canonicalJson(args))}`;
-}

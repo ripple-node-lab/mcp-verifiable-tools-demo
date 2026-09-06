@@ -2,7 +2,7 @@ import { createServer, Server } from "node:http";
 import { generateKeyPairSync } from "node:crypto";
 import {
   CallToolResult, EXTENSION_ID, HPKE_INFO_ARGS, HPKE_INFO_REPLY, JsonRpcRequest, JsonRpcResponse,
-  META_CLIENT_CAPABILITIES, META_SERVER_INFO, RequestMeta, RESULT_TTL_MS, b64u, hpkeOpen, hpkeSeal,
+  META_CLIENT_CAPABILITIES, META_SERVER_INFO, RequestMeta, RESULT_TTL_MS, SUPPORTED_PROOF_FORMATS, b64u, hpkeOpen, hpkeSeal,
   inputCommitment, isRecord, isValidNonce, jcs, JsonValue, JsonRpcProtocolError, negotiateProofFormat,
   outputCommitment, rawX25519Public, tasksDeclared, verifiableCapability
 } from "@demo/protocol";
@@ -59,7 +59,7 @@ export class DemoServer {
   get blindPublicKeyBase64(): string { return this.blindPublicKey; }
   async dispatch(request: JsonRpcRequest): Promise<JsonRpcResponse> {
     try {
-      if (request.method === "server/discover") return discoverResponse(request.id, this.blindPublicKey);
+      if (request.method === "server/discover") return discoverResponse(request.id, this.blindPublicKey, this.results.retentionMs);
       if (request.method === "tools/list") return { jsonrpc: "2.0", id: request.id, result: { resultType: "complete", tools: toolList(this.url, this.descriptorOverride) } };
       if (request.method === "tools/call") return await this.callTool(request);
       if (request.method === "tasks/get") return this.getTask(request);
@@ -168,13 +168,19 @@ export class DemoServer {
   private async prove(request: JsonRpcRequest): Promise<JsonRpcResponse> {
     const params = paramsRecord(request.params);
     if (!params || typeof params.resultId !== "string") throw new JsonRpcProtocolError(-32602, "invalid prove parameters");
+    const requestMeta = isRecord(params._meta) ? params._meta as unknown as RequestMeta : undefined;
+    const capability = verifiableCapability(requestMeta?.[META_CLIENT_CAPABILITIES]);
     // Principal and session binding are outside this demo's scope.
     const record = this.results.get(params.resultId);
     if (record === undefined) throw new JsonRpcProtocolError(-32602, "result not found", { reason: "resultNotFound" });
     if (record === "expired") throw new JsonRpcProtocolError(-32602, "result expired", { reason: "resultExpired" });
     const nonce = params.nonce === undefined ? record.nonce : params.nonce;
     if (nonce !== undefined && !isValidNonce(nonce)) throw new JsonRpcProtocolError(-32602, "invalid nonce");
-    const format = typeof params.proofFormat === "string" ? params.proofFormat : "demo-sig-v1";
+    const requested = typeof params.proofFormat === "string" ? params.proofFormat : undefined;
+    const format = requestMeta?.[META_CLIENT_CAPABILITIES] !== undefined
+      ? negotiateProofFormat(capability, SUPPORTED_PROOF_FORMATS, requested)
+      : requested ?? "demo-sig-v1";
+    if (!format || !(SUPPORTED_PROOF_FORMATS as readonly string[]).includes(format)) throw new JsonRpcProtocolError(-32602, "unsupported proof format");
     const output = record.content[0]?.text ?? "";
     const result = await this.provenResult(record.tool as ToolName, record.arguments, output, format, nonce, record.salt, undefined, record.content);
     return { jsonrpc: "2.0", id: request.id, result };

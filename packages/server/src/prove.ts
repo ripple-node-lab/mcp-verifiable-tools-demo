@@ -16,6 +16,7 @@ export type StoredResultLookup = StoredResult | "expired" | undefined;
 export class ResultStore {
   private readonly results = new Map<string, StoredResult>();
   constructor(private readonly ttlMs = RESULT_TTL_MS) {}
+  get retentionMs(): number { return this.ttlMs; }
   put(value: Omit<StoredResult, "createdAt">): string {
     this.sweep();
     const resultId = randomBytes(16).toString("hex");

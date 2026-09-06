@@ -4,7 +4,7 @@ import {
   VerifiableToolsCapability, b64u, clientCapabilities, expectedCircuitHash, freshNonce, hpkeOpen,
   isRecord, jcs, unb64u, verifiableCapability
 } from "@demo/protocol";
-import { DemoCommitVerifier, DemoSigVerifier, VerificationKeyRegistry, verifyResult } from "@demo/verifier";
+import { DemoCommitVerifier, DemoSigVerifier, VerificationKeyRegistry, VerifyOutcome, verifyResult } from "@demo/verifier";
 import { encryptArguments, generateReplyKeyPair } from "./blind.js";
 import { pollTask, RpcRequest } from "./tasks.js";
 
@@ -52,7 +52,7 @@ export class VerifiableClient {
     if (response.error) throw new Error(response.error.message);
     return { result: response.result as CallToolResult | TaskEnvelope, nonce };
   }
-  async verify(result: CallToolResult, args: JsonValue, tool: string, options: { nonce?: string; salt?: Uint8Array } = {}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  async verify(result: CallToolResult, args: JsonValue, tool: string, options: { nonce?: string; salt?: Uint8Array } = {}): Promise<VerifyOutcome> {
     const formats = verifiableCapability(this.capabilities)?.proofFormats ?? [];
     const verifiers = [...(formats.includes("demo-sig-v1") ? [this.sigVerifier] : []), ...(formats.includes("demo-commit-v1") ? [this.commitVerifier] : [])];
     return verifyResult(result._meta?.[EXTENSION_ID], { arguments: args, content: result.content, nonce: options.nonce, salt: options.salt, expectedCircuitHash: expectedCircuitHash(tool) }, verifiers);
@@ -68,7 +68,7 @@ export class VerifiableClient {
   async blindCall(args: JsonValue, options: { proofFormat?: string; encryptReply?: boolean } = {}): Promise<CallToolResult> {
     const discovery = this.discovered ?? await this.discover();
     if (!discovery.blindExecution || !discovery.blindPublicKeys["hpke-v1"]) throw new Error("server does not support blind execution");
-    const encrypted = encryptArguments(args, discovery.blindPublicKeys["hpke-v1"]);
+    const encrypted = encryptArguments(args, discovery.blindPublicKeys["hpke-v1"], "privateCreditCheck");
     const nonce = freshNonce();
     const reply = options.encryptReply ? generateReplyKeyPair() : undefined;
     const response = await this.request("verifiable-tools/call", { tool: "privateCreditCheck", inputCommitment: encrypted.inputCommitment, encryptionScheme: "hpke-v1", encryptedArguments: encrypted.encryptedArguments, proofFormat: options.proofFormat ?? "demo-sig-v1", ...(reply ? { replyPublicKey: b64u(reply.publicKey) } : {}), _meta: { ...this.requestMeta(), [EXTENSION_ID]: { nonce } } });
