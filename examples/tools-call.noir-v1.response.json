@@ -1,0 +1,38 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "resultType": "complete",
+    "content": [
+      {
+        "type": "text",
+        "text": "42"
+      }
+    ],
+    "isError": false,
+    "_meta": {
+      "io.modelcontextprotocol/serverInfo": {
+        "name": "verifiable-tools-demo",
+        "version": "1.0.0"
+      },
+      "io.modelcontextprotocol/verifiable-tools": {
+        "proof": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000…",
+        "proofFormat": "noir-v1",
+        "circuitHash": "0x70d3e40690fb97fbcace5ce1d3114282e7dfff1387b125767b6a942e1ca3261e",
+        "inputCommitment": "0x19a9da213b0b954d2df6634131600d6a1e7561f25cdaa5152a4bdd35d24e9a0a",
+        "outputCommitment": "0x5f0cd6507175ef4a9450721e54fa2e534fe911bff7f37afdbba0c41ebe1f9458",
+        "nonce": "0xa92f3a9ee5ce4235964b45aabf42eb0b",
+        "verificationKeyUri": "http://127.0.0.1:40969/vk/0x70d3e40690fb97fbcace5ce1d3114282e7dfff1387b125767b6a942e1ca3261e",
+        "publicInputs": [
+          "0x5f0cd6507175ef4a9450721e54fa2e534fe911bff7f37afdbba0c41ebe1f9458",
+          "0x19a9da213b0b954d2df6634131600d6a1e7561f25cdaa5152a4bdd35d24e9a0a",
+          "0xa92f3a9ee5ce4235964b45aabf42eb0b",
+          "0x0000000000000000000000000000000000000000000000000000000000000014",
+          "0x0000000000000000000000000000000000000000000000000000000000000016",
+          "0x000000000000000000000000000000000000000000000000000000000000002a"
+        ]
+      }
+    }
+  },
+  "note": "proof is truncated with … for documentation; use the served result for the complete proof"
+}

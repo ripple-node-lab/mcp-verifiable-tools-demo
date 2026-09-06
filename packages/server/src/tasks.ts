@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { CallToolResult, Task, TaskResult, TaskStatus } from "@demo/protocol";
+import { CallToolResult, JsonRpcProtocolError, Task, TaskResult, TaskStatus } from "@demo/protocol";
 export interface TaskStoreOptions { ttlMs?: number; }
 export class TaskStore {
   private readonly tasks = new Map<string, Task>();
   private readonly controllers = new Map<string, AbortController>();
   private readonly ttlMs: number;
   constructor(options: TaskStoreOptions = {}) { this.ttlMs = options.ttlMs ?? 60000; }
+  get controllerCount(): number { return this.controllers.size; }
   create(produce: (signal: AbortSignal) => Promise<CallToolResult>): TaskResult {
     this.sweep();
     const taskId = `task-${randomUUID()}`;
@@ -52,11 +53,12 @@ export class TaskStore {
     if (result) task.result = result;
   }
   private fail(taskId: string, error: unknown): void {
-    const detail = error instanceof Error ? error.message : "task failed";
+    const protocolError = error instanceof JsonRpcProtocolError ? error : undefined;
+    const detail = protocolError?.message ?? (error instanceof Error ? error.message : "task failed");
     const existing = this.tasks.get(taskId);
     if (existing?.status === "cancelled" && error instanceof DOMException && error.name === "AbortError") return;
     this.update(taskId, "failed", undefined);
     const task = this.tasks.get(taskId);
-    if (task) task.error = { code: -32603, message: detail };
+    if (task) task.error = { code: protocolError?.code ?? -32603, message: detail, ...(protocolError?.data === undefined ? {} : { data: protocolError.data }) };
   }
 }

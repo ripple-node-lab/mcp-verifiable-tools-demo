@@ -31,7 +31,7 @@ declare module "node:http" {
   export interface ServerResponse extends EventEmitter {
     statusCode: number;
     setHeader(name: string, value: string): void;
-    end(body?: string): void;
+    end(body?: string | Uint8Array): void;
   }
   export interface Server extends EventEmitter {
     listen(port: number, hostname?: string, callback?: () => void): this;
@@ -68,5 +68,22 @@ declare module "node:crypto" {
   export function hkdfSync(digest: string, key: Uint8Array, salt: Uint8Array, info: Uint8Array, length: number): ArrayBuffer;
 }
 declare module "node:events" { export class EventEmitter { on(event: string, listener: (...args: never[]) => void): this; once(event: string, listener: (...args: never[]) => void): this; removeListener(event: string, listener: (...args: never[]) => void): this; emit(event: string, ...args: never[]): boolean; } }
-declare module "node:assert/strict" { const assert: { equal(actual: unknown, expected: unknown, message?: string): void; deepEqual(actual: unknown, expected: unknown, message?: string): void; ok(value: unknown, message?: string): void; rejects(fn: () => Promise<unknown>, message?: string): Promise<void>; throws(fn: () => unknown, message?: string): void }; export default assert; }
-declare module "node:test" { type TestFn = (name: string, fn: () => void | Promise<void>) => void | Promise<void>; const test: TestFn; export default test; }
+declare module "node:worker_threads" {
+  import { EventEmitter } from "node:events";
+  export class Worker extends EventEmitter {
+    constructor(filename: string | URL, options?: { type?: "module" | "commonjs" }): Worker;
+    postMessage(value: unknown): void;
+    terminate(): Promise<number>;
+    unref(): void;
+  }
+  export const parentPort: (EventEmitter & { on(event: "message", listener: (value: unknown) => void): EventEmitter; postMessage(value: unknown): void }) | null;
+}
+declare module "node:url" { export function fileURLToPath(url: string | URL): string; }
+declare module "node:module" { export function createRequire(url: string | URL): (specifier: string) => { isMainThread?: boolean }; }
+declare module "node:fs/promises" {
+  export function readFile(path: string | URL, options: "utf8"): Promise<string>;
+  export function readFile(path: string | URL, options: { encoding: "utf8" }): Promise<string>;
+  export function readFile(path: string | URL, options?: { encoding?: string }): Promise<Uint8Array>;
+}
+declare module "node:assert/strict" { const assert: { equal(actual: unknown, expected: unknown, message?: string): void; notEqual(actual: unknown, expected: unknown, message?: string): void; deepEqual(actual: unknown, expected: unknown, message?: string): void; ok(value: unknown, message?: string): void; rejects(fn: () => Promise<unknown>, message?: string): Promise<void>; throws(fn: () => unknown, message?: string): void }; export default assert; }
+declare module "node:test" { type TestFn = (name: string, fn: () => void | Promise<void>) => void | Promise<void>; const test: TestFn; export function after(fn: () => void | Promise<void>): void; export default test; }

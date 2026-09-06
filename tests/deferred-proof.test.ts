@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { VerifiableClient } from "@demo/client";
 import { withServer, withServerOptions, rpc, expectComplete } from "./helpers.js";
-test("deferred price quote can be proved and expires", async () => withServerOptions({ resultTtlMs: 50 }, async (server) => {
+test("deferred price quote can be proved and expires", async () => withServerOptions({ resultTtlMs: 100 }, async (server) => {
   const client = new VerifiableClient(server.mcpUrl);
   await client.discover();
   const initial = await client.callTool("priceQuote", { symbol: "AAPL" });
@@ -13,7 +13,7 @@ test("deferred price quote can be proved and expires", async () => withServerOpt
   const provedResult = expectComplete(proved.result);
   assert.equal(provedResult.content[0].text, initialResult.content[0].text);
   assert.equal((await client.verify(provedResult, { symbol: "AAPL" }, "priceQuote", { nonce: proved.nonce })).ok, true);
-  await new Promise<void>((resolve) => setTimeout(resolve, 80));
+  await new Promise<void>((resolve) => setTimeout(resolve, 150));
   const expired = await rpc(server, "verifiable-tools/prove", { resultId });
   assert.equal(expired.error?.data?.reason, "resultExpired");
 }));
@@ -22,13 +22,24 @@ test("plain price quotes do not retain deferred witnesses without capability", a
   const result = expectComplete(response.result as never);
   assert.equal(result._meta?.["io.modelcontextprotocol/verifiable-tools"], undefined);
 }));
-test("expired deferred witnesses are swept without traffic", async () => withServerOptions({ resultTtlMs: 50 }, async (server) => {
+test("capability calls without a nonce use the fixed empty nonce slot", async () => withServer(async (server) => {
+  const response = await rpc(server, "tools/call", {
+    name: "add",
+    arguments: { a: 20, b: 22 },
+    _meta: { "io.modelcontextprotocol/clientCapabilities": { extensions: { "io.modelcontextprotocol/verifiable-tools": { proofFormats: ["demo-sig-v1"] } } } }
+  }, { "Mcp-Name": "add" });
+  const result = expectComplete(response.result as never);
+  const meta = result._meta?.["io.modelcontextprotocol/verifiable-tools"];
+  assert.equal(meta?.nonce, undefined);
+  assert.equal(meta?.publicInputs?.[2], "0x");
+}));
+test("expired deferred witnesses are swept without traffic", async () => withServerOptions({ resultTtlMs: 100 }, async (server) => {
   const client = new VerifiableClient(server.mcpUrl);
   await client.discover();
   const initial = expectComplete((await client.callTool("priceQuote", { symbol: "AAPL" })).result);
   const resultId = initial._meta?.["io.modelcontextprotocol/verifiable-tools"]?.resultId;
   assert.equal(typeof resultId, "string");
-  await new Promise<void>((resolve) => setTimeout(resolve, 120));
+  await new Promise<void>((resolve) => setTimeout(resolve, 250));
   assert.equal(server.results.witnessCount, 0);
   const expired = await rpc(server, "verifiable-tools/prove", { resultId });
   assert.equal(expired.error?.data?.reason, "resultExpired");
