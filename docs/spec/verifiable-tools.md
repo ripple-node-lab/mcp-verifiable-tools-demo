@@ -125,7 +125,7 @@ Both client and server advertise the extension under the `extensions` capability
 | `requireProof` | `boolean` | For clients: if true, the server SHOULD return a proof when it can; servers MAY omit results for calls they cannot prove. |
 | `requireInputProvenance` | `boolean` | For clients: if true, results that consume external data MUST carry `inputAttestations` (see §Input provenance). |
 | `blindEncryptionSchemes` | `string[]` | For servers: `encryptionScheme` values accepted by `verifiable-tools/call`, e.g. `["hpke-v1"]`. REQUIRED when `blindExecution: true` on a server. |
-| `blindPublicKey` | `string` | For servers: base64url public key for the first listed scheme. See §Blind / committed-input tool calls for how it must be attested or pinned. REQUIRED when `blindExecution: true` on a server. |
+| `blindPublicKeys` | `object` | For servers: map from each value in `blindEncryptionSchemes` to that scheme's base64url public key (raw X25519 for `hpke-v1`). REQUIRED when `blindExecution: true`; MUST contain an entry for every listed scheme. |
 | `resultTtlMs` | `number` | For servers: how long a `resultId` stays provable via `verifiable-tools/prove`. REQUIRED when the server may emit `resultId`; clients MUST treat a `resultId` from a server that did not advertise `resultTtlMs` as unprovable. |
 
 Example `server/discover` response:
@@ -144,7 +144,7 @@ Example `server/discover` response:
           "proofFormats": ["ezkl-v1", "tee-sgx-v1"],
           "blindExecution": true,
           "blindEncryptionSchemes": ["hpke-v1"],
-          "blindPublicKey": "<base64url X25519 public key>",
+          "blindPublicKeys": { "hpke-v1": "<base64url X25519 public key>" },
           "resultTtlMs": 86400000
         },
         "io.modelcontextprotocol/tasks": {}
@@ -186,7 +186,7 @@ A client requesting verifiable output includes the extension under `extensions` 
       },
       "io.modelcontextprotocol/verifiable-tools": {
         "requestedProofFormat": "ezkl-v1",
-        "nonce": "0x5f1c..."
+        "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"
       }
     }
   }
@@ -231,10 +231,10 @@ When the extension is negotiated and the server can produce a proof, the `tools/
         "proofFormat": "ezkl-v1",
         "circuitHash": "0x12ab...",
         "verificationKeyUri": "https://example.com/vk/0x12ab...",
-        "publicInputs": ["0x3b7e...", "0xdeadbeef...", "0x5f1c..."],
+        "publicInputs": ["0x3b7e...", "0xdeadbeef...", "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"],
         "outputCommitment": "0x3b7e...",
         "inputCommitment": "0xdeadbeef...",
-        "nonce": "0x5f1c...",
+        "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e",
         "teeAttestation": "0x9c2f..."
       }
     }
@@ -251,7 +251,7 @@ Field definitions:
 | `proofFormat` | `string` | Recommended | The engine and major version used to produce the proof, e.g. `"ezkl-v1"`, `"risc0-v1"`, `"tee-sgx-v1"`. |
 | `circuitHash` | `string` | Recommended | A cryptographic hash identifying the circuit, program, or Docker artifact that was executed. |
 | `verificationKeyUri` | `string` (URI) | Optional | Location of the verification key needed to check the proof. |
-| `publicInputs` | `array` | Conditional | Public inputs required to verify the proof, in the order `[outputCommitment, inputCommitment, nonce, ...format-specific]`. Omitted for pure TEE attestations. |
+| `publicInputs` | `array` | Conditional | Public inputs required to verify the proof, in the order `[outputCommitment, inputCommitment, nonce, ...format-specific]`. Index 2 is fixed: when the client supplied no nonce, `publicInputs[2]` MUST be the empty hex string `"0x"` so the format-specific tail always starts at index 3. Omitted for pure TEE attestations. |
 | `teeAttestation` | `string` | Optional | A TEE attestation document, for cases where the computation ran inside a trusted execution environment. |
 | `inputCommitment` | `string` | Required | REQUIRED whenever `proof` or `teeAttestation` is present. Commitment to the inputs used, so the client can verify that the proof was generated against the same arguments it supplied. See §Result binding for the commitment construction. |
 | `outputCommitment` | `string` | Required | REQUIRED whenever `proof` or `teeAttestation` is present. `SHA-256` of the canonical encoding of `content`, so the client can verify that the proven output is the returned output. See §Result binding. |
@@ -269,9 +269,9 @@ A proof is only useful if the client can tie it to the exact request it made and
 
 **Input binding.** `inputCommitment = "0x" || hex(SHA-256(salt || JCS(arguments)))` where `JCS` is the JSON Canonicalization Scheme ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)). `salt` is either empty or exactly 32 bytes from a cryptographically secure random source. For plain `tools/call` the salt MUST be empty (no request field carries it, and the arguments are visible to the server anyway), so `inputCommitment = "0x" || hex(SHA-256(JCS(arguments)))`. For `verifiable-tools/call` the salt MUST be 32 random bytes and MUST be carried inside `encryptedArguments`, so that the commitment is *hiding* and a network observer cannot brute-force low-entropy arguments from the commitment. Servers MUST reject a blind call whose decrypted salt is not 32 bytes with `-32602`.
 
-**Output binding.** `outputCommitment = "0x" || hex(SHA-256(JCS(content)))` over the `content` array of the `CallToolResult`. When `publicInputs` is present, `publicInputs[0]` MUST always be `outputCommitment`; formats whose circuit exposes the raw output as a public signal include it additionally in the format-specific tail.
+**Output binding.** `outputCommitment = "0x" || hex(SHA-256(JCS(content)))` over the `content` array of the `CallToolResult`. When `publicInputs` is present, `publicInputs[0]` MUST always be `outputCommitment`; `publicInputs[1]` MUST be `inputCommitment`; `publicInputs[2]` MUST be the request `nonce`, or the empty hex string `"0x"` when the client supplied no nonce, so the format-specific tail always starts at index 3. Formats whose circuit exposes the raw output as a public signal include it additionally in the format-specific tail.
 
-**Request binding.** A client MAY include a fresh random `nonce` in `params._meta["io.modelcontextprotocol/verifiable-tools"].nonce`. A valid nonce is lower-case hex with a `0x` prefix encoding 16–64 bytes (`^0x[0-9a-f]{32,128}$`). If present, the server MUST bind it into the proof (as a public input, or in the signed/attested payload) and echo it in the result metadata. The server MUST reject a request whose `nonce` is present but does not match this grammar with `-32602`. Uniqueness is the client's responsibility: the server does not track nonces; the client MUST generate a fresh nonce per request and MUST reject a result whose echoed nonce it did not issue for that request. Clients that need freshness (any tool whose correct answer changes over time, e.g. prices, balances, health checks) SHOULD always send a nonce; otherwise a server can replay a proof that was valid for an earlier call.
+**Request binding.** A client MAY include a fresh random `nonce` in `params._meta["io.modelcontextprotocol/verifiable-tools"].nonce`. A valid nonce is lower-case hex with a `0x` prefix encoding 16–64 bytes (`^0x[0-9a-f]{32,128}$`). If present, the server MUST bind it into the proof (as a public input, or in the signed/attested payload) and echo it in the result metadata. When the client supplied no nonce, `publicInputs[2]` MUST be the empty hex string `"0x"` so the format-specific tail always starts at index 3. The server MUST reject a request whose `nonce` is present but does not match this grammar with `-32602`. Uniqueness is the client's responsibility: the server does not track nonces; the client MUST generate a fresh nonce per request and MUST reject a result whose echoed nonce it did not issue for that request. Clients that need freshness (any tool whose correct answer changes over time, e.g. prices, balances, health checks) SHOULD always send a nonce; otherwise a server can replay a proof that was valid for an earlier call.
 
 A verifier therefore checks, in order: (1) `proofFormat` was negotiated; (2) `circuitHash` matches the pinned hash for the tool (§Tool descriptor metadata); (3) `inputCommitment` equals its own recomputation; (4) `outputCommitment` equals `SHA-256(JCS(content))`; (5) `nonce` matches what it sent; (6) the proof / attestation verifies under the pinned verification key.
 
@@ -394,7 +394,7 @@ verifiable-tools/prove
 
 `verifiable-tools/prove` is an ordinary JSON-RPC request on the same MCP session and transport as `tools/call`. It is available only after the extension has been negotiated by both parties; servers that have not advertised `resultTtlMs` MUST answer `-32601`. `resultId` MUST be unguessable (at least 128 bits from a cryptographically secure random source) and MUST be bound to the principal (authorization identity) and, where the transport has one, the session that made the original call; the server MUST answer `-32602` with `data.reason: "resultNotFound"` for any other caller, without distinguishing unknown from unauthorized identifiers. For results of blind calls whose `content` was returned encrypted to `replyPublicKey`, the deferred response MUST encrypt `content` the same way. Request options (`proofFormat`, `nonce`) live in `params` directly, not under `_meta`.
 
-The response is either a `CallToolResult` whose `content` is byte-identical to the original and whose `_meta` now contains the proof, or a task (`resultType: "task"`) that resolves to one. The server MUST retain enough state, including any private witness required by the selected proof format (the plaintext arguments for ZK formats; the sealed execution record for TEE formats), together with the output and nonce, to prove the original computation for at least the `resultTtlMs` it advertises (REQUIRED when emitting `resultId`); after that it MAY return `-32602` with `data.reason: "resultExpired"`.
+The response is either a `CallToolResult` whose `content` is byte-identical to the original and whose `_meta` now contains the proof, or a task (`resultType: "task"`) that resolves to one. The server MUST retain enough state, including any private witness required by the selected proof format (the plaintext arguments for ZK formats; the sealed execution record for TEE formats), together with the output and nonce, to prove the original computation for at least the `resultTtlMs` it advertises (REQUIRED when emitting `resultId`); after `resultTtlMs` has elapsed the server MUST reject the `resultId` with `-32602` and `data.reason: "resultExpired"` and MUST delete the retained witness.
 
 Which mode is appropriate is a per-tool decision expressed by `proofPolicy`. `always` suits low-volume, high-value calls (Scenario C); `onDemand` and `sampled` suit high-volume calls where the *possibility* of being audited is the deterrent (Scenario B). A server that is caught returning an unprovable result under `sampled` should be treated by the client as untrusted for all past results in the same period.
 
@@ -420,10 +420,10 @@ Defined `encryptionScheme` values:
 
 | Value | Meaning | Who sees plaintext |
 |---|---|---|
-| `hpke-v1` | [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180) HPKE, base mode, `DHKEM(X25519, HKDF-SHA256)` / `HKDF-SHA256` / `AES-128-GCM`. `encryptedArguments` = `enc \|\| ciphertext`. AAD = `JCS({tool, inputCommitment, encryptionScheme})`. | The proving environment (TEE or the machine running the prover). The MCP server process outside it MUST NOT. |
+| `hpke-v1` | [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180) HPKE, base mode, `DHKEM(X25519, HKDF-SHA256)` / `HKDF-SHA256` / `AES-128-GCM`. `encryptedArguments` = `enc \|\| ciphertext`. AAD = `JCS({tool, inputCommitment, encryptionScheme})`. `info` = UTF-8 `"io.modelcontextprotocol/verifiable-tools/hpke-v1/args"`. | The proving environment (TEE or the machine running the prover). The MCP server process outside it MUST NOT. |
 | `fhe-tfhe-v1` | Arguments encrypted under a client-held TFHE key; the tool is evaluated homomorphically and `content` is returned encrypted. Reserved: requires verifiable FHE to also obtain a correctness proof, which is not yet practical (§Open Questions). | Nobody but the client. |
 
-The server's public key for `hpke-v1` is advertised in its capability object as `blindPublicKey` (base64url raw X25519 key) together with `blindEncryptionSchemes`. Because `server/discover` is the delivery channel, the key is only as trustworthy as that channel: on a TEE-backed server the key MUST be bound into the attestation's user-data field so the client can check that the key it encrypts to lives inside the attested enclave; otherwise it MUST be pinned like a verification key.
+The server's public key for `hpke-v1` is advertised in its capability object as `blindPublicKeys["hpke-v1"]` (base64url raw X25519 key) together with `blindEncryptionSchemes`. Because `server/discover` is the delivery channel, the key is only as trustworthy as that channel: on a TEE-backed server the key MUST be bound into the attestation's user-data field so the client can check that the key it encrypts to lives inside the attested enclave; otherwise it MUST be pinned like a verification key.
 
 HTTP headers:
 
@@ -440,7 +440,7 @@ Blind execution hides *inputs*; it does not, by itself, hide anything about the 
 
 #### Encrypted replies
 
-When `replyPublicKey` is present the server MUST return `content` as a single `{ "type": "text", "text": "<base64url(enc || ciphertext)>" }` element, and the result `_meta["io.modelcontextprotocol/verifiable-tools"].encryptedContent` MUST be `true`. Encryption is `hpke-v1` base mode with the same suite as blind arguments, plaintext = `JCS(originalContent)`, AAD = `JCS({tool, inputCommitment, nonce})` (nonce omitted from the object when absent). `outputCommitment` MUST be computed over the *plaintext* `originalContent`, so the client decrypts first and then runs the normal verification steps. `replyPublicKey` is ignored for non-blind `tools/call`.
+When `replyPublicKey` is present the server MUST return `content` as a single `{ "type": "text", "text": "<base64url(enc || ciphertext)>" }` element, and the result `_meta["io.modelcontextprotocol/verifiable-tools"].encryptedContent` MUST be `true`. Encryption is `hpke-v1` base mode with the same suite as blind arguments, plaintext = `JCS(originalContent)`, AAD = `JCS({tool, inputCommitment, nonce})` (nonce omitted from the object when absent), and `info` = UTF-8 `"io.modelcontextprotocol/verifiable-tools/hpke-v1/reply"`. `outputCommitment` MUST be computed over the *plaintext* `originalContent`, so the client decrypts first and then runs the normal verification steps. `replyPublicKey` is ignored for non-blind `tools/call`.
 
 Example request:
 
@@ -466,7 +466,7 @@ Example request:
         }
       },
       "io.modelcontextprotocol/verifiable-tools": {
-        "nonce": "0x5f1c..."
+        "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"
       }
     }
   }
@@ -495,8 +495,8 @@ Example response:
         "proofFormat": "tee-sgx-v1",
         "inputCommitment": "0xdeadbeef...",
         "outputCommitment": "0x...",
-        "nonce": "0x5f1c...",
-        "publicInputs": ["0x<outputCommitment>", "0x<inputCommitment>", "0x5f1c..."],
+        "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e",
+        "publicInputs": ["0x<outputCommitment>", "0x<inputCommitment>", "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"],
         "teeAttestation": "0x9c2f..."
       }
     }
@@ -559,7 +559,7 @@ For `proofFormat` values of the form `tee-{platform}-v{N}` the `proof` is a sign
 
 1. The attestation document's certificate chain terminates at the platform vendor's root (AWS Nitro: COSE_Sign1 with the Nitro root; Intel SGX: DCAP quote with Intel PCS collateral; AMD SEV-SNP: VCEK chain).
 2. The measurement in the document (Nitro PCRs, SGX `MRENCLAVE`, SNP launch digest) equals the measurement the client has pinned for `circuitHash`. `circuitHash` for TEE formats SHOULD be defined as a hash over the measurement plus the reproducible-build recipe that produces it.
-3. The document's user-data / report-data field contains the signing public key used for `proof` (and `blindPublicKey` if blind execution is offered), so the key is provably enclave-resident.
+3. The document's user-data / report-data field contains the signing public key used for `proof` (and `blindPublicKeys["hpke-v1"]` if blind execution is offered), so the key is provably enclave-resident.
 4. The document is fresh: it either embeds the request `nonce` or was issued within a client-defined window.
 
 Defined values: `tee-nitro-v1`, `tee-sgx-dcap-v1`, `tee-sevsnp-v1`.

@@ -46,7 +46,7 @@ MCP SEP ガイドラインの「Prototype Requirements」と設計原則「Demon
 | `tools/list` `_meta` の記述子（`circuitHash`, `proofPolicy`, ...） | クライアントが tool → `circuitHash` を得る経路を定義（§7 未決事項の解消）。ただし記述子は hint であり TOFU / 帯域外レジストリでピン留めする | §7 未決事項 |
 | `inputAttestations`（`zktls-tlsn-v1`, `oracle-sig-v1`, `mcp-verifiable-v1`） | 「データプロバイダーへの依拠」を扱う。zkTLS で外部 API の出力を、ネストした MCP 結果で上流サーバーの証明を、それぞれ主証明の public input に連結する | #94 コメント「データプロバイダーの依拠: zkTLS」、#3 §2（mpz = TLSNotary 基盤） |
 | 遅延証明（`resultId`, `verifiable-tools/prove`, `proofPolicy: always / onDemand / sampled`, `resultTtlMs`） | 「都度でなくスポットで検証したい」「証明コストを誰が負担するか」を、プロトコルに固定せず tool 単位で選べるようにする | #94 コメント 3〜4 |
-| `encryptionScheme` の固定（`hpke-v1` = RFC 9180 DHKEM(X25519)+HKDF-SHA256+AES-128-GCM、`fhe-tfhe-v1` は予約）、`blindPublicKey` の attestation 束縛、出力側漏洩と `replyPublicKey` | 現行 `x25519-aesgcm-demo-v1` から標準 HPKE へ。FHE は「機密性は得られるが正しさは vFHE がないと証明できない」として予約のみ | #3 §3（node-seal / TFHE-rs）、#4 §4-5（`hpke-js`）、#6 Week 5（PBS, vFHE）、Week 2（output leakage） |
+| `encryptionScheme` の固定（`hpke-v1` = RFC 9180 DHKEM(X25519)+HKDF-SHA256+AES-128-GCM、`fhe-tfhe-v1` は予約）、`blindPublicKeys` の attestation 束縛、出力側漏洩と `replyPublicKey` | 現行 `x25519-aesgcm-demo-v1` から標準 HPKE へ。FHE は「機密性は得られるが正しさは vFHE がないと証明できない」として予約のみ | #3 §3（node-seal / TFHE-rs）、#4 §4-5（`hpke-js`）、#6 Week 5（PBS, vFHE）、Week 2（output leakage） |
 | TEE attestation 形式の検証手順（chain / measurement / user-data への鍵束縛 / freshness） | `teeAttestation` を「不透明な文字列」から検証可能な契約にする | #4 §2（Nitro は TS で検証可、SGX DCAP は sidecar） |
 | Rationale のトレードオフ表、Performance の計測義務 | 証明時間・サイズ・検証時間・検証器の依存フットプリントを format 定義ごとに報告させる | #94 コメント「証明生成時間、証明サイズ、計算速度、計算コスト、トレードオフ」 |
 | Security: replay / output substitution / hiding / provenance / descriptor trust / randomness reuse / revocation | 否定テスト（§4.3）と 1 対 1 に対応させる | #6 Week 2（Beaver triple 再利用）、Week 3（nonce 再利用による鍵復元） |
@@ -130,7 +130,7 @@ mcp-verifiable-tools-demo/
   - 宣言していれば `proofFormats` の交差から 1 形式を選ぶ（`_meta["io.modelcontextprotocol/verifiable-tools"].requestedProofFormat` を優先）。交差が空で `requireProof: true` なら `-32602` 相当のエラー、そうでなければ証明なしで返す。
   - `riskScore` はクライアントが `io.modelcontextprotocol/tasks` を宣言している場合のみ `resultType: "task"` を返す（未宣言なら同期で待って返す）。
 - `tasks/get` / `tasks/cancel`: SEP-2663 の `Task` 形状（`taskId`, `status`, `createdAt`, `lastUpdatedAt`, `ttlMs`, `pollIntervalMs`）。完了時は `result` に `CallToolResult` + 拡張 `_meta` を含める。
-- `verifiable-tools/call`: `encryptionScheme: "x25519-aesgcm-demo-v1"`（HPKE の簡易代替。README で明記。Phase 2-a で `hpke-v1` + 塩付きコミットメントに置換）。サーバーの X25519 公開鍵は `server/discover` の拡張 capability に `blindPublicKey` として載せる（デモ用フィールド、仕様書では未定義であることを注記）。復号後に `SHA-256(canonical JSON(args))` が `inputCommitment` と一致することを確認、不一致は `-32602`。応答 `_meta` には `inputCommitment` を含める。
+- `verifiable-tools/call`: `encryptionScheme: "x25519-aesgcm-demo-v1"`（HPKE の簡易代替。README で明記。Phase 2-a で `hpke-v1` + 塩付きコミットメントに置換）。サーバーの X25519 公開鍵は `server/discover` の拡張 capability に `blindPublicKeys` として載せる（デモ用フィールド、仕様書では未定義であることを注記）。復号後に `SHA-256(canonical JSON(args))` が `inputCommitment` と一致することを確認、不一致は `-32602`。応答 `_meta` には `inputCommitment` を含める。
 - `GET /vk/{circuitHash}`: `verificationKeyUri` の実体。`demo-sig-v1` の Ed25519 公開鍵（PEM）を返す。
 
 ### 4.2 クライアント（`packages/client`）
@@ -161,7 +161,7 @@ mcp-verifiable-tools-demo/
 | Phase | 内容 | 成果物 |
 |---|---|---|
 | 1（完了） | 上記構成の雛形 + `demo-sig-v1` / `demo-commit-v1` + 3 シナリオ + テスト + CI | `npm run demo` / `npm test` が通る |
-| 2-a 仕様改訂の追従（Phase 2 の先行タスク） | (1) `Prover.prove(input, { signal }): Promise<ProofArtifact>` / `Verifier.verify(...): Promise<...>` へ非同期化し `AbortSignal` を `tasks/cancel` に接続、`proofUri` 経路を `packages/server` に追加（#4 §4-1）。(2) `outputCommitment` / `nonce` / 塩付き `inputCommitment`（JCS）/ `tools/list` 記述子 / `resultId` + `verifiable-tools/prove` / `proofPolicy` を protocol・server・client に実装。(3) `x25519-aesgcm-demo-v1` を `hpke-v1`（`hpke-js`）へ置換。(4) §4.3 の binding / deferred / descriptor 否定テストを追加 | 既存 2 形式のまま、改訂仕様の全フィールドが `npm test` で検証される |
+| 2-a 仕様改訂の追従（Phase 2 の先行タスク） | (1) `Prover.prove(input, { signal }): Promise<ProofArtifact>` / `Verifier.verify(...): Promise<...>` へ非同期化し `AbortSignal` を `tasks/cancel` に接続、`proofUri` 経路を `packages/server` に追加（#4 §4-1）。(2) `outputCommitment` / `nonce` / 塩付き `inputCommitment`（JCS）/ `tools/list` 記述子 / `resultId` + `verifiable-tools/prove` / `proofPolicy` を protocol・server・client に実装、`server/discover` の応答に `blindEncryptionSchemes` / `blindPublicKeys` / `resultTtlMs` を追加（Phase 1 の応答は改訂前仕様のまま）。(3) `x25519-aesgcm-demo-v1` を `hpke-v1`（`hpke-js`）へ置換。(4) §4.3 の binding / deferred / descriptor 否定テストを追加 | 既存 2 形式のまま、改訂仕様の全フィールドが `npm test` で検証される |
 | 2-b 実 ZK（in-process） | `snarkjs-v2`（Groth16、circom `add` 回路を事前コンパイルして `wasm` / `zkey` / `vk.json` を同梱。Week 1 の under-constrained 攻撃をレビュー観点にする）。第 2 形式として Noir（`@noir-lang/noir_js` + `@aztec/bb.js`, UltraHonk, トラステッドセットアップ不要）を採用し、同じ `add` を 2 系統で示す。両者は別 workspace（`packages/prover-snarkjs`, `packages/prover-noir`）に隔離するが `npm test` 既定に含める。各形式の proving 時間・メモリ・証明サイズ・検証時間・検証器依存サイズを `docs/BENCHMARKS.md` に記録 | 実 ZK 証明が 2 形式動き、計測値が公開される |
 | 3 sidecar 合成 | `packages/prover-sidecar`（TS アダプタ）+ `sidecars/{risc0,ezkl,nitro,tlsn}/Dockerfile`。`risc0-v1`: Rust host を Docker 化し `prove(circuitHash, witness) -> receipt` を HTTP で提供、検証は Rust sidecar `/verify` か `risc0-zkvm` verifier の WASM ビルド（可否を Phase 3 冒頭で PoC）。`ezkl-v1`: 生成は Python `ezkl` sidecar、検証は `@ezkljs/engine`（WASM）で TS 側（「生成は他言語、検証は TS」の非対称性を体現）。`tee-nitro-v1`: COSE_Sign1 attestation の検証（chain / PCR / user-data 鍵束縛 / nonce）を TS で実装し、ローカル CI ではモック attestation でフローを通す。`zktls-tlsn-v1`: `riskScore` の価格取得に TLSNotary sidecar を挟み `inputAttestations` を出す。CI は `npm test`（必須）と `docker compose --profile sidecar`（opt-in ジョブ）に分割 | SEP 本文 Reference Implementation 節の Phase 3 項目を埋める |
 | 4 SDK 移植 | `modelcontextprotocol/typescript-sdk` の Extension API へ `packages/protocol` を移植（正典）。Python SDK 版は `ezkl-v1` サーバー側の第 2 参照実装として位置づける（#4 §4-4） | SDK フォーク/ブランチ |
@@ -214,7 +214,7 @@ mcp-verifiable-tools-demo/
 - Scenario A（ツール市場）向けに capability へ価格 / コストヒントを載せるか（経済的インセンティブの扱い、#94 コメント 3）。
 - SEP 受諾前に MCP org 内の experimental extension（`experimental-ext-*`、WG/IG 紐付け必須）として incubation を行うか。
 
-解消済み（2026-09 仕様改訂）: `blindPublicKey` / `blindEncryptionSchemes` を capability に正式追加（ただし normative にするかは Open Question）、Phase 4 の SDK 移植先は TS を正典・Python を ezkl 補完に決定、`tasks/cancel` は producer を停止すべきと仕様に明記（実装は Phase 2-a）。
+解消済み（2026-09 仕様改訂）: `blindPublicKeys` / `blindEncryptionSchemes` を capability に正式追加して normative 化、Phase 4 の SDK 移植先は TS を正典・Python を ezkl 補完に決定、`tasks/cancel` は producer を停止すべきと仕様に明記（実装は Phase 2-a）。
 
 ## 8. 拡張プラン提出手順
 
