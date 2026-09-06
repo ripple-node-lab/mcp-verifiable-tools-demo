@@ -6,6 +6,7 @@
   "dependencies": {
     "@demo/protocol": "1.0.0",
     "@demo/prover": "1.0.0",
+    "@demo/prover-ezkl": "1.0.0",
     "@demo/prover-noir": "1.0.0",
     "@demo/prover-risc0": "1.0.0",
     "@demo/prover-sidecar": "1.0.0",

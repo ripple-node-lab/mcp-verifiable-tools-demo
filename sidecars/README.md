@@ -42,7 +42,21 @@ HTTP sidecar として合成する（`docs/PLAN.md` §2・§5）。MCP サーバ
   検証は in-process WASM（`sidecars/risc0/wasm-verify` を
   `build-wasm.sh` で wasm32 ビルド → `packages/prover-risc0/wasm`）が既定;
   sidecar 側 `/verify` も契約どおり実装済み。
-- `ezkl` / `tlsn` は Phase 3-c 以降で追加予定。
+- `sidecars/ezkl/`（`ezkl-v1`）: Python `ezkl` の ZKML sidecar
+  （`python:3.12-slim` + `ezkl==22.0.1` ピン、stdlib `http.server` のみ）。
+  回路は ONNX の単一 `Add` ノードで、`input_scale=0` / `param_scale=0`
+  （logrows=14）により整数が field element に厳密対応する。
+  `circuitHash` = sha256(`vk.json`)。起動時に `ezkl.setup` で pk（117 MB）
+  を再生成し、生成 vk がコミット済み vk と sha256 一致することを突合する。
+  バージョン 22.0.1 固定は必須（`@ezkljs/engine` が 22.0.1 のみで、
+  proof/vk/settings 形式が一致しないと検証できない）。`get_srs` は 22.0.1
+  で壊れているため perpetual powers-of-tau SRS（`kzg.srs`、2.1 MB）は
+  コミット済みを使う（`gen_srs` 出力は engine 検証に失敗する）。
+  `MAX_CONCURRENT_PROOFS`（既定 1）で prove をセマフォ制御し、超過分は
+  503 `{"error":"busy"}`。インフライト prove のキャンセルは非対応。
+  検証は `@ezkljs/engine` の wasm（≈9.8MB、`packages/prover-ezkl`）で
+  in-process。
+- `tlsn` は Phase 3-d 以降で追加予定。
 
 ## 動かし方
 
@@ -61,4 +75,12 @@ risc0 sidecar（prove ≈20–50 秒、opt-in）:
 docker compose --profile risc0 up --build -d --wait
 RISC0_SIDECAR_URL=http://127.0.0.1:4200 node --test tests/dist/risc0-sidecar.test.js
 docker compose --profile risc0 down
+```
+
+ezkl sidecar（prove ≈2–3 秒、opt-in）:
+
+```sh
+docker compose --profile ezkl up --build -d --wait
+EZKL_SIDECAR_URL=http://127.0.0.1:4300 node --test tests/dist/ezkl-sidecar.test.js
+docker compose --profile ezkl down
 ```

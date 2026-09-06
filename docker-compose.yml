@@ -28,3 +28,19 @@ services:
       interval: 5s
       timeout: 10s
       retries: 30
+  sidecar-ezkl:
+    profiles: ["ezkl"]
+    build:
+      context: .
+      dockerfile: sidecars/ezkl/Dockerfile
+    environment:
+      PORT: "4300"
+      HOST: "0.0.0.0"
+      MAX_CONCURRENT_PROOFS: ${MAX_CONCURRENT_PROOFS:-1}
+    ports:
+      - "4300:4300"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4300/healthz"]
+      interval: 5s
+      timeout: 10s
+      retries: 30

@@ -7,7 +7,7 @@ export interface ToolExecution { output: string; arguments: JsonValue; }
 export type DescriptorOverride = (tool: string, descriptor: ToolDescriptorMeta) => ToolDescriptorMeta | undefined;
 export type ToolFormatDescriptor = (circuitHash: string) => { circuitHash?: string; verificationKeyUri?: string };
 export function isZkFormat(format: string): boolean {
-  return format === "snarkjs-v2" || format === "noir-v1" || format === "risc0-v1";
+  return format === "snarkjs-v2" || format === "noir-v1" || format === "risc0-v1" || format === "ezkl-v1";
 }
 export function toolList(baseUrl: string, proofFormats: string[], formatDescriptors: { [format: string]: ToolFormatDescriptor } = {}, override?: DescriptorOverride): JsonValue {
   const definitions: Array<{ name: ToolName; description: string; inputSchema: JsonValue; proofPolicy: ToolDescriptorMeta["proofPolicy"]; blind: boolean }> = [

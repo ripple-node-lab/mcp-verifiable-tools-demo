@@ -1,0 +1,16 @@
+{
+  "circuitHash": "0x0abd17111820f09cbad53deb340becb9739236eb1278e686f2189c77fd09d622",
+  "inputCommitment": "0xcbeb5e9673b2ac12665726b4bbc07a00bd3619838f961292227696fbe343440f",
+  "nonce": "0x11223344556677889900aabbccddee11",
+  "outputCommitment": "0x5f0cd6507175ef4a9450721e54fa2e534fe911bff7f37afdbba0c41ebe1f9458",
+  "proof": "<proof-b64>",
+  "proofFormat": "ezkl-v1",
+  "publicInputs": [
+    "0x5f0cd6507175ef4a9450721e54fa2e534fe911bff7f37afdbba0c41ebe1f9458",
+    "0xcbeb5e9673b2ac12665726b4bbc07a00bd3619838f961292227696fbe343440f",
+    "0x11223344556677889900aabbccddee11",
+    "42",
+    "2",
+    "40"
+  ]
+}

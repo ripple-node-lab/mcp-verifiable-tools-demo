@@ -10,6 +10,7 @@ import {
 import { DemoCommitProver, DemoSigProver, Prover, TeeNitroProver, TeeNitroProverOptions, mockNitroFixturesDir } from "@demo/prover";
 import { prover as noirProver, artifacts as noirArtifacts, FORMAT as NOIR_FORMAT } from "@demo/prover-noir";
 import { prover as snarkProver, artifacts as snarkArtifacts, FORMAT as SNARK_FORMAT } from "@demo/prover-snarkjs";
+import { artifacts as ezklArtifacts } from "@demo/prover-ezkl";
 import { SidecarProver } from "@demo/prover-sidecar";
 import { ToolFormatDescriptor } from "./tools.js";
 import { discoverResponse } from "./discover.js";
@@ -27,6 +28,7 @@ export interface DemoServerOptions {
   provers?: Prover[];
   risc0SidecarUrl?: string;
   risc0TimeoutMs?: number;
+  ezklSidecarUrl?: string;
   taskTtlMs?: number;
   teeNitro?: false | TeeNitroProverOptions;
   formatDescriptors?: { [format: string]: ToolFormatDescriptor };
@@ -61,6 +63,7 @@ export class DemoServer {
     this.provers.set(SNARK_FORMAT, snarkProver);
     this.provers.set(NOIR_FORMAT, noirProver);
     if (options.risc0SidecarUrl) this.provers.set("risc0-v1", new SidecarProver({ baseUrl: options.risc0SidecarUrl, format: "risc0-v1", timeoutMs: risc0TimeoutMs }));
+    if (options.ezklSidecarUrl) this.provers.set("ezkl-v1", new SidecarProver({ baseUrl: options.ezklSidecarUrl, format: "ezkl-v1" }));
     if (options.teeNitro !== false) {
       const userData = new Uint8Array(createHash("sha256").update(rawX25519Public(this.blindKeys.publicKey)).digest());
       const tee = options.teeNitro ? new TeeNitroProver({ userData, ...options.teeNitro }) : TeeNitroProver.fromMockFixtures(mockNitroFixturesDir(), { userData });
@@ -112,6 +115,9 @@ export class DemoServer {
       }
       if (hash === expectedCircuitHash("add", NOIR_FORMAT)) {
         response.statusCode = 200; response.setHeader("content-type", "application/json"); response.end(await readFile(noirArtifacts.vk)); return;
+      }
+      if (hash === expectedCircuitHash("add", "ezkl-v1")) {
+        response.statusCode = 200; response.setHeader("content-type", "application/json"); response.end(await readFile(ezklArtifacts.vk)); return;
       }
       if (toolNames.map(circuitHash).includes(hash)) {
         response.statusCode = 200; response.setHeader("content-type", "application/x-pem-file"); response.end(this.signingPublicKey); return;

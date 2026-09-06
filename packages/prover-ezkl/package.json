@@ -1,16 +1,13 @@
 {
-  "name": "@demo/client",
+  "name": "@demo/prover-ezkl",
   "version": "1.0.0",
   "type": "module",
   "exports": { ".": { "types": "./dist/src/index.d.ts", "import": "./dist/src/index.js" } },
   "dependencies": {
     "@demo/protocol": "1.0.0",
     "@demo/prover": "1.0.0",
-    "@demo/prover-ezkl": "1.0.0",
-    "@demo/prover-noir": "1.0.0",
-    "@demo/prover-risc0": "1.0.0",
-    "@demo/prover-snarkjs": "1.0.0",
+    "@demo/prover-sidecar": "1.0.0",
     "@demo/verifier": "1.0.0",
-    "@demo/server": "1.0.0"
+    "@ezkljs/engine": "22.0.1"
   }
 }
