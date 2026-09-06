@@ -5,7 +5,8 @@ import { riskScore } from "./tools/riskScore.js";
 export type ToolName = "add" | "riskScore" | "privateCreditCheck" | "priceQuote";
 export interface ToolExecution { output: string; arguments: JsonValue; }
 export type DescriptorOverride = (tool: string, descriptor: ToolDescriptorMeta) => ToolDescriptorMeta | undefined;
-export function toolList(baseUrl: string, override?: DescriptorOverride): JsonValue {
+export type ToolFormatDescriptor = (circuitHash: string) => { circuitHash?: string; verificationKeyUri?: string };
+export function toolList(baseUrl: string, proofFormats: string[], formatDescriptors: { [format: string]: ToolFormatDescriptor } = {}, override?: DescriptorOverride): JsonValue {
   const definitions: Array<{ name: ToolName; description: string; inputSchema: JsonValue; proofPolicy: ToolDescriptorMeta["proofPolicy"]; blind: boolean }> = [
     { name: "add", description: "Add two numbers", inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } }, required: ["a", "b"] }, proofPolicy: "always", blind: false },
     { name: "riskScore", description: "Calculate a deterministic risk score", inputSchema: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, proofPolicy: "always", blind: false },
@@ -16,11 +17,11 @@ export function toolList(baseUrl: string, override?: DescriptorOverride): JsonVa
     const hash = expectedCircuitHash(name);
     const descriptor: ToolDescriptorMeta = {
       circuitHash: hash,
-      proofFormats: ["demo-sig-v1", "demo-commit-v1"],
+      proofFormats: [...proofFormats],
       proofPolicy,
       verificationKeyUri: `${baseUrl}/vk/${hash}`,
       blind,
-      formats: { "demo-sig-v1": { verificationKeyUri: `${baseUrl}/vk/${hash}` }, "demo-commit-v1": {} }
+      formats: Object.fromEntries(proofFormats.map((format) => [format, format === "demo-sig-v1" ? { verificationKeyUri: `${baseUrl}/vk/${hash}` } : (formatDescriptors[format]?.(hash) ?? {})]))
     };
     const overridden = override ? override(name, descriptor) : descriptor;
     return { name, description, inputSchema, ...(overridden ? { _meta: { [EXTENSION_ID]: overridden as unknown as JsonValue } } : {}) };

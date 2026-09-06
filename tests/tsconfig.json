@@ -2,5 +2,5 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": { "rootDir": ".", "outDir": "dist" },
   "include": ["**/*.ts", "../types/node-shim.d.ts"],
-  "references": [{ "path": "../packages/protocol" }, { "path": "../packages/prover" }, { "path": "../packages/verifier" }, { "path": "../packages/server" }, { "path": "../packages/client" }]
+  "references": [{ "path": "../packages/protocol" }, { "path": "../packages/prover" }, { "path": "../packages/verifier" }, { "path": "../packages/server" }, { "path": "../packages/client" }, { "path": "../packages/prover-sidecar" }, { "path": "../packages/sidecar-mock" }]
 }

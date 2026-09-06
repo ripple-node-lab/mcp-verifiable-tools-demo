@@ -1,19 +1,28 @@
 import { createServer, Server } from "node:http";
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import {
   CallToolResult, EXTENSION_ID, HPKE_INFO_ARGS, HPKE_INFO_REPLY, JsonRpcRequest, JsonRpcResponse,
-  META_CLIENT_CAPABILITIES, META_SERVER_INFO, RequestMeta, RESULT_TTL_MS, SUPPORTED_PROOF_FORMATS, b64u, hpkeOpen, hpkeSeal,
+  META_CLIENT_CAPABILITIES, META_SERVER_INFO, RequestMeta, RESULT_TTL_MS, b64u, hpkeOpen, hpkeSeal,
   inputCommitment, isRecord, isValidNonce, jcs, JsonValue, JsonRpcProtocolError, negotiateProofFormat,
   outputCommitment, rawX25519Public, tasksDeclared, verifiableCapability
 } from "@demo/protocol";
-import { DemoCommitProver, DemoSigProver, Prover } from "@demo/prover";
+import { DemoCommitProver, DemoSigProver, Prover, TeeNitroProver, TeeNitroProverOptions, mockNitroFixturesDir } from "@demo/prover";
+import { ToolFormatDescriptor } from "./tools.js";
 import { discoverResponse } from "./discover.js";
 import { errorResponse, handleMcpPost, paramsRecord } from "./http.js";
 import { ResultStore } from "./prove.js";
 import { TaskStore } from "./tasks.js";
 import { circuitHash, executeTool, makeResult, toolList, ToolName, DescriptorOverride } from "./tools.js";
 
-export interface DemoServerOptions { port?: number; host?: string; resultTtlMs?: number; descriptorOverride?: DescriptorOverride; }
+export interface DemoServerOptions {
+  port?: number;
+  host?: string;
+  resultTtlMs?: number;
+  descriptorOverride?: DescriptorOverride;
+  provers?: Prover[];
+  teeNitro?: false | TeeNitroProverOptions;
+  formatDescriptors?: { [format: string]: ToolFormatDescriptor };
+}
 const toolNames: ToolName[] = ["add", "riskScore", "privateCreditCheck", "priceQuote"];
 
 export class DemoServer {
@@ -26,12 +35,23 @@ export class DemoServer {
   private readonly blindPublicKey: string;
   private readonly host: string;
   private readonly descriptorOverride?: DescriptorOverride;
+  private readonly formatDescriptors: { [format: string]: ToolFormatDescriptor };
+  private readonly provers = new Map<string, Prover>();
   private port = 0;
   constructor(options: DemoServerOptions = {}) {
     this.host = options.host ?? "127.0.0.1";
     this.tasks = new TaskStore();
     this.results = new ResultStore(options.resultTtlMs ?? RESULT_TTL_MS);
     this.descriptorOverride = options.descriptorOverride;
+    this.formatDescriptors = options.formatDescriptors ?? {};
+    this.provers.set("demo-sig-v1", this.signingProver);
+    this.provers.set("demo-commit-v1", new DemoCommitProver());
+    if (options.teeNitro !== false) {
+      const userData = new Uint8Array(createHash("sha256").update(rawX25519Public(this.blindKeys.publicKey)).digest());
+      const tee = options.teeNitro ? new TeeNitroProver({ userData, ...options.teeNitro }) : TeeNitroProver.fromMockFixtures(mockNitroFixturesDir(), { userData });
+      this.provers.set(tee.format, tee);
+    }
+    for (const prover of options.provers ?? []) this.provers.set(prover.format, prover);
     this.signingPublicKey = String(this.signingProver.publicKey.export({ type: "spki", format: "pem" }));
     this.blindPublicKey = b64u(rawX25519Public(this.blindKeys.publicKey));
     this.httpServer = createServer((request, response) => {
@@ -58,12 +78,13 @@ export class DemoServer {
     await new Promise<void>((resolve, reject) => this.httpServer.close((error) => error ? reject(error) : resolve()));
   }
   get url(): string { return `http://${this.host}:${this.port}`; }
+  get formats(): string[] { return [...this.provers.keys()]; }
   get mcpUrl(): string { return `${this.url}/mcp`; }
   get blindPublicKeyBase64(): string { return this.blindPublicKey; }
   async dispatch(request: JsonRpcRequest): Promise<JsonRpcResponse> {
     try {
-      if (request.method === "server/discover") return discoverResponse(request.id, this.blindPublicKey, this.results.retentionMs);
-      if (request.method === "tools/list") return { jsonrpc: "2.0", id: request.id, result: { resultType: "complete", tools: toolList(this.url, this.descriptorOverride) } };
+      if (request.method === "server/discover") return discoverResponse(request.id, this.formats, this.blindPublicKey, this.results.retentionMs);
+      if (request.method === "tools/list") return { jsonrpc: "2.0", id: request.id, result: { resultType: "complete", tools: toolList(this.url, this.formats, this.formatDescriptors, this.descriptorOverride) } };
       if (request.method === "tools/call") return await this.callTool(request);
       if (request.method === "tasks/get") return this.getTask(request);
       if (request.method === "tasks/cancel") return this.cancelTask(request);
@@ -88,7 +109,7 @@ export class DemoServer {
     if (nonce !== undefined && !isValidNonce(nonce)) throw new JsonRpcProtocolError(-32602, "invalid nonce");
     const capability = verifiableCapability(requestMeta?.[META_CLIENT_CAPABILITIES]);
     const requested = typeof extensionMeta?.requestedProofFormat === "string" ? extensionMeta.requestedProofFormat : undefined;
-    const format = negotiateProofFormat(capability, ["demo-sig-v1", "demo-commit-v1"], requested);
+    const format = negotiateProofFormat(capability, this.formats, requested);
     if (capability?.requireProof && !format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format");
     const execute = async (signal?: AbortSignal): Promise<CallToolResult> => {
       const execution = executeTool(tool, params.arguments!);
@@ -116,8 +137,12 @@ export class DemoServer {
     const originalContent = content ?? [{ type: "text" as const, text: output }];
     const input = inputCommitment(args, salt);
     const outputHash = outputCommitment(originalContent);
-    const prover: Prover = format === "demo-sig-v1" ? this.signingProver : new DemoCommitProver();
-    const meta = await prover.prove({ circuitHash: circuitHash(tool), inputCommitment: input, outputCommitment: outputHash, nonce, output, verificationKeyUri: format === "demo-sig-v1" ? `${this.url}/vk/${circuitHash(tool)}` : undefined }, { signal });
+    const prover = this.provers.get(format);
+    if (!prover) throw new JsonRpcProtocolError(-32602, "unsupported proof format");
+    const hash = circuitHash(tool);
+    const descriptor = this.formatDescriptors[format]?.(hash) ?? {};
+    const verificationKeyUri = format === "demo-sig-v1" ? `${this.url}/vk/${hash}` : descriptor.verificationKeyUri;
+    const meta = await prover.prove({ circuitHash: hash, inputCommitment: input, outputCommitment: outputHash, nonce, output, verificationKeyUri }, { signal });
     return { resultType: "complete", content: originalContent, isError: false, _meta: { [META_SERVER_INFO]: { name: "verifiable-tools-demo", version: "1.0.0" }, [EXTENSION_ID]: meta as unknown as RequestMeta[typeof EXTENSION_ID] } };
   }
   private getTask(request: JsonRpcRequest): JsonRpcResponse {
@@ -144,7 +169,7 @@ export class DemoServer {
     if (nonce !== undefined && !isValidNonce(nonce)) throw new JsonRpcProtocolError(-32602, "invalid nonce");
     const capability = verifiableCapability(requestMeta?.[META_CLIENT_CAPABILITIES]);
     if (capability?.blindExecution !== true) throw new JsonRpcProtocolError(-32602, "client did not declare blindExecution");
-    const format = negotiateProofFormat(capability, ["demo-sig-v1", "demo-commit-v1"], typeof params.proofFormat === "string" ? params.proofFormat : undefined);
+    const format = negotiateProofFormat(capability, this.formats, typeof params.proofFormat === "string" ? params.proofFormat : undefined);
     if (!format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format");
     const raw = Buffer.from(params.encryptedArguments, "base64url");
     const aad = new TextEncoder().encode(jcs({ tool: params.tool, inputCommitment: params.inputCommitment, encryptionScheme: "hpke-v1" } as unknown as JsonValue));
@@ -182,9 +207,9 @@ export class DemoServer {
     if (nonce !== undefined && !isValidNonce(nonce)) throw new JsonRpcProtocolError(-32602, "invalid nonce");
     const requested = typeof params.proofFormat === "string" ? params.proofFormat : undefined;
     const format = requestMeta?.[META_CLIENT_CAPABILITIES] !== undefined
-      ? negotiateProofFormat(capability, SUPPORTED_PROOF_FORMATS, requested)
+      ? negotiateProofFormat(capability, this.formats, requested)
       : requested ?? "demo-sig-v1";
-    if (!format || !(SUPPORTED_PROOF_FORMATS as readonly string[]).includes(format)) throw new JsonRpcProtocolError(-32602, "unsupported proof format");
+    if (!format || !this.provers.has(format)) throw new JsonRpcProtocolError(-32602, "unsupported proof format");
     const output = record.content[0]?.text ?? "";
     const result = await this.provenResult(record.tool as ToolName, record.arguments, output, format, nonce, record.salt, undefined, record.content);
     return { jsonrpc: "2.0", id: request.id, result };

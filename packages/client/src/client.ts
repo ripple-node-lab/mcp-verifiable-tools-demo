@@ -1,23 +1,40 @@
+import { createHash } from "node:crypto";
 import {
   CallToolResult, ClientCapabilities, EXTENSION_ID, HPKE_INFO_REPLY, JsonValue, META_CLIENT_CAPABILITIES,
-  PROTOCOL_VERSION, RequestMeta, SUPPORTED_PROOF_FORMATS, TASKS_EXTENSION_ID, ToolDescriptorMeta,
+  PROTOCOL_VERSION, RequestMeta, TASKS_EXTENSION_ID, ToolDescriptorMeta,
   VerifiableToolsCapability, b64u, clientCapabilities, expectedCircuitHash, freshNonce, hpkeOpen,
   isRecord, jcs, unb64u, verifiableCapability
 } from "@demo/protocol";
-import { DemoCommitVerifier, DemoSigVerifier, VerificationKeyRegistry, VerifyOutcome, verifyResult } from "@demo/verifier";
+import { mockNitroFixturesDir } from "@demo/prover";
+import { DemoCommitVerifier, DemoSigVerifier, TeeNitroVerifier, TeeNitroVerifierOptions, VerificationKeyRegistry, Verifier, VerifyOutcome, verifyResult } from "@demo/verifier";
 import { encryptArguments, generateReplyKeyPair } from "./blind.js";
 import { pollTask, RpcRequest } from "./tasks.js";
 
 export interface DiscoverResult { proofFormats: string[]; serverProofFormats: string[]; blindPublicKeys: { [scheme: string]: string }; blindEncryptionSchemes: string[]; blindExecution: boolean; resultTtlMs?: number; }
 export interface CallResponse { result: CallToolResult | TaskEnvelope; nonce: string; }
+export interface VerifiableClientOptions {
+  verifiers?: Verifier[];
+  allowedKeyOrigins?: string[];
+  teeNitro?: TeeNitroVerifierOptions | false;
+}
 export class VerifiableClient {
-  private capabilities: ClientCapabilities = clientCapabilities(["demo-sig-v1", "demo-commit-v1"]);
+  private capabilities: ClientCapabilities;
   private readonly registry: VerificationKeyRegistry;
   private readonly sigVerifier: DemoSigVerifier;
   private readonly commitVerifier = new DemoCommitVerifier();
+  private readonly extraVerifiers: Verifier[];
+  private readonly teeNitroOption: TeeNitroVerifierOptions | false | undefined;
+  private teeVerifier: TeeNitroVerifier | undefined;
   private discovered: DiscoverResult | undefined;
   private descriptors = new Map<string, ToolDescriptorMeta>();
-  constructor(private readonly endpoint: string) { this.registry = new VerificationKeyRegistry([new URL(endpoint).origin]); this.sigVerifier = new DemoSigVerifier(this.registry); }
+  constructor(private readonly endpoint: string, options: VerifiableClientOptions = {}) {
+    this.registry = new VerificationKeyRegistry([new URL(endpoint).origin, ...(options.allowedKeyOrigins ?? [])]);
+    this.sigVerifier = new DemoSigVerifier(this.registry);
+    this.extraVerifiers = options.verifiers ?? [];
+    this.teeNitroOption = options.teeNitro;
+    const formats = ["demo-sig-v1", "demo-commit-v1", ...(this.teeNitroOption === false ? [] : ["tee-nitro-v1"]), ...this.extraVerifiers.map((verifier) => verifier.format)];
+    this.capabilities = clientCapabilities([...new Set(formats)]);
+  }
   async discover(): Promise<DiscoverResult> {
     const descriptors = new Map<string, ToolDescriptorMeta>();
     const response = await this.request("server/discover", {});
@@ -28,8 +45,14 @@ export class VerifiableClient {
     const blindPublicKeys = extension.blindPublicKeys && isRecord(extension.blindPublicKeys) ? extension.blindPublicKeys as { [scheme: string]: string } : {};
     const blindExecution = extension.blindExecution === true;
     const resultTtlMs = typeof extension.resultTtlMs === "number" ? extension.resultTtlMs : undefined;
-    const proofFormats = formats.filter((format) => (SUPPORTED_PROOF_FORMATS as readonly string[]).includes(format));
+    const declared = verifiableCapability(this.capabilities)?.proofFormats ?? [];
+    const proofFormats = formats.filter((format) => declared.includes(format));
     if (proofFormats.length === 0) throw new Error("no mutually supported proof format");
+    if (this.teeNitroOption !== false && proofFormats.includes("tee-nitro-v1") && this.teeVerifier === undefined) {
+      const blindKey = blindPublicKeys["hpke-v1"];
+      const expectedUserData = (): Uint8Array | undefined => blindKey === undefined ? undefined : new Uint8Array(createHash("sha256").update(unb64u(blindKey)).digest());
+      this.teeVerifier = this.teeNitroOption ? new TeeNitroVerifier({ expectedUserData, ...this.teeNitroOption }) : TeeNitroVerifier.fromMockFixtures(mockNitroFixturesDir(), { expectedUserData });
+    }
     const tools = asRecord((await this.request("tools/list", {})).result).tools;
     if (!Array.isArray(tools)) throw new Error("malformed tools/list response");
     for (const item of tools) {
@@ -59,8 +82,16 @@ export class VerifiableClient {
   }
   async verify(result: CallToolResult, args: JsonValue, tool: string, options: { nonce?: string; salt?: Uint8Array } = {}): Promise<VerifyOutcome> {
     const meta = result._meta?.[EXTENSION_ID];
+    if (meta?.proofFormat === "tee-nitro-v1" && this.teeVerifier === undefined && this.teeNitroOption !== false) {
+      if (this.discovered === undefined) await this.discover();
+    }
     const formats = verifiableCapability(this.capabilities)?.proofFormats ?? [];
-    const verifiers = [...(formats.includes("demo-sig-v1") ? [this.sigVerifier] : []), ...(formats.includes("demo-commit-v1") ? [this.commitVerifier] : [])];
+    const verifiers: Verifier[] = [
+      ...(formats.includes("demo-sig-v1") ? [this.sigVerifier] : []),
+      ...(formats.includes("demo-commit-v1") ? [this.commitVerifier] : []),
+      ...(this.teeVerifier && formats.includes("tee-nitro-v1") ? [this.teeVerifier] : []),
+      ...this.extraVerifiers.filter((verifier) => formats.includes(verifier.format))
+    ];
     const descriptor = this.descriptors.get(tool);
     const format = meta?.proofFormat;
     const verificationKeyUri = format === undefined || descriptor === undefined

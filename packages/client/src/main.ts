@@ -22,6 +22,8 @@ try {
   const verified = await client.verify(proved.result, { symbol: "AAPL" }, "priceQuote", { nonce: proved.nonce });
   if (!verified.ok) throw new Error(`deferred verification failed: ${verified.reason}`);
   console.log(`4. deferred priceQuote: ${proved.result.content[0].text} (verified ${proved.result._meta?.[EXTENSION_ID]?.proofFormat})`);
+  const tee = await client.callAndVerify("add", { a: 1, b: 2 }, "tee-nitro-v1");
+  console.log(`5. tee add: ${tee.content[0].text} (verified tee-nitro-v1)`);
 } catch (error: unknown) {
   console.error(error instanceof Error ? error.message : "demo failed");
   process.exitCode = 1;
