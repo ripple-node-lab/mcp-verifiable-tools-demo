@@ -4,9 +4,14 @@
   "method": "verifiable-tools/call",
   "params": {
     "tool": "privateCreditCheck",
-    "inputCommitment": "0x<sha256 canonical arguments>",
-    "encryptionScheme": "x25519-aesgcm-demo-v1",
-    "encryptedArguments": "<base64 envelope>",
-    "proofFormat": "demo-sig-v1"
+    "inputCommitment": "0x<sha256 salted JCS arguments>",
+    "encryptionScheme": "hpke-v1",
+    "encryptedArguments": "<base64url(enc || ciphertext)>",
+    "proofFormat": "demo-sig-v1",
+    "_meta": {
+      "io.modelcontextprotocol/verifiable-tools": {
+        "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"
+      }
+    }
   }
 }

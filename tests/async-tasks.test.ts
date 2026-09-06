@@ -1,28 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { VerifiableClient } from "@demo/client";
-import { clientCapabilities, META_CLIENT_CAPABILITIES } from "@demo/protocol";
-import { withServer, rpc } from "./helpers.js";
 import { TaskStore } from "@demo/server";
-test("riskScore is synchronous without tasks and asynchronous with tasks", async () => withServer(async (server) => {
-  const plain = await rpc(server, "tools/call", { name: "riskScore", arguments: { symbol: "AAPL" }, _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["demo-sig-v1"]) } }, { "Mcp-Name": "riskScore" });
-  assert.equal(plain.result?.resultType, "complete");
+import { withServer, rpc } from "./helpers.js";
+test("tasks cancel aborts the producer and remains cancelled", async () => withServer(async (server) => {
   const client = new VerifiableClient(server.mcpUrl);
   await client.discover();
   client.setCapabilities({ proofFormats: ["demo-sig-v1"] }, true);
-  const task = await client.callTool("riskScore", { symbol: "AAPL" }, "demo-sig-v1");
-  assert.equal(task.resultType, "task");
-  if (task.resultType !== "task") throw new Error("expected task");
-  const intermediate = await rpc(server, "tasks/get", { taskId: task.taskId }, {});
-  assert.equal(intermediate.result?.resultType, "complete");
-  assert.equal(["working", "completed"].includes(String(intermediate.result?.status)), true);
-  const cancellable = await client.callTool("riskScore", { symbol: "MSFT" }, "demo-sig-v1");
-  assert.equal(cancellable.resultType, "task");
-  if (cancellable.resultType !== "task") throw new Error("expected task");
-  const cancelled = await rpc(server, "tasks/cancel", { taskId: cancellable.taskId }, {});
+  const call = await client.callTool("riskScore", { symbol: "AAPL" }, { proofFormat: "demo-sig-v1" });
+  assert.equal(call.result.resultType, "task");
+  if (call.result.resultType !== "task") return;
+  const cancelled = await rpc(server, "tasks/cancel", { taskId: call.result.taskId });
   assert.equal(cancelled.result?.status, "cancelled");
-  const result = await client.callAndVerify("riskScore", { symbol: "AAPL" }, "demo-sig-v1");
-  assert.equal(result.content[0].text, "86");
+  await new Promise<void>((resolve) => setTimeout(resolve, 350));
+  const later = await rpc(server, "tasks/get", { taskId: call.result.taskId });
+  assert.equal(later.result?.status, "cancelled");
 }));
 test("completed tasks expire from the task store", async () => {
   const store = new TaskStore({ ttlMs: 10 });

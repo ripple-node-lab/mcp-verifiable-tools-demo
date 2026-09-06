@@ -50,7 +50,7 @@ demo keeps it fixed in the protocol package.
 - `packages/prover`: Ed25519 signature and SHA-256 commitment demo provers.
 - `packages/verifier`: local verifiers and verification-key pinning.
 - `packages/server`: Streamable HTTP MCP server and demo tools.
-- `packages/client`: verifying client and three-scenario demo.
+- `packages/client`: verifying client and four-scenario demo.
 - `examples`: representative JSON-RPC messages.
 - `tests`: deterministic `node:test` integration tests.
 
@@ -60,7 +60,9 @@ Further reading: [English specification](docs/spec/verifiable-tools.md),
 [issue #94](https://github.com/zk-tokyo/advanced-cryptography-2026/issues/94).
 The specification now includes use-case narrative and result-binding fields
 (`outputCommitment` / `nonce` / `tools/list` descriptors / `inputAttestations` /
-deferred proofs) that Phase 2-a of [docs/PLAN.md](docs/PLAN.md) will implement.
+deferred proofs), implemented here through Phase 2-a of [docs/PLAN.md](docs/PLAN.md).
+The demo proof formats are not zero-knowledge; `hpke-v1` is real RFC 9180 base mode
+implemented with `node:crypto` and self-tested against the RFC vector.
 
 ## 日本語
 
@@ -71,7 +73,8 @@ MCP `2026-07-28` 上で `io.modelcontextprotocol/verifiable-tools` 拡張の
 暗号化した引数によるブラインド実行を示す依存ゼロのデモです。
 仕様にはユースケースの説明と結果束縛フィールド（`outputCommitment` / `nonce` /
 `tools/list` 記述子 / `inputAttestations` / 遅延証明）も含まれており、
-docs/PLAN.md の Phase 2-a で実装予定です。
+docs/PLAN.md の Phase 2-a で実装済みです。なお、デモは `resultId` の principal
+binding（認可主体への束縛）を実装していません。
 
 ### クイックスタート
 

@@ -131,16 +131,17 @@ mcp-verifiable-tools-demo/
   - 宣言していれば `proofFormats` の交差から 1 形式を選ぶ（`_meta["io.modelcontextprotocol/verifiable-tools"].requestedProofFormat` を優先）。交差が空で `requireProof: true` なら `-32602` 相当のエラー、そうでなければ証明なしで返す。
   - `riskScore` はクライアントが `io.modelcontextprotocol/tasks` を宣言している場合のみ `resultType: "task"` を返す（未宣言なら同期で待って返す）。
 - `tasks/get` / `tasks/cancel`: SEP-2663 の `Task` 形状（`taskId`, `status`, `createdAt`, `lastUpdatedAt`, `ttlMs`, `pollIntervalMs`）。完了時は `result` に `CallToolResult` + 拡張 `_meta` を含める。
-- `verifiable-tools/call`: `encryptionScheme: "x25519-aesgcm-demo-v1"`（HPKE の簡易代替。README で明記。Phase 2-a で `hpke-v1` + 塩付きコミットメントに置換）。サーバーの X25519 公開鍵は `server/discover` の拡張 capability に `blindPublicKey`（単数、デモ用フィールド）として載せる。改訂仕様の `blindPublicKeys`（scheme → 鍵のマップ）への移行は Phase 2-a。復号後に `SHA-256(canonical JSON(args))` が `inputCommitment` と一致することを確認、不一致は `-32602`。応答 `_meta` には `inputCommitment` を含める。
+- `verifiable-tools/call`: `hpke-v1`、32-byte salt 付き JCS `inputCommitment`、nonce binding、`replyPublicKey` による暗号化応答を実装する。サーバーは `blindPublicKeys["hpke-v1"]` と `resultTtlMs` を discovery で広告する。
 - `GET /vk/{circuitHash}`: `verificationKeyUri` の実体。`demo-sig-v1` の Ed25519 公開鍵（PEM）を返す。
 
 ### 4.2 クライアント（`packages/client`）
 
-1. `server/discover` → サーバーの `proofFormats` と自分の対応形式を交差。
-2. `tools/call add` → 同期結果 → `verifier.verify()`。
-3. `tools/call riskScore` → `resultType: "task"` → `pollIntervalMs` 間隔で `tasks/get` → `completed` → 検証。
-4. `verifiable-tools/call privateCreditCheck` → 暗号化 + コミットメント → 応答の `inputCommitment` が自分の計算値と一致し、署名が有効であることを確認。
-5. 検証失敗時は結果を使用せず非ゼロ終了（仕様書「A client MUST NOT act on a tool result whose proof fails verification」）。
+1. `server/discover` と `tools/list` → capability と descriptor（`circuitHash` / `formats`）を検証。
+2. `tools/call add` → nonce-bound output/input commitments → negotiated proof を検証。
+3. `tools/call riskScore` → `resultType: "task"` → `tasks/get` → `tasks/cancel` は `AbortSignal` に接続。
+4. `priceQuote` → `resultId` → `verifiable-tools/prove` で on-demand proof を取得し、`resultTtlMs` 内に検証。
+5. `verifiable-tools/call privateCreditCheck` → salted `hpke-v1` 引数暗号化、任意の `replyPublicKey`、復号後に証明を検証。
+6. 検証失敗時は結果を使用せず非ゼロ終了（仕様書「A client MUST NOT act on a tool result whose proof fails verification」）。
 
 ### 4.3 テスト（`tests/`、`node --test`）
 
@@ -162,7 +163,7 @@ mcp-verifiable-tools-demo/
 | Phase | 内容 | 成果物 |
 |---|---|---|
 | 1（完了） | 上記構成の雛形 + `demo-sig-v1` / `demo-commit-v1` + 3 シナリオ + テスト + CI | `npm run demo` / `npm test` が通る |
-| 2-a 仕様改訂の追従（Phase 2 の先行タスク） | (1) `Prover.prove(input, { signal }): Promise<ProofArtifact>` / `Verifier.verify(...): Promise<...>` へ非同期化し `AbortSignal` を `tasks/cancel` に接続、`proofUri` 経路を `packages/server` に追加（#4 §4-1）。(2) `outputCommitment` / `nonce` / 塩付き `inputCommitment`（JCS）/ `tools/list` 記述子（`formats` による形式別 `circuitHash`）/ `resultId` + `verifiable-tools/prove` / `proofPolicy` を protocol・server・client に実装、`server/discover` の応答に `blindEncryptionSchemes` / `blindPublicKeys` / `resultTtlMs` を追加（Phase 1 の応答は改訂前仕様のまま）。(3) `x25519-aesgcm-demo-v1` を `hpke-v1`（`hpke-js`）へ置換。(4) §4.3 の binding / deferred / descriptor 否定テストを追加 | 既存 2 形式のまま、改訂仕様の全フィールドが `npm test` で検証される |
+| 2-a（完了） | `outputCommitment` / `nonce` / salted JCS commitments / `tools/list` descriptors / `formats` overrides / `priceQuote` on-demand proofs + `verifiable-tools/prove` / `resultTtlMs` / abortable `tasks/cancel` / `replyPublicKey` / RFC 9180 base-mode `hpke-v1` を protocol・server・client に実装し、binding / deferred / descriptor / HPKE 否定テストを追加。 | 既存 2 形式のまま、改訂仕様の Phase 2-a フィールドが `npm test` で検証される |
 | 2-b 実 ZK（in-process） | `snarkjs-v2`（Groth16、circom `add` 回路を事前コンパイルして `wasm` / `zkey` / `vk.json` を同梱。Week 1 の under-constrained 攻撃をレビュー観点にする）。第 2 形式として Noir（`@noir-lang/noir_js` + `@aztec/bb.js`, UltraHonk, トラステッドセットアップ不要）を採用し、同じ `add` を 2 系統で示す。両者は別 workspace（`packages/prover-snarkjs`, `packages/prover-noir`）に隔離するが `npm test` 既定に含める。各形式の proving 時間・メモリ・証明サイズ・検証時間・検証器依存サイズを `docs/BENCHMARKS.md` に記録 | 実 ZK 証明が 2 形式動き、計測値が公開される |
 | 3 sidecar 合成 | `packages/prover-sidecar`（TS アダプタ）+ `sidecars/{risc0,ezkl,nitro,tlsn}/Dockerfile`。`risc0-v1`: Rust host を Docker 化し `prove(circuitHash, witness) -> receipt` を HTTP で提供、検証は Rust sidecar `/verify` か `risc0-zkvm` verifier の WASM ビルド（可否を Phase 3 冒頭で PoC）。`ezkl-v1`: 生成は Python `ezkl` sidecar、検証は `@ezkljs/engine`（WASM）で TS 側（「生成は他言語、検証は TS」の非対称性を体現）。`tee-nitro-v1`: COSE_Sign1 attestation の検証（chain / PCR / user-data 鍵束縛 / nonce）を TS で実装し、ローカル CI ではモック attestation でフローを通す。`zktls-tlsn-v1`: `riskScore` の価格取得に TLSNotary sidecar を挟み `inputAttestations` を出す。CI は `npm test`（必須）と `docker compose --profile sidecar`（opt-in ジョブ）に分割 | SEP 本文 Reference Implementation 節の Phase 3 項目を埋める |
 | 4 SDK 移植 | `modelcontextprotocol/typescript-sdk` の Extension API へ `packages/protocol` を移植（正典）。Python SDK 版は `ezkl-v1` サーバー側の第 2 参照実装として位置づける（#4 §4-4） | SDK フォーク/ブランチ |
