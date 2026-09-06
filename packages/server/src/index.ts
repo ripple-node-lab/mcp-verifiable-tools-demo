@@ -5,7 +5,7 @@ import {
   CallToolResult, EXTENSION_ID, HPKE_INFO_ARGS, HPKE_INFO_REPLY, JsonRpcRequest, JsonRpcResponse,
   META_CLIENT_CAPABILITIES, META_SERVER_INFO, RequestMeta, RESULT_TTL_MS, b64u, hpkeOpen, hpkeSeal,
   inputCommitment, isRecord, isValidNonce, jcs, JsonValue, JsonRpcProtocolError, negotiateProofFormat, expectedCircuitHash,
-  outputCommitment, parseAddArguments, rawX25519Public, tasksDeclared, verifiableCapability
+  outputCommitment, parseAddArguments, parseEzklAddArguments, rawX25519Public, tasksDeclared, verifiableCapability
 } from "@demo/protocol";
 import { DemoCommitProver, DemoSigProver, Prover, TeeNitroProver, TeeNitroProverOptions, mockNitroFixturesDir } from "@demo/prover";
 import { prover as noirProver, artifacts as noirArtifacts, FORMAT as NOIR_FORMAT } from "@demo/prover-noir";
@@ -158,6 +158,9 @@ export class DemoServer {
     if (capability?.requireProof && !format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format");
     if (tool === "add" && isZkFormat(format ?? "") && !parseAddArguments(params.arguments)) {
       throw new JsonRpcProtocolError(-32602, "invalid arguments for add");
+    }
+    if (tool === "add" && format === "ezkl-v1" && !parseEzklAddArguments(params.arguments)) {
+      throw new JsonRpcProtocolError(-32602, "invalid arguments for add (ezkl-v1 supports 0..2^24)");
     }
     const execute = async (signal?: AbortSignal): Promise<CallToolResult> => {
       const execution = executeTool(tool, params.arguments!, isZkFormat(format ?? ""));

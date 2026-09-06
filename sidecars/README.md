@@ -45,7 +45,10 @@ HTTP sidecar として合成する（`docs/PLAN.md` §2・§5）。MCP サーバ
 - `sidecars/ezkl/`（`ezkl-v1`）: Python `ezkl` の ZKML sidecar
   （`python:3.12-slim` + `ezkl==22.0.1` ピン、stdlib `http.server` のみ）。
   回路は ONNX の単一 `Add` ノードで、`input_scale=0` / `param_scale=0`
-  （logrows=14）により整数が field element に厳密対応する。
+  （logrows=14）により整数が field element に厳密対応する。入力領域は
+  `a, b ∈ [0, 2^24]` に制限される（ONNX FLOAT 入力は 2^24 未満でのみ
+  厳密、range-check 分解が 2^28 上限のため `a+b ≤ 2^25` は安全）。
+  超過分は 400 `invalidArguments`（サーバー側は -32602）。
   `circuitHash` = sha256(`vk.json`)。起動時に `ezkl.setup` で pk（117 MB）
   を再生成し、生成 vk がコミット済み vk と sha256 一致することを突合する。
   バージョン 22.0.1 固定は必須（`@ezkljs/engine` が 22.0.1 のみで、

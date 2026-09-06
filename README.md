@@ -81,7 +81,9 @@ runs only when `RISC0_SIDECAR_URL` is set.
 verification runs in-process via the `@ezkljs/engine` 22.0.1 WASM build
 (`packages/prover-ezkl`) — generate on Python, verify in TS. Proofs are
 ~20 KB and take ~2–3 s to produce; the demo's scenario 9 runs only when
-`EZKL_SIDECAR_URL` is set.
+`EZKL_SIDECAR_URL` is set. `ezkl-v1` restricts `add` inputs to
+`0..2^24` — ONNX FLOAT ingest is only exact below 2^24 and the circuit's
+range-check decomposition caps at 2^28 (see `parseEzklAddArguments`).
 
 ## Repository layout
 
@@ -185,7 +187,9 @@ TS」）。`RISC0_SIDECAR_URL` 指定時のみデモのシナリオ 8 が動き�
 `ezkl-v1`（Phase 3-c）は prove を Python `ezkl` sidecar（`docker compose
 --profile ezkl`）、検証を `@ezkljs/engine` の WASM で in-process に行う
 実 ZKML 形式です（`packages/prover-ezkl`）。`EZKL_SIDECAR_URL` 指定時のみ
-デモのシナリオ 9 が動きます。
+デモのシナリオ 9 が動きます。`ezkl-v1` は `add` の入力を `0..2^24` に
+制限します（ONNX FLOAT 入力は 2^24 未満でのみ厳密、回路の range-check
+分解は 2^28 が上限 — `parseEzklAddArguments` 参照）。
 
 仕様にはユースケースの説明と結果束縛フィールド（`outputCommitment` / `nonce` /
 `tools/list` 記述子 / `inputAttestations` / 遅延証明）も含まれており、

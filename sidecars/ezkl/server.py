@@ -28,6 +28,10 @@ SRS = os.path.join(ARTIFACTS, "kzg.srs")
 
 MAX_BODY = 1 << 20
 EMPTY_NONCE = "0x"
+# Input domain: ONNX FLOAT ingest is f32 (exact only below 2^24), and the
+# circuit's range-check decomposition (base 16384, n=2) caps values at 2^28.
+# a + b ≤ 2^25 stays inside both bounds.
+MAX_INPUT = 1 << 24
 
 # In-flight proof slots; aborting an HTTP request does not cancel the ezkl job.
 _proof_slots: threading.Semaphore
@@ -81,8 +85,8 @@ def read_json_body(handler) -> dict:
     return value
 
 
-def _parse_u32(value) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 0xFFFFFFFF else None
+def _parse_input(value) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= MAX_INPUT else None
 
 
 def handle_prove(body: dict) -> tuple[int, dict]:
@@ -92,16 +96,18 @@ def handle_prove(body: dict) -> tuple[int, dict]:
         if body.get("circuitHash") != circuit_hash():
             return 400, {"error": "circuitHashMismatch"}
         args = body.get("arguments") or {}
-        a, b = _parse_u32(args.get("a")), _parse_u32(args.get("b"))
-        if a is None or b is None or a + b > 0xFFFFFFFF:
+        a, b = _parse_input(args.get("a")), _parse_input(args.get("b"))
+        if a is None or b is None:
             return 400, {"error": "invalidArguments"}
         total = a + b
         if body.get("output") is not None and body.get("output") != str(total):
             return 400, {"error": "outputMismatch"}
         try:
-            proof_bytes, _instances = prove_job(a, b)
+            proof_bytes, instances = prove_job(a, b)
         except Exception as e:  # noqa: BLE001
             return 500, {"error": f"prove failed: {e}"}
+        if instances != [felt_hex(a), felt_hex(b), felt_hex(total)]:
+            return 500, {"error": "instancesMismatch"}
         nonce = body.get("nonce")
         meta = {
             "proof": base64.urlsafe_b64encode(proof_bytes).rstrip(b"=").decode(),
@@ -153,7 +159,7 @@ def handle_verify(body: dict) -> tuple[int, dict]:
     if not all(x.isdigit() for x in tail):
         return 200, {"ok": False, "reason": "instancesMismatch"}
     total, a, b = int(tail[0]), int(tail[1]), int(tail[2])
-    if a + b != total or max(a, b, total) > 0xFFFFFFFF:
+    if a + b != total or max(a, b) > MAX_INPUT or total > 2 * MAX_INPUT:
         return 200, {"ok": False, "reason": "instancesMismatch"}
     instances = proof.get("instances")
     expected_instances = [felt_hex(a), felt_hex(b), felt_hex(total)]

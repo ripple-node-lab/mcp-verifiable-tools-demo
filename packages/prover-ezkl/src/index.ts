@@ -9,7 +9,7 @@
 import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { EMPTY_NONCE, VerifiableToolsMeta, parseAddArguments } from "@demo/protocol";
+import { EMPTY_NONCE, VerifiableToolsMeta, parseEzklAddArguments } from "@demo/protocol";
 import { Verifier, VerifyContext } from "@demo/verifier";
 import { SidecarVerifier } from "@demo/prover-sidecar";
 import { artifacts } from "./artifacts.js";
@@ -61,7 +61,7 @@ export async function verifyEzkl(meta: VerifiableToolsMeta, context: VerifyConte
   const felts = instances.map(decodeU32Felt);
   if (felts.some((v) => v === undefined)) return false;
   const [a, b, sum] = felts as [bigint, bigint, bigint];
-  const args = parseAddArguments(context.arguments);
+  const args = parseEzklAddArguments(context.arguments);
   if (!args || BigInt(args.a) !== a || BigInt(args.b) !== b || sum !== a + b) return false;
   if (context.content[0]?.text !== String(sum)) return false;
   const expected = [meta.outputCommitment, meta.inputCommitment, meta.nonce ?? EMPTY_NONCE, String(sum), String(a), String(b)];

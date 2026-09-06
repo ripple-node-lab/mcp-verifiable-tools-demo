@@ -42,6 +42,14 @@ export function parseAddArguments(value: JsonValue): { a: number; b: number } | 
       value.a + value.b > 0xffffffff) return undefined;
   return { a: value.a, b: value.b };
 }
+// ezkl-v1 domain: ONNX FLOAT input ingest is only exact for |x| < 2^24, and
+// the circuit's range-check decomposition (base 16384, n=2) caps at 2^28 —
+// a + b ≤ 2^25 stays well inside it.
+export const EZKL_MAX_INPUT = 2 ** 24;
+export function parseEzklAddArguments(value: JsonValue): { a: number; b: number } | undefined {
+  const args = parseAddArguments(value);
+  return args !== undefined && args.a <= EZKL_MAX_INPUT && args.b <= EZKL_MAX_INPUT ? args : undefined;
+}
 function circuitHash(tool: string): string {
   return `0x${createHash("sha256").update(`verifiable-tools-demo:${tool}:v1`).digest("hex")}`;
 }

@@ -24,6 +24,18 @@ verify under the engine). Everything is pinned to `ezkl==22.0.1`.
 `logrows=14` is the smallest setting the engine verifies; below 14 the wasm
 verifier fails even though the Python verifier passes.
 
+## Input domain
+
+`add` inputs are restricted to `a, b ∈ [0, 2^24]` (verified values only).
+ONNX FLOAT input ingest is f32 — only exact below 2^24 (2^24+1 silently
+rounds to 2^24), and the circuit's range-check decomposition
+(base 16384, n=2) caps at 2^28, so `a + b ≤ 2^25` is safe. Enforcement is
+threefold: the server rejects `ezkl-v1` calls with `-32602`
+(`parseEzklAddArguments`), this sidecar returns 400 `invalidArguments`, and
+`EzklVerifier`/`/verify` reject out-of-domain claims. After proving, the
+sidecar also asserts `instances[0] === [felt(a), felt(b), felt(sum)]` and
+returns 500 `instancesMismatch` on drift.
+
 ## Build / run
 
 ```sh

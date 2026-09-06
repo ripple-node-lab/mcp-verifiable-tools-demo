@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { CallToolResult, VerifiableToolsMeta, expectedCircuitHash } from "@demo/protocol";
+import { CallToolResult, META_CLIENT_CAPABILITIES, VerifiableToolsMeta, clientCapabilities, expectedCircuitHash } from "@demo/protocol";
 import { verifyResult, VerifyContext } from "@demo/verifier";
-import { EzklVerifier } from "@demo/prover-ezkl";
+import { EzklVerifier, verifyEzkl } from "@demo/prover-ezkl";
+import { rpc, withServerOptions } from "./helpers.js";
 
 const FIXTURES = new URL("../../sidecars/ezkl/fixtures/", import.meta.url);
 const EZKL_HASH = expectedCircuitHash("add", "ezkl-v1");
@@ -85,6 +86,31 @@ test("ezkl-v1 rejects a numeric publicInputs entry", async () => {
   meta.publicInputs![3] = 42 as unknown as string;
   const outcome = await verifyResult(meta, context(), [new EzklVerifier()]);
   assert.deepEqual(outcome, { ok: false, reason: "proofInvalid" });
+});
+
+test("ezkl-v1 rejects arguments outside the 0..2^24 domain", async () => {
+  const meta = await fixtureMeta();
+  // direct verifier call: verifyResult would reject earlier on
+  // inputCommitmentMismatch since the args feed the commitment.
+  assert.equal(await verifyEzkl(meta, { ...context(), arguments: { a: 16777217, b: 0 } }), false);
+});
+
+test("server rejects ezkl-v1 add arguments > 2^24 with -32602", async () => {
+  await withServerOptions({ ezklSidecarUrl: "http://127.0.0.1:1" }, async (server) => {
+    const response = await rpc(server, "tools/call", {
+      name: "add",
+      arguments: { a: 16777217, b: 0 },
+      _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["ezkl-v1"]) }
+    }, { "Mcp-Name": "add" });
+    assert.equal(response.error?.code, -32602);
+    // the same arguments are still fine for u32 formats
+    const snarkjs = await rpc(server, "tools/call", {
+      name: "add",
+      arguments: { a: 16777217, b: 0 },
+      _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["snarkjs-v2"]) }
+    }, { "Mcp-Name": "add" });
+    assert.equal(snarkjs.error, undefined);
+  });
 });
 
 test("ezkl-v1 verify rejects with AbortError on a pre-aborted signal", async () => {
