@@ -11,3 +11,20 @@ services:
       interval: 2s
       timeout: 5s
       retries: 15
+  sidecar-risc0:
+    profiles: ["risc0"]
+    build:
+      context: .
+      dockerfile: sidecars/risc0/Dockerfile
+    environment:
+      PORT: "4200"
+      HOST: "0.0.0.0"
+      RISC0_DEV_MODE: ${RISC0_DEV_MODE:-}
+      MAX_CONCURRENT_PROOFS: ${MAX_CONCURRENT_PROOFS:-1}
+    ports:
+      - "4200:4200"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:4200/healthz"]
+      interval: 5s
+      timeout: 10s
+      retries: 30

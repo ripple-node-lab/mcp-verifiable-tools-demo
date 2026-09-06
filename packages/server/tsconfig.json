@@ -2,5 +2,5 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": "src", "outDir": "dist/src" },
   "include": ["src/**/*.ts", "../../types/node-shim.d.ts"],
-  "references": [{ "path": "../protocol" }, { "path": "../prover" }, { "path": "../prover-noir" }, { "path": "../prover-snarkjs" }]
+  "references": [{ "path": "../protocol" }, { "path": "../prover" }, { "path": "../prover-noir" }, { "path": "../prover-risc0" }, { "path": "../prover-sidecar" }, { "path": "../prover-snarkjs" }]
 }

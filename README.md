@@ -67,6 +67,14 @@ docker compose --profile sidecar down
 `npm test` never requires sidecars; the docker path is exercised by an opt-in
 CI job.
 
+`risc0-v1` (Phase 3-b) is a real RISC Zero zkVM format: proving runs in the
+Rust `sidecars/risc0` sidecar (`docker compose --profile risc0 up --build -d
+--wait`, then `RISC0_SIDECAR_URL=http://127.0.0.1:4200 ...`), while
+verification runs in-process in a 1.5 MB WASM build of `risc0-zkvm`
+(`packages/prover-risc0`) — generate on Rust, verify in TS. Composite
+receipts are ~222 KB and take ~40–60 s to prove on CPU; the demo's scenario 8
+runs only when `RISC0_SIDECAR_URL` is set.
+
 ## Repository layout
 
 - `packages/protocol`: extension constants, types, metadata, negotiation, and
@@ -79,10 +87,12 @@ CI job.
   `tee-nitro-v1` attestation verifier.
 - `packages/server`: Streamable HTTP MCP server and demo tools.
 - `packages/client`: verifying client and seven-scenario demo.
+- `packages/prover-risc0`: `risc0-v1` verifier (WASM build of `risc0-zkvm`).
 - `packages/prover-sidecar`: HTTP sidecar contract adapter (`SidecarProver`,
   `SidecarVerifier`, `sidecarHealth`).
 - `packages/sidecar-mock`: reference sidecar implementing `demo-sig-sidecar-v1`.
-- `sidecars`: sidecar README, mock Dockerfile, and Nitro mock fixtures.
+- `sidecars`: sidecar README, mock + risc0 Dockerfiles, Nitro mock fixtures,
+  risc0 Rust workspace, wasm verifier source.
 - `examples`: representative JSON-RPC messages.
 - `tests`: deterministic `node:test` integration tests.
 
@@ -141,8 +151,8 @@ the Noir verification-key document and updates the pinned hashes. Then run
 MCP `2026-07-28` 上で `io.modelcontextprotocol/verifiable-tools` 拡張の
 ネゴシエーション、証明メタデータのローカル検証、Tasks による非同期処理、
 暗号化した引数によるブラインド実行、実 ZK 証明（`snarkjs-v2` Groth16 /
-`noir-v1` UltraHonk）、`tee-nitro-v1` attestation、HTTP sidecar 合成を示す
-デモです。
+`noir-v1` UltraHonk、RISC Zero zkVM の `risc0-v1` は Rust sidecar 経由）、
+`tee-nitro-v1` attestation、HTTP sidecar 合成を示すデモです。
 Phase 1 + Phase 2-a + Phase 2-b + Phase 3-a の実装を含み、`demo-sig-v1` と
 `demo-commit-v1` は ZK 証明ではなく、`hpke-v1` は `node:crypto` による
 RFC 9180 base mode です。`tee-nitro-v1` は COSE_Sign1 attestation の
@@ -157,6 +167,11 @@ docker compose --profile sidecar up --build -d --wait
 SIDECAR_URL=http://127.0.0.1:4100 npm run test:sidecar
 docker compose --profile sidecar down
 ```
+
+`risc0-v1`（Phase 3-b）は prove を Rust sidecar、検証を in-process WASM
+（`packages/prover-risc0`）で行う実 zkVM 形式です（「生成は他言語、検証は
+TS」）。`RISC0_SIDECAR_URL` 指定時のみデモのシナリオ 8 が動きます。
+
 仕様にはユースケースの説明と結果束縛フィールド（`outputCommitment` / `nonce` /
 `tools/list` 記述子 / `inputAttestations` / 遅延証明）も含まれており、
 docs/PLAN.md の Phase 3-a までに実装済みです。なお、デモは `resultId` の principal

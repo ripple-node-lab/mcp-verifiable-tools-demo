@@ -7,6 +7,7 @@
     "@demo/protocol": "1.0.0",
     "@demo/prover": "1.0.0",
     "@demo/prover-noir": "1.0.0",
+    "@demo/prover-risc0": "1.0.0",
     "@demo/prover-snarkjs": "1.0.0",
     "@demo/verifier": "1.0.0",
     "@demo/server": "1.0.0"

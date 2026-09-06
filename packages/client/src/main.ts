@@ -3,7 +3,11 @@ import { closeProverWorker as closeNoirWorker, destroy as destroyNoir } from "@d
 import { closeProverWorker as closeSnarkjsWorker } from "@demo/prover-snarkjs";
 import { VerifiableClient } from "./client.js";
 import { EXTENSION_ID } from "@demo/protocol";
-const server = await startServer({ port: 0 });
+const server = await startServer({
+  port: 0,
+  risc0SidecarUrl: process.env.RISC0_SIDECAR_URL,
+  risc0TimeoutMs: process.env.RISC0_SIDECAR_TIMEOUT_MS ? Number(process.env.RISC0_SIDECAR_TIMEOUT_MS) : undefined,
+});
 try {
   const client = new VerifiableClient(server.mcpUrl);
   const discovery = await client.discover();
@@ -39,6 +43,21 @@ try {
     const proof = call.result._meta?.[EXTENSION_ID]?.proof;
     const proofBytes = typeof proof === "string" ? Buffer.from(proof.startsWith("0x") ? proof.slice(2) : proof, format === "snarkjs-v2" ? "base64url" : "hex").byteLength : 0;
     console.log(`${number}. zk add (${label}): ${call.result.content[0].text} (verified, proof ${proofBytes} bytes, prove ${proveMs.toFixed(2)} ms, verify ${verifyMs.toFixed(2)} ms)`);
+  }
+  if (process.env.RISC0_SIDECAR_URL) {
+    const proveStart = performance.now();
+    const call = await client.callTool("add", { a: 20, b: 22 }, { proofFormat: "risc0-v1" });
+    if (call.result.resultType !== "complete") throw new Error("unexpected risc0 task");
+    const proveMs = performance.now() - proveStart;
+    const verifyStart = performance.now();
+    const outcome = await client.verify(call.result, { a: 20, b: 22 }, "add", { nonce: call.nonce });
+    const verifyMs = performance.now() - verifyStart;
+    if (!outcome.ok) throw new Error(`risc0-v1 verification failed: ${outcome.reason}`);
+    const proof = call.result._meta?.[EXTENSION_ID]?.proof;
+    const proofBytes = typeof proof === "string" ? Buffer.from(proof, "base64url").byteLength : 0;
+    console.log(`8. zk add (risc0-v1 sidecar): ${call.result.content[0].text} (verified, proof ${proofBytes} bytes, prove ${proveMs.toFixed(2)} ms, verify ${verifyMs.toFixed(2)} ms)`);
+  } else {
+    console.log("8. zk add (risc0-v1 sidecar): skipped (RISC0_SIDECAR_URL unset)");
   }
 } catch (error: unknown) {
   console.error(error instanceof Error ? error.message : "demo failed");

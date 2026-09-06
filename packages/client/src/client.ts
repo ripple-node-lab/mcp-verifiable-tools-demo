@@ -8,6 +8,7 @@ import {
 import { mockNitroFixturesDir } from "@demo/prover";
 import { DemoCommitVerifier, DemoSigVerifier, TeeNitroVerifier, TeeNitroVerifierOptions, VerificationKeyRegistry, Verifier, VerifyOutcome, verifyResult } from "@demo/verifier";
 import { NoirVerifier } from "@demo/prover-noir";
+import { Risc0Verifier } from "@demo/prover-risc0";
 import { SnarkjsVerifier } from "@demo/prover-snarkjs";
 import { encryptArguments, generateReplyKeyPair } from "./blind.js";
 import { pollTask, RpcRequest } from "./tasks.js";
@@ -26,6 +27,7 @@ export class VerifiableClient {
   private readonly commitVerifier = new DemoCommitVerifier();
   private readonly snarkjsVerifier = new SnarkjsVerifier();
   private readonly noirVerifier = new NoirVerifier();
+  private readonly risc0Verifier = new Risc0Verifier();
   private readonly extraVerifiers: Verifier[];
   private readonly teeNitroOption: TeeNitroVerifierOptions | false | undefined;
   private teeVerifier: TeeNitroVerifier | undefined;
@@ -36,7 +38,7 @@ export class VerifiableClient {
     this.sigVerifier = new DemoSigVerifier(this.registry);
     this.extraVerifiers = options.verifiers ?? [];
     this.teeNitroOption = options.teeNitro;
-    const formats = ["snarkjs-v2", "noir-v1", "demo-sig-v1", "demo-commit-v1", ...(this.teeNitroOption === false ? [] : ["tee-nitro-v1"]), ...this.extraVerifiers.map((verifier) => verifier.format)];
+    const formats = ["snarkjs-v2", "noir-v1", "risc0-v1", "demo-sig-v1", "demo-commit-v1", ...(this.teeNitroOption === false ? [] : ["tee-nitro-v1"]), ...this.extraVerifiers.map((verifier) => verifier.format)];
     this.capabilities = clientCapabilities([...new Set(formats)]);
   }
   async discover(): Promise<DiscoverResult> {
@@ -100,6 +102,7 @@ export class VerifiableClient {
     const verifiers: Verifier[] = [
       ...(formats.includes("snarkjs-v2") ? [this.snarkjsVerifier] : []),
       ...(formats.includes("noir-v1") ? [this.noirVerifier] : []),
+      ...(formats.includes("risc0-v1") ? [this.risc0Verifier] : []),
       ...(formats.includes("demo-sig-v1") ? [this.sigVerifier] : []),
       ...(formats.includes("demo-commit-v1") ? [this.commitVerifier] : []),
       ...(this.teeVerifier && formats.includes("tee-nitro-v1") ? [this.teeVerifier] : []),

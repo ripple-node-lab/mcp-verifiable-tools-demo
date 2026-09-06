@@ -10,6 +10,7 @@ import {
 import { DemoCommitProver, DemoSigProver, Prover, TeeNitroProver, TeeNitroProverOptions, mockNitroFixturesDir } from "@demo/prover";
 import { prover as noirProver, artifacts as noirArtifacts, FORMAT as NOIR_FORMAT } from "@demo/prover-noir";
 import { prover as snarkProver, artifacts as snarkArtifacts, FORMAT as SNARK_FORMAT } from "@demo/prover-snarkjs";
+import { SidecarProver } from "@demo/prover-sidecar";
 import { ToolFormatDescriptor } from "./tools.js";
 import { discoverResponse } from "./discover.js";
 import { errorResponse, handleMcpPost, paramsRecord } from "./http.js";
@@ -24,9 +25,13 @@ export interface DemoServerOptions {
   descriptorOverride?: DescriptorOverride;
   verificationKeyOverrides?: { [hash: string]: Uint8Array | string };
   provers?: Prover[];
+  risc0SidecarUrl?: string;
+  risc0TimeoutMs?: number;
+  taskTtlMs?: number;
   teeNitro?: false | TeeNitroProverOptions;
   formatDescriptors?: { [format: string]: ToolFormatDescriptor };
 }
+const TASK_TTL_HEADROOM_MS = 30_000;
 const toolNames: ToolName[] = ["add", "riskScore", "privateCreditCheck", "priceQuote"];
 
 export class DemoServer {
@@ -45,7 +50,8 @@ export class DemoServer {
   private port = 0;
   constructor(options: DemoServerOptions = {}) {
     this.host = options.host ?? "127.0.0.1";
-    this.tasks = new TaskStore();
+    const risc0TimeoutMs = options.risc0TimeoutMs ?? 180_000;
+    this.tasks = new TaskStore({ ttlMs: options.taskTtlMs ?? (options.risc0SidecarUrl ? Math.max(60_000, risc0TimeoutMs + TASK_TTL_HEADROOM_MS) : 60_000) });
     this.results = new ResultStore(options.resultTtlMs ?? RESULT_TTL_MS);
     this.descriptorOverride = options.descriptorOverride;
     this.verificationKeyOverrides = options.verificationKeyOverrides ?? {};
@@ -54,6 +60,7 @@ export class DemoServer {
     this.provers.set("demo-commit-v1", new DemoCommitProver());
     this.provers.set(SNARK_FORMAT, snarkProver);
     this.provers.set(NOIR_FORMAT, noirProver);
+    if (options.risc0SidecarUrl) this.provers.set("risc0-v1", new SidecarProver({ baseUrl: options.risc0SidecarUrl, format: "risc0-v1", timeoutMs: risc0TimeoutMs }));
     if (options.teeNitro !== false) {
       const userData = new Uint8Array(createHash("sha256").update(rawX25519Public(this.blindKeys.publicKey)).digest());
       const tee = options.teeNitro ? new TeeNitroProver({ userData, ...options.teeNitro }) : TeeNitroProver.fromMockFixtures(mockNitroFixturesDir(), { userData });

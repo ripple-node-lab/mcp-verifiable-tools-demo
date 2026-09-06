@@ -7,7 +7,7 @@ export interface ToolExecution { output: string; arguments: JsonValue; }
 export type DescriptorOverride = (tool: string, descriptor: ToolDescriptorMeta) => ToolDescriptorMeta | undefined;
 export type ToolFormatDescriptor = (circuitHash: string) => { circuitHash?: string; verificationKeyUri?: string };
 export function isZkFormat(format: string): boolean {
-  return format === "snarkjs-v2" || format === "noir-v1";
+  return format === "snarkjs-v2" || format === "noir-v1" || format === "risc0-v1";
 }
 export function toolList(baseUrl: string, proofFormats: string[], formatDescriptors: { [format: string]: ToolFormatDescriptor } = {}, override?: DescriptorOverride): JsonValue {
   const definitions: Array<{ name: ToolName; description: string; inputSchema: JsonValue; proofPolicy: ToolDescriptorMeta["proofPolicy"]; blind: boolean }> = [
@@ -30,8 +30,10 @@ export function toolList(baseUrl: string, proofFormats: string[], formatDescript
         ? { circuitHash: hash, verificationKeyUri: `${baseUrl}/vk/${hash}` }
         : format === "demo-commit-v1"
           ? { circuitHash: hash }
-          : isZkFormat(format)
-            ? { circuitHash: expectedCircuitHash(name, format), verificationKeyUri: `${baseUrl}/vk/${expectedCircuitHash(name, format)}` }
+          : format === "risc0-v1"
+            ? { circuitHash: expectedCircuitHash(name, format) }
+            : isZkFormat(format)
+              ? { circuitHash: expectedCircuitHash(name, format), verificationKeyUri: `${baseUrl}/vk/${expectedCircuitHash(name, format)}` }
             : (formatDescriptors[format]?.(hash) ?? {})]))
     };
     const overridden = override ? override(name, descriptor) : descriptor;
