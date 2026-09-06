@@ -14,7 +14,7 @@ import { discoverResponse } from "./discover.js";
 import { errorResponse, handleMcpPost, paramsRecord } from "./http.js";
 import { ResultStore } from "./prove.js";
 import { TaskStore } from "./tasks.js";
-import { circuitHash, executeTool, makeResult, toolList, ToolName, DescriptorOverride } from "./tools.js";
+import { circuitHash, executeTool, isZkFormat, makeResult, toolList, toolProofFormats, ToolName, DescriptorOverride } from "./tools.js";
 
 export interface DemoServerOptions {
   port?: number;
@@ -124,11 +124,11 @@ export class DemoServer {
     if (nonce !== undefined && !isValidNonce(nonce)) throw new JsonRpcProtocolError(-32602, "invalid nonce");
     const capability = verifiableCapability(requestMeta?.[META_CLIENT_CAPABILITIES]);
     const requested = typeof extensionMeta?.requestedProofFormat === "string" ? extensionMeta.requestedProofFormat : undefined;
-    const toolFormats = tool === "add" ? ["snarkjs-v2", "noir-v1", "demo-sig-v1", "demo-commit-v1"] : ["demo-sig-v1", "demo-commit-v1"];
+    const toolFormats = toolProofFormats(tool);
     const format = negotiateProofFormat(capability, toolFormats, requested);
     if (capability?.requireProof && !format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format");
     const execute = async (signal?: AbortSignal): Promise<CallToolResult> => {
-      const execution = executeTool(tool, params.arguments!, format === "snarkjs-v2" || format === "noir-v1");
+      const execution = executeTool(tool, params.arguments!, isZkFormat(format ?? ""));
       if (tool === "priceQuote" && capability && !capability.requireProof) {
         const content = [{ type: "text" as const, text: execution.output }];
         const resultId = this.results.put({ tool, arguments: execution.arguments, content, nonce });
@@ -137,7 +137,7 @@ export class DemoServer {
       if (!format) return makeResult(execution.output);
       return this.provenResult(tool, execution.arguments, execution.output, format, nonce, undefined, signal);
     };
-    if (tasksDeclared(requestMeta?.[META_CLIENT_CAPABILITIES]) && (tool === "riskScore" || format === "snarkjs-v2" || format === "noir-v1")) {
+    if (tasksDeclared(requestMeta?.[META_CLIENT_CAPABILITIES]) && (tool === "riskScore" || isZkFormat(format ?? ""))) {
       return { jsonrpc: "2.0", id: request.id, result: this.tasks.create(async (signal) => {
         if (tool === "riskScore") await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(resolve, 300);
@@ -183,7 +183,7 @@ export class DemoServer {
     if (nonce !== undefined && !isValidNonce(nonce)) throw new JsonRpcProtocolError(-32602, "invalid nonce");
     const capability = verifiableCapability(requestMeta?.[META_CLIENT_CAPABILITIES]);
     if (capability?.blindExecution !== true) throw new JsonRpcProtocolError(-32602, "client did not declare blindExecution");
-    const toolFormats = params.tool === "privateCreditCheck" ? ["demo-sig-v1", "demo-commit-v1"] : ["snarkjs-v2", "noir-v1", "demo-sig-v1", "demo-commit-v1"];
+    const toolFormats = toolProofFormats(params.tool as ToolName);
     const format = negotiateProofFormat(capability, toolFormats, typeof params.proofFormat === "string" ? params.proofFormat : undefined);
     if (!format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format");
     const raw = Buffer.from(params.encryptedArguments, "base64url");
@@ -221,9 +221,7 @@ export class DemoServer {
     const nonce = params.nonce === undefined ? record.nonce : params.nonce;
     if (nonce !== undefined && !isValidNonce(nonce)) throw new JsonRpcProtocolError(-32602, "invalid nonce");
     const requested = typeof params.proofFormat === "string" ? params.proofFormat : undefined;
-    const toolFormats = record.tool === "add"
-      ? ["snarkjs-v2", "noir-v1", "demo-sig-v1", "demo-commit-v1"]
-      : ["demo-sig-v1", "demo-commit-v1"];
+    const toolFormats = toolProofFormats(record.tool as ToolName);
     const format = requestMeta?.[META_CLIENT_CAPABILITIES] !== undefined
       ? negotiateProofFormat(capability, toolFormats, requested)
       : requested ?? "demo-sig-v1";

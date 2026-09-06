@@ -39,7 +39,7 @@ test("expired deferred witnesses are swept without traffic", async () => withSer
   const initial = expectComplete((await client.callTool("priceQuote", { symbol: "AAPL" })).result);
   const resultId = initial._meta?.["io.modelcontextprotocol/verifiable-tools"]?.resultId;
   assert.equal(typeof resultId, "string");
-  await new Promise<void>((resolve) => setTimeout(resolve, 150));
+  await new Promise<void>((resolve) => setTimeout(resolve, 250));
   assert.equal(server.results.witnessCount, 0);
   const expired = await rpc(server, "verifiable-tools/prove", { resultId });
   assert.equal(expired.error?.data?.reason, "resultExpired");

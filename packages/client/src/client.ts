@@ -23,7 +23,6 @@ export class VerifiableClient {
   private descriptors = new Map<string, ToolDescriptorMeta>();
   constructor(private readonly endpoint: string) { this.registry = new VerificationKeyRegistry([new URL(endpoint).origin]); this.sigVerifier = new DemoSigVerifier(this.registry); }
   async discover(): Promise<DiscoverResult> {
-    this.descriptors.clear();
     const response = await this.request("server/discover", {});
     const result = asRecord(response.result);
     const extension = asRecord(asRecord(asRecord(result.capabilities).extensions)[EXTENSION_ID]);

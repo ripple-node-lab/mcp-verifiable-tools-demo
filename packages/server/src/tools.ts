@@ -1,10 +1,16 @@
-import { CallToolResult, EXTENSION_ID, JsonRpcProtocolError, JsonValue, ToolDescriptorMeta, expectedCircuitHash, inputCommitment as protocolInputCommitment } from "@demo/protocol";
+import { CallToolResult, EXTENSION_ID, JsonRpcProtocolError, JsonValue, ToolDescriptorMeta, expectedCircuitHash, inputCommitment as protocolInputCommitment, parseAddArguments } from "@demo/protocol";
 import { add } from "./tools/add.js";
 import { privateCreditCheck } from "./tools/creditCheck.js";
 import { riskScore } from "./tools/riskScore.js";
 export type ToolName = "add" | "riskScore" | "privateCreditCheck" | "priceQuote";
 export interface ToolExecution { output: string; arguments: JsonValue; }
 export type DescriptorOverride = (tool: string, descriptor: ToolDescriptorMeta) => ToolDescriptorMeta | undefined;
+export function toolProofFormats(name: ToolName): string[] {
+  return name === "add" ? ["snarkjs-v2", "noir-v1", "demo-sig-v1", "demo-commit-v1"] : ["demo-sig-v1", "demo-commit-v1"];
+}
+export function isZkFormat(format: string): boolean {
+  return format === "snarkjs-v2" || format === "noir-v1";
+}
 export function toolList(baseUrl: string, override?: DescriptorOverride): JsonValue {
   const definitions: Array<{ name: ToolName; description: string; inputSchema: JsonValue; proofPolicy: ToolDescriptorMeta["proofPolicy"]; blind: boolean }> = [
     { name: "add", description: "Add two numbers", inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } }, required: ["a", "b"] }, proofPolicy: "always", blind: false },
@@ -16,7 +22,7 @@ export function toolList(baseUrl: string, override?: DescriptorOverride): JsonVa
     const hash = expectedCircuitHash(name);
     const descriptor: ToolDescriptorMeta = {
       circuitHash: hash,
-      proofFormats: name === "add" ? ["snarkjs-v2", "noir-v1", "demo-sig-v1", "demo-commit-v1"] : ["demo-sig-v1", "demo-commit-v1"],
+      proofFormats: toolProofFormats(name),
       proofPolicy,
       verificationKeyUri: `${baseUrl}/vk/${hash}`,
       blind,
@@ -36,7 +42,7 @@ export function toolList(baseUrl: string, override?: DescriptorOverride): JsonVa
 export function executeTool(name: ToolName, args: JsonValue, zk = false): ToolExecution {
   if (!isObject(args)) throw new JsonRpcProtocolError(-32602, "arguments must be an object");
   if (name === "add" && typeof args.a === "number" && typeof args.b === "number" &&
-      (!zk || (Number.isInteger(args.a) && Number.isInteger(args.b) && args.a >= 0 && args.a <= 0xffffffff && args.b >= 0 && args.b <= 0xffffffff))) return { output: String(add(args.a, args.b)), arguments: args };
+      (!zk || parseAddArguments(args) !== undefined)) return { output: String(add(args.a, args.b)), arguments: args };
   if (name === "riskScore" && typeof args.symbol === "string") return { output: String(riskScore(args.symbol)), arguments: args };
   if (name === "privateCreditCheck" && typeof args.income === "number" && typeof args.debt === "number") return { output: privateCreditCheck(args.income, args.debt), arguments: args };
   if (name === "priceQuote" && typeof args.symbol === "string") return { output: String(riskScore(args.symbol) * 7 + 100), arguments: args };

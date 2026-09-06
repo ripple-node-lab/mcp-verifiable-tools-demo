@@ -22,7 +22,7 @@ export class ResultStore {
     (this.sweepTimer as unknown as { unref?: () => void }).unref?.();
   }
   get retentionMs(): number { return this.ttlMs; }
-  get witnessCount(): number { this.sweep(); return this.results.size; }
+  get witnessCount(): number { return this.results.size; }
   put(value: Omit<StoredResult, "createdAt">): string {
     this.sweep();
     const resultId = randomBytes(16).toString("hex");
@@ -45,7 +45,7 @@ export class ResultStore {
       }
     }
     for (const [id, expiresAt] of this.expired) {
-      if (expiresAt + this.ttlMs <= now) this.expired.delete(id);
+      if (expiresAt + this.ttlMs * 2 <= now) this.expired.delete(id);
     }
   }
 }
