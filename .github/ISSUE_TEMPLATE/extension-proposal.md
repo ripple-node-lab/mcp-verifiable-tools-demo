@@ -13,7 +13,7 @@ Phase 2 / 3 / 4 / SEP 提出 / 横断（§7 未決事項 N 番）
 
 ## §2 設計方針との整合（Step 0 の表）
 
-## 仕様（docs/spec/verifiable-tools.md）への影響
+## 仕様（docs/spec/verifiable-tools.md / .ja.md）への影響
 - 変更なし / 追記 / 破壊的変更（識別子の更新が必要: SEP-2133「Breaking changes MUST use a new identifier」）
 - 影響する節: ...
 
@@ -30,4 +30,4 @@ Phase 2 / 3 / 4 / SEP 提出 / 横断（§7 未決事項 N 番）
 ## 受け入れ基準
 - [ ] `npm run build && npm test` が通る
 - [ ] README の免責（暗号学的 ZK ではない等）が更新されている
-- [ ] docs/PLAN.md §5 / §6 / §7 が同期されている
+- [ ] docs/PLAN.md §5 / §6 / §7 と docs/spec/verifiable-tools.md / .ja.md（英日）が同期されている
