@@ -1,6 +1,6 @@
 # MCP 拡張仕様案（日本語版）：検証可能なツール実行結果
 
-> 注：本稿は `MCP_zk_verifiable_extension.md` の日本語訳・解説版です。MCP リポジトリへの提出用は英語版 SEP 形式を使用してください。
+> 注：本稿は `verifiable-tools.md`（英語版・SEP 形式）の日本語訳・解説版です。規範となるのは英語版であり、MCP リポジトリへの提出も英語版を使用します。両版の内容が食い違う場合は英語版が優先します。
 
 ## 1. 概要
 
@@ -122,7 +122,7 @@ io.modelcontextprotocol/verifiable-tools
 | `requireProof` | `boolean` | クライアント側：true の場合、サーバーは可能な限り証明を返す。サーバー側：証明不能な呼び出しを拒否しうる |
 | `requireInputProvenance` | `boolean` | クライアント側：true の場合、外部データを消費する結果は `inputAttestations`（§7.4 入力 provenance）を必ず含む |
 | `blindEncryptionSchemes` | `string[]` | サーバー側：`verifiable-tools/call` が受け付ける `encryptionScheme` の値。例：`["hpke-v1"]`。サーバーで `blindExecution: true` の場合は必須 |
-| `blindPublicKeys` | `object` | サーバー側：`blindEncryptionSchemes` の各値から、その方式の base64url 公開鍵（`hpke-v1` では生 X25519 鍵）へのマップ。`blindExecution: true` の場合は必須であり、列挙したすべての方式のエントリを含まなければならない |
+| `blindPublicKeys` | `object` | サーバー側：`encryptionScheme` の値から、その方式がサーバー保持の受信者鍵へ暗号化する列挙済み方式ごとの base64url 公開鍵（`hpke-v1` では生 X25519 鍵）へのマップ。少なくとも 1 つ該当する方式が列挙されている場合、`blindExecution: true` では必須である。クライアント鍵方式（クライアントが復号鍵を保持する予約済みの `fhe-tfhe-v1`）にはエントリを含めてはならない |
 | `resultTtlMs` | `number` | サーバー側：`resultId` が `verifiable-tools/prove` によって証明可能な期間。サーバーが `resultId` を返す可能性がある場合は必須であり、クライアントは `resultTtlMs` を広告していないサーバーからの `resultId` を証明不能として扱わなければならない |
 
 `server/discover` 応答例：
@@ -270,7 +270,7 @@ Mcp-Name: calculateRisk
 
 **リクエスト束縛。** クライアントは `params._meta["io.modelcontextprotocol/verifiable-tools"].nonce` に新鮮な乱数 `nonce` を含めてもよい。有効な nonce は `0x` プレフィックス付きの小文字 hex で、16〜64 バイトをエンコードするもの（`^0x[0-9a-f]{32,128}$`）である。含めた場合、サーバーはそれを証明（公開入力、または署名／Attestation 対象ペイロード）に束縛し、結果メタデータにエコーしなければならない。クライアントが nonce を指定しなかった場合、`publicInputs[2]` は空の hex 文字列 `"0x"` でなければならず、形式固有の tail は常にインデックス 3 から始まる。サーバーは、存在する `nonce` がこの文法に一致しないリクエストを `-32602` で拒否しなければならない。一意性はクライアントの責任である。サーバーは nonce を追跡せず、クライアントはリクエストごとに新しい nonce を生成し、そのリクエストで発行していない nonce が結果でエコーされた場合は拒否しなければならない。鮮度が必要なクライアント（価格、残高、ヘルスチェックなど、正しい回答が時間で変わるツール）は常に nonce を送るべきである。そうしなければ、サーバーは以前の呼び出しで有効だった証明を再送できる。
 
-したがって検証者は、次の順で確認する。(1) `proofFormat` がネゴシエート済みであること、(2) `circuitHash` がツールに対してピン留めされたハッシュと一致すること（§7.3 ツール記述子メタデータ）、(3) `inputCommitment` を自分で再計算した値と一致すること、(4) `outputCommitment` が `SHA-256(JCS(content))` と一致すること、(5) `nonce` が送信値と一致すること、(6) ピン留めされた検証鍵で証明／Attestation が検証できること。
+したがって検証者は、次の順で確認する。(1) `proofFormat` がネゴシエート済みであること、(2) `circuitHash` がツール*およびネゴシエートされた形式*に対してピン留めされたハッシュと一致すること（§7.3 ツール記述子メタデータ）、(3) `inputCommitment` を自分で再計算した値と一致すること、(4) `outputCommitment` が `SHA-256(JCS(content))` と一致すること、(5) `nonce` が送信値と一致すること、(6) ピン留めされた検証鍵で証明／Attestation が検証できること。
 
 ### 7.3 ツール記述子メタデータ
 
@@ -284,9 +284,19 @@ Mcp-Name: calculateRisk
   "_meta": {
     "io.modelcontextprotocol/verifiable-tools": {
       "circuitHash": "0x12ab...",
-      "proofFormats": ["snarkjs-v2"],
+      "proofFormats": ["snarkjs-v2", "noir-v1"],
       "proofPolicy": "onDemand",
       "verificationKeyUri": "https://example.com/vk/0x12ab...",
+      "formats": {
+        "snarkjs-v2": {
+          "circuitHash": "0x12ab...",
+          "verificationKeyUri": "https://example.com/vk/snarkjs/0x12ab..."
+        },
+        "noir-v1": {
+          "circuitHash": "0x34cd...",
+          "verificationKeyUri": "https://example.com/vk/noir/0x34cd..."
+        }
+      },
       "blind": false
     }
   }
@@ -299,6 +309,7 @@ Mcp-Name: calculateRisk
 | `proofFormats` | `string[]` | このツールで利用可能な形式（capability レベルのリストのサブセット） |
 | `proofPolicy` | `"always" \| "onDemand" \| "sampled"` | すべての呼び出しに証明を付けるか、要求時だけ証明を生成するか（§8.1 遅延証明）、一定割合の呼び出しを証明するか |
 | `verificationKeyUri` | `string` | `circuitHash` の検証鍵を取得する場所 |
+| `formats` | `object` | 形式ごとの任意の上書き：`{ "<proofFormat>": { "circuitHash", "verificationKeyUri" } }`。ネゴシエートされた形式について存在する場合、その値がトップレベルの `circuitHash`／`verificationKeyUri` より優先され、トップレベルの値はデフォルトとして機能する。異なる成果物を持つ形式（例：1 つのツールで `snarkjs-v2` と `noir-v1`）を提供するサーバーは `formats` を使用しなければならない |
 | `blind` | `boolean` | ツールが `verifiable-tools/call` を受け付けるか |
 
 記述子は*ヒント*であり、信頼の根ではない。悪意あるサーバーは `tools/list` を制御できる。クライアントは初回利用時に `circuitHash` と検証鍵をピン留め（TOFU）するか、より望ましくは帯域外レジストリ（署名付きマニフェスト、パッケージレジストリ、Transparency Log）から取得しなければならない。既知のツールの `circuitHash` が変わった場合、黙って受け入れず、ユーザーまたはポリシー層に通知しなければならない。
@@ -389,7 +400,7 @@ verifiable-tools/prove
 | `proofFormat` | `string` | 任意 | 優先する証明形式 |
 | `nonce` | `string` | 任意 | 遅延証明に束縛する新鮮な nonce |
 
-`verifiable-tools/prove` は、`tools/call` と同じ MCP セッションおよびトランスポート上の通常の JSON-RPC リクエストである。これは双方が拡張をネゴシエートした後にのみ利用できる。`resultTtlMs` を広告していないサーバーは `-32601` で応答しなければならない。`resultId` は推測不能でなければならず（暗号学的に安全な乱数源から得た少なくとも 128 ビット）、プリンシパル（認可主体）および、トランスポートに存在する場合は元の呼び出しを行ったセッションに束縛されなければならない。サーバーは他の呼び出し元に対して、未知の識別子か認可されていない識別子かを区別せず、`data.reason: "resultNotFound"` を伴う `-32602` で応答しなければならない。`replyPublicKey` に暗号化して `content` を返したブラインド呼び出しの結果では、遅延応答は§暗号化された応答に従い、`verifiable-tools/prove` リクエストの nonce（指定されていない場合は元の nonce）を使って同じ `originalContent` を再暗号化しなければならない。そのため暗号文は異なるが、平文に対して計算された `outputCommitment` は変わらない。リクエストオプション（`proofFormat`、`nonce`）は `_meta` の下ではなく、`params` に直接置く。
+`verifiable-tools/prove` は、`tools/call` と同じ MCP セッションおよびトランスポート上の通常の JSON-RPC リクエストである。これは双方が拡張をネゴシエートした後にのみ利用できる。`resultTtlMs` を広告していないサーバーは `-32601` で応答しなければならない。`resultId` は推測不能でなければならず（暗号学的に安全な乱数源から得た少なくとも 128 ビット）、プリンシパル（認可主体）および、トランスポートに存在する場合は元の呼び出しを行ったセッションに束縛されなければならない。サーバーは他の呼び出し元に対して、未知の識別子か認可されていない識別子かを区別せず、`data.reason: "resultNotFound"` を伴う `-32602` で応答しなければならない。`replyPublicKey` に暗号化して `content` を返したブラインド呼び出しの結果では、遅延応答は§暗号化された応答に従い、同じ `originalContent`（§暗号化された応答を参照）を `verifiable-tools/prove` リクエストの nonce（指定されていない場合は元の nonce）を使って再暗号化しなければならない。そのため暗号文は異なるが、平文に対して計算された `outputCommitment` は変わらない。リクエストオプション（`proofFormat`、`nonce`）は `_meta` の下ではなく、`params` に直接置く。
 
 応答は、元の平文 `content`（暗号化された応答では `originalContent`）とバイト単位で一致し、`_meta` に証明が追加された `CallToolResult` か、後者に解決されるタスクのいずれかである。サーバーは、選択した証明形式に必要なプライベート witness（ZK 形式では平文引数、TEE 形式では封印された実行記録を含む）を含む十分な状態を、出力および nonce とともに保持し、広告した `resultTtlMs` の期間以上（`resultId` を返す場合は必須）、元の計算を証明できなければならない。`resultTtlMs` が経過した後、サーバーは `-32602` と `data.reason: "resultExpired"` で `resultId` を拒否し、保持していた witness を削除しなければならない。
 
@@ -410,15 +421,15 @@ verifiable-tools/call
 | `tool` | `string` | 必須 | 呼び出すツール名 |
 | `inputCommitment` | `string` | 必須 | 平文入力へのコミットメント（ハッシュ） |
 | `encryptionScheme` | `string` | 必須 | 暗号化・鍵共有方式の識別子。下表を参照 |
-| `encryptedArguments` | `string` | 必須 | 暗号化ペイロード `{ "salt": "0x...", "arguments": { ... } }`（暗号化前に JCS エンコード） |
+| `encryptedArguments` | `string` | 必須 | base64url 文字列。平文は `{ "salt": "0x...", "arguments": { ... } }` の JCS エンコーディング |
 | `proofFormat` | `string` | 任意 | 希望する証明形式 |
 
 定義済みの `encryptionScheme`：
 
 | 値 | 意味 | 平文を見る主体 |
 |---|---|---|
-| `hpke-v1` | [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180) の HPKE base mode、`DHKEM(X25519, HKDF-SHA256)` / `HKDF-SHA256` / `AES-128-GCM`。`encryptedArguments` = `enc \|\| ciphertext`。AAD = `JCS({tool, inputCommitment, encryptionScheme})`。`info` = UTF-8 `"io.modelcontextprotocol/verifiable-tools/hpke-v1/args"` | 証明環境（TEE または prover を実行するマシン）。その外側の MCP サーバープロセスは見てはならない |
-| `fhe-tfhe-v1` | クライアントが保持する TFHE 鍵で引数を暗号化し、ツールを準同型評価して暗号化された `content` を返す。予約値。正しさの証明も得るには検証可能 FHE が必要だが、まだ実用的でない（§18 未解決事項） | クライアント以外には誰も見ない |
+| `hpke-v1` | [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180) の HPKE base mode、`DHKEM(X25519, HKDF-SHA256)` / `HKDF-SHA256` / `AES-128-GCM`。`encryptedArguments` = `base64url(enc \|\| ciphertext)`（パディングなし、RFC 4648 §5）。`enc` は 32 バイトの X25519 カプセル化鍵であり、受信者は復号後の先頭 32 バイトを分割する。AAD = `JCS({tool, inputCommitment, encryptionScheme})`。`info` = UTF-8 `"io.modelcontextprotocol/verifiable-tools/hpke-v1/args"` | 証明環境（TEE または prover を実行するマシン）。その外側の MCP サーバープロセスは見てはならない |
+| `fhe-tfhe-v1` | クライアントが保持する TFHE 鍵で引数を暗号化し、ツールを準同型評価して暗号化された `content` を返す。予約値。正しさの証明も得るには検証可能 FHE が必要だが、まだ実用的でない（§18 未解決事項）。サーバー鍵はなく、`blindPublicKeys` にこの方式のエントリはない | クライアント以外には誰も見ない |
 
 `hpke-v1` 用サーバー公開鍵は、`blindEncryptionSchemes` とともに capability オブジェクトの `blindPublicKeys["hpke-v1"]`（base64url 形式の生 X25519 鍵）で広告する。`server/discover` が配送経路なので、鍵の信頼性はその経路と同じだけである。TEE ベースのサーバーでは、クライアントが暗号化先の鍵が Attestation 済みエンクレーブ内に存在することを確認できるよう、鍵を Attestation の user-data フィールドに束縛しなければならない。それ以外では検証鍵と同様にピン留めしなければならない。
 
@@ -437,6 +448,8 @@ Mcp-Method: verifiable-tools/call
 
 #### 暗号化された応答
 
+本稿全体を通じて `originalContent` は、暗号化前にツールが生成した平文の `content` 配列を指し、独立したフィールドとして送信されることはない。
+
 `replyPublicKey` が存在する場合、サーバーは `content` を単一の `{ "type": "text", "text": "<base64url(enc || ciphertext)>" }` 要素として返さなければならず、結果の `_meta["io.modelcontextprotocol/verifiable-tools"].encryptedContent` は `true` でなければならない。暗号化はブラインド引数と同じスイートによる `hpke-v1` base mode とし、平文は `JCS(originalContent)`、AAD は `JCS({tool, inputCommitment, nonce})` とする（nonce がない場合はオブジェクトから省略する）。`info` は UTF-8 `"io.modelcontextprotocol/verifiable-tools/hpke-v1/reply"` とする。`outputCommitment` は*平文*の `originalContent` に対して計算しなければならないため、クライアントは先に復号してから通常の検証手順を実行する。`replyPublicKey` は非ブラインドの `tools/call` では無視する。
 
 ### 9.2 例
@@ -450,7 +463,7 @@ Mcp-Method: verifiable-tools/call
     "tool": "privateCreditCheck",
     "inputCommitment": "0xdeadbeef...",
     "encryptionScheme": "hpke-v1",
-    "encryptedArguments": "0x0a1b...",
+    "encryptedArguments": "<base64url(enc || ciphertext)>",
     "proofFormat": "tee-sgx-dcap-v1",
     "_meta": {
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
