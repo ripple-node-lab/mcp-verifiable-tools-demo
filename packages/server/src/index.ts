@@ -10,6 +10,7 @@ import {
 import { DemoCommitProver, DemoSigProver, Prover, TeeNitroProver, TeeNitroProverOptions, mockNitroFixturesDir } from "@demo/prover";
 import { prover as noirProver, artifacts as noirArtifacts, FORMAT as NOIR_FORMAT } from "@demo/prover-noir";
 import { prover as snarkProver, artifacts as snarkArtifacts, FORMAT as SNARK_FORMAT } from "@demo/prover-snarkjs";
+import { SidecarProver } from "@demo/prover-sidecar";
 import { ToolFormatDescriptor } from "./tools.js";
 import { discoverResponse } from "./discover.js";
 import { errorResponse, handleMcpPost, paramsRecord } from "./http.js";
@@ -24,6 +25,7 @@ export interface DemoServerOptions {
   descriptorOverride?: DescriptorOverride;
   verificationKeyOverrides?: { [hash: string]: Uint8Array | string };
   provers?: Prover[];
+  risc0SidecarUrl?: string;
   teeNitro?: false | TeeNitroProverOptions;
   formatDescriptors?: { [format: string]: ToolFormatDescriptor };
 }
@@ -54,6 +56,7 @@ export class DemoServer {
     this.provers.set("demo-commit-v1", new DemoCommitProver());
     this.provers.set(SNARK_FORMAT, snarkProver);
     this.provers.set(NOIR_FORMAT, noirProver);
+    if (options.risc0SidecarUrl) this.provers.set("risc0-v1", new SidecarProver({ baseUrl: options.risc0SidecarUrl, format: "risc0-v1" }));
     if (options.teeNitro !== false) {
       const userData = new Uint8Array(createHash("sha256").update(rawX25519Public(this.blindKeys.publicKey)).digest());
       const tee = options.teeNitro ? new TeeNitroProver({ userData, ...options.teeNitro }) : TeeNitroProver.fromMockFixtures(mockNitroFixturesDir(), { userData });
