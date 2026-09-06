@@ -130,7 +130,7 @@ mcp-verifiable-tools-demo/
   - 宣言していれば `proofFormats` の交差から 1 形式を選ぶ（`_meta["io.modelcontextprotocol/verifiable-tools"].requestedProofFormat` を優先）。交差が空で `requireProof: true` なら `-32602` 相当のエラー、そうでなければ証明なしで返す。
   - `riskScore` はクライアントが `io.modelcontextprotocol/tasks` を宣言している場合のみ `resultType: "task"` を返す（未宣言なら同期で待って返す）。
 - `tasks/get` / `tasks/cancel`: SEP-2663 の `Task` 形状（`taskId`, `status`, `createdAt`, `lastUpdatedAt`, `ttlMs`, `pollIntervalMs`）。完了時は `result` に `CallToolResult` + 拡張 `_meta` を含める。
-- `verifiable-tools/call`: `encryptionScheme: "x25519-aesgcm-demo-v1"`（HPKE の簡易代替。README で明記。Phase 2-a で `hpke-v1` + 塩付きコミットメントに置換）。サーバーの X25519 公開鍵は `server/discover` の拡張 capability に `blindPublicKeys`（scheme → 鍵のマップ）として載せる。復号後に `SHA-256(canonical JSON(args))` が `inputCommitment` と一致することを確認、不一致は `-32602`。応答 `_meta` には `inputCommitment` を含める。
+- `verifiable-tools/call`: `encryptionScheme: "x25519-aesgcm-demo-v1"`（HPKE の簡易代替。README で明記。Phase 2-a で `hpke-v1` + 塩付きコミットメントに置換）。サーバーの X25519 公開鍵は `server/discover` の拡張 capability に `blindPublicKey`（単数、デモ用フィールド）として載せる。改訂仕様の `blindPublicKeys`（scheme → 鍵のマップ）への移行は Phase 2-a。復号後に `SHA-256(canonical JSON(args))` が `inputCommitment` と一致することを確認、不一致は `-32602`。応答 `_meta` には `inputCommitment` を含める。
 - `GET /vk/{circuitHash}`: `verificationKeyUri` の実体。`demo-sig-v1` の Ed25519 公開鍵（PEM）を返す。
 
 ### 4.2 クライアント（`packages/client`）
