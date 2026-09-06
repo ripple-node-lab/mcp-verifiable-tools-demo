@@ -25,7 +25,7 @@ MCP SEP ガイドラインの「Prototype Requirements」と設計原則「Demon
   - `demo-sig-v1`: 「TEE Attestation 相当」のシミュレーション。Prover が `circuitHash || inputCommitment || outputHash` を Ed25519 署名する。`verificationKeyUri` から公開鍵を取得して検証する。
   - `demo-commit-v1`: 「ZK 証明相当」のシミュレーション。`publicInputs = [output, inputCommitment]`、`proof = SHA-256(circuitHash || publicInputs)`。証明としての健全性は無いが、フィールドの流れ（`publicInputs` / `circuitHash` / `verificationKeyUri`）を確認できる。
   - README で **これらは暗号学的な ZK ではないこと** を明記する。
-- **Phase 2 で実エンジンを追加する。** `snarkjs-v2`（Groth16, 小さな circom 回路の事前コンパイル済み `wasm` / `zkey` / `vk.json` を同梱）と Noir（UltraHonk）を npm だけで動く実 ZK バックエンドとする。`ezkl-v1` / `risc0-v1` / TEE / zkTLS は Phase 3 で sidecar として合成する（§5）。
+- **Phase 2-b（完了）で実エンジンを追加した。** `snarkjs-v2`（Groth16, 小さな Circom 回路の事前コンパイル済み `wasm` / `zkey` / `vk.json` を同梱）と Noir（UltraHonk）を npm だけで動く実 ZK バックエンドとして実装した。`ezkl-v1` / `risc0-v1` / TEE / zkTLS は Phase 3 で sidecar として合成する（§5）。
 - **SDK 依存を避ける。** 公式 SDK の 2026-07-28 対応状況に左右されないよう、JSON-RPC 2.0 + Streamable HTTP（POST のみ）を薄く自前実装する。将来 `typescript-sdk` の Extension API に載せ替えられるよう、プロトコル処理は `packages/protocol` に隔離する。
 - **言語方針（#4 の結論）: プロトコル層・クライアント検証層は TypeScript、証明バックエンドは engine ごとに最適な言語をアダプタ経由で合成する。** 判断の軸は上記「本質は証明をどう運ぶか」と同じで、言語の境界も同じ場所に置く。
   - `packages/protocol` / `server` / `client` / `verifier` は TS を維持する。MCP の正典スキーマと Phase 4 の移植先（`typescript-sdk`）が TS であり、検証器は IDE / エージェントホスト（多くが TS）へ npm / WASM で配布できる必要があるため。
@@ -156,7 +156,7 @@ mcp-verifiable-tools-demo/
 | `descriptor.test.ts`（Phase 2-a） | `tools/list` の `circuitHash` がピン留め値と異なる → 黙って受理せずエラーとして表面化 |
 | `deferred-proof.test.ts`（Phase 2-a） | `proofPolicy: onDemand` の tool → `resultId` のみ返る → `verifiable-tools/prove` で `content` がバイト一致し証明が検証成功 / `resultTtlMs` 経過後は `resultExpired` |
 | `provenance.test.ts`（Phase 3） | `requireInputProvenance: true` で `inputAttestations` 欠落・不正 → 主証明が有効でも拒否 |
-| `randomness.test.ts`（Phase 2-b 以降） | 証明ごとに乱数が再利用されていないこと（Week 3 nonce 再利用 / Week 2 Beaver triple 再利用の教訓） |
+| `randomness.test.ts`（Phase 2-b） | snarkjs / Noir の同一入力でも異なる証明が生成され、双方が検証できること |
 
 ## 5. 実装フェーズ
 
@@ -164,7 +164,7 @@ mcp-verifiable-tools-demo/
 |---|---|---|
 | 1（完了） | 上記構成の雛形 + `demo-sig-v1` / `demo-commit-v1` + 3 シナリオ + テスト + CI | `npm run demo` / `npm test` が通る |
 | 2-a（完了） | `outputCommitment` / `nonce` / salted JCS commitments / `tools/list` descriptors / `formats` overrides / `priceQuote` on-demand proofs + `verifiable-tools/prove` / `resultTtlMs` / abortable `tasks/cancel` / `replyPublicKey` / RFC 9180 base-mode `hpke-v1` を protocol・server・client に実装し、binding / deferred / descriptor / HPKE 否定テストを追加。 | 既存 2 形式のまま、改訂仕様の Phase 2-a フィールドが `npm test` で検証される |
-| 2-b 実 ZK（in-process） | `snarkjs-v2`（Groth16、circom `add` 回路を事前コンパイルして `wasm` / `zkey` / `vk.json` を同梱。Week 1 の under-constrained 攻撃をレビュー観点にする）。第 2 形式として Noir（`@noir-lang/noir_js` + `@aztec/bb.js`, UltraHonk, トラステッドセットアップ不要）を採用し、同じ `add` を 2 系統で示す。両者は別 workspace（`packages/prover-snarkjs`, `packages/prover-noir`）に隔離するが `npm test` 既定に含める。各形式の proving 時間・メモリ・証明サイズ・検証時間・検証器依存サイズを `docs/BENCHMARKS.md` に記録 | 実 ZK 証明が 2 形式動き、計測値が公開される |
+| 2-b 実 ZK（完了） | `snarkjs-v2`（Groth16、circom `add` 回路を事前コンパイルして `wasm` / `zkey` / `vk.json` を同梱。ローカル単一参加者 trusted setup はデモ専用）と Noir（`@noir-lang/noir_js` + `@aztec/bb.js`, UltraHonk, trusted setup 不要）を別 workspace（`packages/prover-snarkjs`, `packages/prover-noir`）で実装し、`npm test` 既定に含めた。 | 実 ZK 証明 2 形式、実測値は [`docs/BENCHMARKS.md`](BENCHMARKS.md) |
 | 3 sidecar 合成 | `packages/prover-sidecar`（TS アダプタ）+ `sidecars/{risc0,ezkl,nitro,tlsn}/Dockerfile`。`risc0-v1`: Rust host を Docker 化し `prove(circuitHash, witness) -> receipt` を HTTP で提供、検証は Rust sidecar `/verify` か `risc0-zkvm` verifier の WASM ビルド（可否を Phase 3 冒頭で PoC）。`ezkl-v1`: 生成は Python `ezkl` sidecar、検証は `@ezkljs/engine`（WASM）で TS 側（「生成は他言語、検証は TS」の非対称性を体現）。`tee-nitro-v1`: COSE_Sign1 attestation の検証（chain / PCR / user-data 鍵束縛 / nonce）を TS で実装し、ローカル CI ではモック attestation でフローを通す。`zktls-tlsn-v1`: `riskScore` の価格取得に TLSNotary sidecar を挟み `inputAttestations` を出す。CI は `npm test`（必須）と `docker compose --profile sidecar`（opt-in ジョブ）に分割 | SEP 本文 Reference Implementation 節の Phase 3 項目を埋める |
 | 4 SDK 移植 | `modelcontextprotocol/typescript-sdk` の Extension API へ `packages/protocol` を移植（正典）。Python SDK 版は `ezkl-v1` サーバー側の第 2 参照実装として位置づける（#4 §4-4） | SDK フォーク/ブランチ |
 | 発展（任意） | `fhe-tfhe-v1`（`node-seal` または TFHE-rs WASM でクライアント暗号化 → サーバー準同型評価。正しさは vFHE 待ちのため機密性のみのデモ）、MPC / co-SNARK prover（複数データプロバイダーの入力を秘密分散したまま証明。MP-SPDZ / MPyC / mpz sidecar） | Open Questions の材料 |

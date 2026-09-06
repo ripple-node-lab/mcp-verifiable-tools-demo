@@ -644,11 +644,27 @@ This extension is **fully backward compatible**.
 A reference implementation is required before this SEP can reach "Final" status. The prototype lives at <https://github.com/ripple-node-lab/mcp-verifiable-tools-demo> (TypeScript, MCP `2026-07-28` Streamable HTTP, `npm install && npm test`). Its plan (`docs/PLAN.md`) is staged so that reviewers can run each stage without heavy toolchains:
 
 - Phase 1 (done): transport, negotiation, Tasks integration, and blind calls with dependency-free stand-in formats (`demo-sig-v1`, `demo-commit-v1`). These are *not* cryptographic proofs and are labelled as such.
-- Phase 2: a real ZK format that runs in-process from npm (`snarkjs-v2` Groth16 over a circom circuit; Noir/UltraHonk as a second candidate), plus the result-binding fields of this revision (`outputCommitment`, `nonce`, `tools/list` descriptors) and measured proving/verification figures.
+- Phase 2-b: two real ZK formats that run in-process from npm (`snarkjs-v2` Groth16 over a Circom circuit and `noir-v1` UltraHonk), plus the result-binding fields of this revision and measured proving/verification figures.
 - Phase 3: sidecar-based formats where the prover is not TypeScript: `risc0-v1` (Rust zkVM), `ezkl-v1` (Python/CLI prover, WASM verifier), `tee-nitro-v1` (attestation verification in TypeScript, enclave build opt-in), and a `zktls-tlsn-v1` input attestation for the price-feed scenario.
 - Phase 4: port of the protocol layer to `modelcontextprotocol/typescript-sdk`.
 
 CI results and per-format benchmarks will be linked here as each phase lands.
+
+### Non-normative appendix: format profiles implemented by the reference demo
+
+The reference demo implements these concrete profiles for `add`. Both bind
+`publicInputs = [outputCommitment, inputCommitment, nonce ?? "0x", ...nativeTail]`.
+
+- `snarkjs-v2`: `proof` is unpadded base64url of JCS-serialized snarkjs
+  Groth16 JSON; the native tail is decimal `[c, a, b]`. The verification-key
+  document is the committed Circom `vk.json` bytes.
+- `noir-v1`: `proof` is `0x` plus lowercase hexadecimal proof bytes; the native
+  tail is padded lowercase hexadecimal field strings `[a, b, c]`. The
+  verification-key document is JCS JSON
+  `{"format":"noir-v1","vk":"<base64url raw vk bytes>"}`.
+
+For both profiles, `circuitHash` is `0x` plus SHA-256 of the exact bytes served
+at `verificationKeyUri`, including JSON serialization and whitespace.
 
 ## Performance Implications
 
