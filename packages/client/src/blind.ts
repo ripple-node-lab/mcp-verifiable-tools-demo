@@ -1,30 +1,16 @@
-import { createCipheriv, createHash, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes } from "node:crypto";
-import { JsonValue } from "@demo/protocol";
-import { canonicalJson } from "@demo/prover";
-export interface EncryptedArgumentsResult {
-  encryptedArguments: string;
-  inputCommitment: string;
+import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { HPKE_INFO_ARGS, JsonValue, b64u, hpkeSeal, inputCommitment, jcs, unb64u } from "@demo/protocol";
+
+export interface EncryptedArgumentsResult { encryptedArguments: string; inputCommitment: string; salt: Uint8Array; }
+export function encryptArguments(args: JsonValue, serverBlindPublicKey: string): EncryptedArgumentsResult {
+  const salt = randomBytes(32);
+  const commitment = inputCommitment(args, salt);
+  const payload = new TextEncoder().encode(jcs({ salt: `0x${salt.toString("hex")}`, arguments: args } as JsonValue));
+  const aad = new TextEncoder().encode(jcs({ tool: "privateCreditCheck", inputCommitment: commitment, encryptionScheme: "hpke-v1" } as JsonValue));
+  return { encryptedArguments: b64u(hpkeSeal(unb64u(serverBlindPublicKey), new TextEncoder().encode(HPKE_INFO_ARGS), aad, payload)), inputCommitment: commitment, salt };
 }
-export function encryptArguments(args: JsonValue, serverBlindPublicKeyBase64: string): EncryptedArgumentsResult {
-  const keyPair = generateKeyPairSync("x25519");
-  const publicJwk = keyPair.publicKey.export({ type: "spki", format: "jwk" }) as { x?: string };
-  const serverPublic = createPublicKey({
-    key: { kty: "OKP", crv: "X25519", x: Buffer.from(serverBlindPublicKeyBase64, "base64").toString("base64url") },
-    format: "jwk"
-  });
-  const shared = diffieHellman({ privateKey: keyPair.privateKey, publicKey: serverPublic });
-  const key = Buffer.from(hkdfSync("sha256", shared, Buffer.alloc(0), Buffer.from("x25519-aesgcm-demo-v1"), 32));
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const encrypted = Buffer.concat([cipher.update(Buffer.from(canonicalJson(args))), cipher.final()]);
-  const envelope = {
-    epk: Buffer.from(publicJwk.x ?? "", "base64url").toString("base64"),
-    iv: iv.toString("base64"),
-    ciphertext: encrypted.toString("base64"),
-    tag: cipher.getAuthTag().toString("base64")
-  };
-  return {
-    encryptedArguments: Buffer.from(JSON.stringify(envelope)).toString("base64"),
-    inputCommitment: `0x${createHash("sha256").update(canonicalJson(args)).digest("hex")}`
-  };
+export function generateReplyKeyPair(): { privateKey: ReturnType<typeof generateKeyPairSync>["privateKey"]; publicKey: Uint8Array } {
+  const pair = generateKeyPairSync("x25519");
+  const jwk = pair.publicKey.export({ type: "spki", format: "jwk" }) as { x?: string };
+  return { privateKey: pair.privateKey, publicKey: unb64u(jwk.x ?? "") };
 }

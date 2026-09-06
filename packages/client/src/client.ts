@@ -1,101 +1,106 @@
 import {
-  CallToolResult, clientCapabilities, EXTENSION_ID, JsonValue, META_CLIENT_CAPABILITIES, PROTOCOL_VERSION,
-  RequestMeta, ServerInfo, SUPPORTED_PROOF_FORMATS, TASKS_EXTENSION_ID, VerifiableToolsCapability, verifiableCapability,
-  expectedCircuitHash
+  CallToolResult, ClientCapabilities, EXTENSION_ID, HPKE_INFO_REPLY, JsonValue, META_CLIENT_CAPABILITIES,
+  PROTOCOL_VERSION, RequestMeta, SUPPORTED_PROOF_FORMATS, TASKS_EXTENSION_ID, ToolDescriptorMeta,
+  VerifiableToolsCapability, b64u, clientCapabilities, expectedCircuitHash, freshNonce, hpkeOpen,
+  isRecord, jcs, unb64u, verifiableCapability
 } from "@demo/protocol";
-import { DemoCommitVerifier, DemoSigVerifier, VerificationKeyRegistry } from "@demo/verifier";
-import { encryptArguments } from "./blind.js";
+import { DemoCommitVerifier, DemoSigVerifier, VerificationKeyRegistry, verifyResult } from "@demo/verifier";
+import { encryptArguments, generateReplyKeyPair } from "./blind.js";
 import { pollTask, RpcRequest } from "./tasks.js";
-export interface DiscoverResult { proofFormats: string[]; serverProofFormats: string[]; blindPublicKey: string; blindExecution: boolean; }
+
+export interface DiscoverResult { proofFormats: string[]; serverProofFormats: string[]; blindPublicKeys: { [scheme: string]: string }; blindEncryptionSchemes: string[]; blindExecution: boolean; resultTtlMs?: number; }
+export interface CallResponse { result: CallToolResult | TaskEnvelope; nonce: string; }
 export class VerifiableClient {
-  private capabilities = clientCapabilities(["demo-sig-v1", "demo-commit-v1"]);
+  private capabilities: ClientCapabilities = clientCapabilities(["demo-sig-v1", "demo-commit-v1"]);
   private readonly registry: VerificationKeyRegistry;
   private readonly sigVerifier: DemoSigVerifier;
   private readonly commitVerifier = new DemoCommitVerifier();
-  private serverInfo: ServerInfo | undefined;
   private discovered: DiscoverResult | undefined;
-  constructor(private readonly endpoint: string) {
-    this.registry = new VerificationKeyRegistry([new URL(endpoint).origin]);
-    this.sigVerifier = new DemoSigVerifier(this.registry);
-  }
+  private descriptors = new Map<string, ToolDescriptorMeta>();
+  constructor(private readonly endpoint: string) { this.registry = new VerificationKeyRegistry([new URL(endpoint).origin]); this.sigVerifier = new DemoSigVerifier(this.registry); }
   async discover(): Promise<DiscoverResult> {
     const response = await this.request("server/discover", {});
     const result = asRecord(response.result);
-    const capabilities = asRecord(result.capabilities);
-    const extensions = asRecord(capabilities.extensions);
-    const extension = asRecord(extensions[EXTENSION_ID]);
+    const extension = asRecord(asRecord(asRecord(result.capabilities).extensions)[EXTENSION_ID]);
     const formats = asStringArray(extension.proofFormats);
-    const blindPublicKey = asString(extension.blindPublicKey);
+    const blindEncryptionSchemes = extension.blindEncryptionSchemes ? asStringArray(extension.blindEncryptionSchemes) : [];
+    const blindPublicKeys = extension.blindPublicKeys && isRecord(extension.blindPublicKeys) ? extension.blindPublicKeys as { [scheme: string]: string } : {};
     const blindExecution = extension.blindExecution === true;
-    this.serverInfo = asRecord(result._meta)?.["io.modelcontextprotocol/serverInfo"] as unknown as ServerInfo | undefined;
+    const resultTtlMs = typeof extension.resultTtlMs === "number" ? extension.resultTtlMs : undefined;
     const proofFormats = formats.filter((format) => (SUPPORTED_PROOF_FORMATS as readonly string[]).includes(format));
     if (proofFormats.length === 0) throw new Error("no mutually supported proof format");
-    this.discovered = { proofFormats, serverProofFormats: formats, blindPublicKey, blindExecution };
+    const tools = asRecord((await this.request("tools/list", {})).result).tools;
+    if (!Array.isArray(tools)) throw new Error("malformed tools/list response");
+    for (const item of tools) {
+      const tool = asRecord(item);
+      const name = asString(tool.name);
+      const descriptor = asRecord(asRecord(tool._meta)[EXTENSION_ID]) as unknown as ToolDescriptorMeta;
+      const expected = expectedCircuitHash(name);
+      if (descriptor.circuitHash !== expected || (descriptor.formats && Object.values(descriptor.formats).some((format) => format.circuitHash !== undefined && format.circuitHash !== expected))) throw new Error(`tool descriptor circuitHash mismatch for ${name}`);
+      this.descriptors.set(name, descriptor);
+    }
+    this.discovered = { proofFormats, serverProofFormats: formats, blindPublicKeys, blindEncryptionSchemes, blindExecution, resultTtlMs };
     return this.discovered;
   }
-  setCapabilities(capability: VerifiableToolsCapability, tasks = false): void {
-    this.capabilities = clientCapabilities(capability.proofFormats ?? [], { blindExecution: capability.blindExecution, requireProof: capability.requireProof, tasks });
-  }
-  async callTool(name: string, args: JsonValue, requestedProofFormat?: string): Promise<CallToolResult | TaskEnvelope> {
-    const meta: RequestMeta = this.requestMeta();
-    if (requestedProofFormat) meta[EXTENSION_ID] = { requestedProofFormat };
+  descriptor(tool: string): ToolDescriptorMeta | undefined { return this.descriptors.get(tool); }
+  setCapabilities(capability: VerifiableToolsCapability, tasks = false): void { this.capabilities = clientCapabilities(capability.proofFormats ?? [], { blindExecution: capability.blindExecution, requireProof: capability.requireProof, tasks }); }
+  async callTool(name: string, args: JsonValue, options: { proofFormat?: string; nonce?: string } = {}): Promise<CallResponse> {
+    const nonce = options.nonce ?? freshNonce();
+    const meta = this.requestMeta();
+    meta[EXTENSION_ID] = { ...(options.proofFormat ? { requestedProofFormat: options.proofFormat } : {}), nonce };
     const response = await this.request("tools/call", { name, arguments: args, _meta: meta });
     if (response.error) throw new Error(response.error.message);
-    const result = response.result;
-    if (isTask(result)) return result;
-    return result as unknown as CallToolResult;
+    return { result: response.result as CallToolResult | TaskEnvelope, nonce };
   }
-  async verify(result: CallToolResult, args: JsonValue, tool: string): Promise<boolean> {
-    const meta = result._meta?.[EXTENSION_ID];
-    if (!meta) return false;
-    if (!verifiableCapability(this.capabilities)?.proofFormats?.includes(meta.proofFormat ?? "")) return false;
-    if (meta.circuitHash !== expectedCircuitHash(tool)) return false;
-    const context = { arguments: args, output: result.content[0].text };
-    if (meta.proofFormat === "demo-sig-v1") return this.sigVerifier.verify(meta, context);
-    if (meta.proofFormat === "demo-commit-v1") return this.commitVerifier.verify(meta, context);
-    return false;
+  async verify(result: CallToolResult, args: JsonValue, tool: string, options: { nonce?: string; salt?: Uint8Array } = {}): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const formats = verifiableCapability(this.capabilities)?.proofFormats ?? [];
+    const verifiers = [...(formats.includes("demo-sig-v1") ? [this.sigVerifier] : []), ...(formats.includes("demo-commit-v1") ? [this.commitVerifier] : [])];
+    return verifyResult(result._meta?.[EXTENSION_ID], { arguments: args, content: result.content, nonce: options.nonce, salt: options.salt, expectedCircuitHash: expectedCircuitHash(tool) }, verifiers);
   }
-  async callAndVerify(name: string, args: JsonValue, requestedProofFormat?: string): Promise<CallToolResult> {
-    const value = await this.callTool(name, args, requestedProofFormat);
-    const result = isTask(value) ? await this.poll(value) : value;
-    if (!await this.verify(result, args, name)) throw new Error(`verification failed for ${name}`);
+  async callAndVerify(name: string, args: JsonValue, proofFormat?: string): Promise<CallToolResult> {
+    const value = await this.callTool(name, args, { proofFormat });
+    const result = isTask(value.result) ? await this.poll(value.result) : value.result;
+    const outcome = await this.verify(result, args, name, { nonce: value.nonce });
+    if (!outcome.ok) throw new Error(`verification failed for ${name}: ${outcome.reason}`);
     return result;
   }
-  async poll(task: TaskEnvelope): Promise<CallToolResult> {
-    return pollTask(this.request.bind(this) as RpcRequest, task, this.requestMeta(true));
-  }
-  async blindCall(args: JsonValue, requestedProofFormat = "demo-sig-v1"): Promise<CallToolResult> {
+  async poll(task: TaskEnvelope): Promise<CallToolResult> { return pollTask(this.request.bind(this) as RpcRequest, task, this.requestMeta(true)); }
+  async blindCall(args: JsonValue, options: { proofFormat?: string; encryptReply?: boolean } = {}): Promise<CallToolResult> {
     const discovery = this.discovered ?? await this.discover();
-    if (!discovery.blindExecution) throw new Error("server does not support blind execution");
-    const encrypted = encryptArguments(args, discovery.blindPublicKey);
-    const response = await this.request("verifiable-tools/call", {
-      tool: "privateCreditCheck", inputCommitment: encrypted.inputCommitment, encryptionScheme: "x25519-aesgcm-demo-v1",
-      encryptedArguments: encrypted.encryptedArguments, proofFormat: requestedProofFormat, _meta: this.requestMeta()
-    });
+    if (!discovery.blindExecution || !discovery.blindPublicKeys["hpke-v1"]) throw new Error("server does not support blind execution");
+    const encrypted = encryptArguments(args, discovery.blindPublicKeys["hpke-v1"]);
+    const nonce = freshNonce();
+    const reply = options.encryptReply ? generateReplyKeyPair() : undefined;
+    const response = await this.request("verifiable-tools/call", { tool: "privateCreditCheck", inputCommitment: encrypted.inputCommitment, encryptionScheme: "hpke-v1", encryptedArguments: encrypted.encryptedArguments, proofFormat: options.proofFormat ?? "demo-sig-v1", ...(reply ? { replyPublicKey: b64u(reply.publicKey) } : {}), _meta: { ...this.requestMeta(), [EXTENSION_ID]: { nonce } } });
     if (response.error) throw new Error(response.error.message);
-    const result = response.result as unknown as CallToolResult;
-    if (!await this.verify(result, args, "privateCreditCheck")) throw new Error("verification failed for blind call");
+    const result = response.result as CallToolResult;
+    if (reply && result._meta?.[EXTENSION_ID]?.encryptedContent) {
+      const plaintext = hpkeOpen(reply.privateKey, reply.publicKey, new TextEncoder().encode(HPKE_INFO_REPLY), new TextEncoder().encode(jcs({ tool: "privateCreditCheck", inputCommitment: encrypted.inputCommitment, nonce } as JsonValue)), unb64u(result.content[0].text));
+      result.content = JSON.parse(new TextDecoder().decode(plaintext)) as CallToolResult["content"];
+    }
+    const outcome = await this.verify(result, args, "privateCreditCheck", { nonce, salt: encrypted.salt });
+    if (!outcome.ok) throw new Error(`verification failed for blind call: ${outcome.reason}`);
     return result;
+  }
+  async prove(resultId: string, options: { proofFormat?: string; nonce?: string } = {}): Promise<CallResponse> {
+    const nonce = options.nonce ?? freshNonce();
+    const response = await this.request("verifiable-tools/prove", { resultId, ...(options.proofFormat ? { proofFormat: options.proofFormat } : {}), nonce });
+    if (response.error) throw new Error(response.error.message);
+    return { result: response.result as CallToolResult, nonce };
   }
   private requestMeta(tasks = false): RequestMeta {
     const capabilities = tasks ? { ...this.capabilities, extensions: { ...this.capabilities.extensions, [TASKS_EXTENSION_ID]: {} } } : this.capabilities;
     return { "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION, [META_CLIENT_CAPABILITIES]: capabilities, "io.modelcontextprotocol/clientInfo": { name: "demo-client", version: "1.0.0" } };
   }
-  private async request(method: string, params: unknown): Promise<{ result?: unknown; error?: { code: number; message: string } }> {
+  private async request(method: string, params: unknown): Promise<{ result?: unknown; error?: { code: number; message: string; data?: unknown } }> {
     const headers: Record<string, string> = { "content-type": "application/json", "MCP-Protocol-Version": PROTOCOL_VERSION, "Mcp-Method": method };
     if (method === "tools/call") headers["Mcp-Name"] = String(asRecord(params).name);
     const response = await fetch(this.endpoint, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }) });
-    return await response.json() as { result?: unknown; error?: { code: number; message: string } };
+    return await response.json() as { result?: unknown; error?: { code: number; message: string; data?: unknown } };
   }
 }
 export interface TaskEnvelope { resultType: "task"; taskId: string; status: string; pollIntervalMs: number; ttlMs?: number; }
 function isTask(value: unknown): value is TaskEnvelope { return isRecord(value) && value.resultType === "task" && typeof value.taskId === "string"; }
-function isRecord(value: unknown): value is { [key: string]: unknown } {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function asRecord(value: unknown): { [key: string]: JsonValue } {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("malformed JSON response");
-  return value as { [key: string]: JsonValue };
-}
+function asRecord(value: unknown): { [key: string]: JsonValue } { if (!isRecord(value)) throw new Error("malformed JSON response"); return value; }
 function asString(value: JsonValue | undefined): string { if (typeof value !== "string") throw new Error("malformed discovery response"); return value; }
 function asStringArray(value: JsonValue | undefined): string[] { if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) throw new Error("malformed discovery response"); return value; }
