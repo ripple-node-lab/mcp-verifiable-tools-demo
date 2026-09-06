@@ -129,7 +129,8 @@ mcp-verifiable-tools-demo/
 │   ├── mock/Dockerfile           # sidecar-mock のコンテナ
 │   ├── nitro/                    # gen-mock-fixtures.sh + mock-fixtures/（モック root CA / PCR / 鍵）
 │   ├── risc0/                    # Rust sidecar（guest: u32 add、host: tiny_http HTTP 契約）+ wasm-verify + fixtures/ + image-id.txt（Phase 3-b）
-│   └── ezkl/                     # Python sidecar（stdlib HTTP 契約）+ fixtures/（Phase 3-c）
+│   ├── ezkl/                     # Python sidecar（stdlib HTTP 契約）+ fixtures/（Phase 3-c）
+│   └── tlsn/                     # Rust sidecar（axum HTTP: /attest /verify /notary-key + loopback fixture + in-process notary。Phase 3-d）
 ├── docker-compose.yml            # `docker compose --profile sidecar`（opt-in）
 ├── tests/                        # node:test（統合テスト）
 │   ├── negotiation.test.ts
@@ -143,7 +144,9 @@ mcp-verifiable-tools-demo/
 │   ├── risc0.test.ts             # Phase 3-b（コミット済み receipt fixture を WASM で検証）
 │   ├── risc0-sidecar.test.ts     # Phase 3-b（RISC0_SIDECAR_URL 指定時のみ）
 │   ├── ezkl.test.ts              # Phase 3-c（コミット済み proof fixture を engine で検証）
-│   └── ezkl-sidecar.test.ts      # Phase 3-c（EZKL_SIDECAR_URL 指定時のみ）
+│   ├── ezkl-sidecar.test.ts      # Phase 3-c（EZKL_SIDECAR_URL 指定時のみ）
+│   ├── provenance.test.ts        # Phase 3-d（inputAttestations / requireInputProvenance）
+│   └── tlsn-sidecar.test.ts      # Phase 3-d（TLSN_SIDECAR_URL 指定時のみ）
 └── .github/workflows/ci.yml      # npm ci && npm run build && npm test + sidecar opt-in ジョブ
 ```
 
@@ -184,7 +187,8 @@ mcp-verifiable-tools-demo/
 | `binding.test.ts`（Phase 2-a） | 本物の証明 + 改ざん `content` → `outputCommitment` 不一致で拒否 / 前回の証明を再送 → `nonce` 不一致で拒否 / 塩なし・塩違いのブラインドコミットメント → 拒否 |
 | `descriptor.test.ts`（Phase 2-a） | `tools/list` の `circuitHash` がピン留め値と異なる → 黙って受理せずエラーとして表面化 |
 | `deferred-proof.test.ts`（Phase 2-a） | `proofPolicy: onDemand` の tool → `resultId` のみ返る → `verifiable-tools/prove` で `content` がバイト一致し証明が検証成功 / `resultTtlMs` 経過後は `resultExpired` |
-| `provenance.test.ts`（Phase 3） | `requireInputProvenance: true` で `inputAttestations` 欠落・不正 → 主証明が有効でも拒否 |
+| `provenance.test.ts`（Phase 3-d 既定） | `requireInputProvenance` + `externalInputs` での oracle-sig-v1 正常系、`provenanceMissing` / `provenanceMalformed` / `provenanceUnbound` / `provenanceUnsupported` / `provenanceInvalid`（改ざん data・偽造 oracle 署名）の否定系、主証明へのコミットメント束縛、feed 障害 → -32603 |
+| `tlsn-sidecar.test.ts`（Phase 3-d、opt-in） | `TLSN_SIDECAR_URL` 指定時のみ: `/healthz`・`/notary-key`（secp256k1 SPKI PEM）、DemoServer→client の end-to-end zktls 経路、改ざん data → `provenanceInvalid`、別 notary 鍵 → `ok:false`、非フィクスチャ source → 400 |
 | `randomness.test.ts`（Phase 2-b） | snarkjs / Noir の同一入力でも異なる証明が生成され、双方が検証できること |
 | `cbor.test.ts`（Phase 3-a） | RFC 8949 Appendix A ベクトルの decode / canonical encode、indefinite-length・trailing・truncated 入力の拒否 |
 | `tee-nitro.test.ts`（Phase 3-a） | `tee-nitro-v1` 正常系（attestation 検証・`verificationKeyUri` 非出力・tools/list 記述子）+ `verifyDetailed` の否定系（measurement / chain / user_data / nonce / freshness / 証明署名 / malformed）+ `teeNitro: false` で非広告・requireProof エラー |
@@ -204,7 +208,7 @@ mcp-verifiable-tools-demo/
 | 3-a（完了）sidecar 基盤 + `tee-nitro-v1` | sidecar HTTP 契約（`/healthz` / `/prove` / `/verify` / `/vk/{circuitHash}`）+ `packages/prover-sidecar` アダプタ（binding フィールドの echo 検査）+ `packages/sidecar-mock`（`demo-sig-sidecar-v1`）+ `docker compose --profile sidecar` / CI opt-in ジョブ。`tee-nitro-v1` は COSE_Sign1 / CBOR を protocol に実装し、chain / PCR measurement / user_data 鍵束縛 / nonce / freshness の検証を TS で実装。attestation は `sidecars/nitro/mock-fixtures` のモック root CA・モック PCR で発行（AWS Nitro root ではない） | sidecar 形式が opt-in で動き、`teeAttestation` が検証可能な契約になる |
 | 3-b（完了）`risc0-v1` | `sidecars/risc0`（Rust workspace、`risc0-zkvm`/`risc0-build` 3.0.6 ピン、`tiny_http` HTTP 契約、guest = u32 `checked_add` → 12B LE journal）+ `packages/prover-risc0`（検証は `risc0-zkvm` の wasm32 ビルドで in-process、≈1.5MB・実 receipt を ≈40–60ms で検証）+ `docker compose --profile risc0` / CI opt-in ジョブ。計測: composite prove ≈19s（docker, CPU）/ ≈40–50s（bare metal）、receipt ≈222KB、dev-mode receipt ≈88ms / 825B。Groth16 圧縮（→≈0.2KB）は GPU / `risczero/risc0-groth16-prover` docker が必要なため未実施。残課題: インフライト prove のキャンセル非対応（`SidecarProver` の abort は HTTP 切断のみで r0vm ジョブは完走、`MAX_CONCURRENT_PROOFS` でスロット占有） | zkVM receipt 証明が sidecar 経由で動き、検証は WASM で TS に閉じる |
 | 3-c（完了）`ezkl-v1` | `sidecars/ezkl`（`python:3.12-slim` + `ezkl==22.0.1` ピン、stdlib `http.server`、`add` 回路 = ONNX 単一 `Add` + scale 0 で整数厳密 / logrows=14、SRS はコミット済み perpetual powers-of-tau 2.1MB、pk 117MB は起動時 `ezkl.setup` で再生成＋vk sha256 突合）+ `packages/prover-ezkl`（`@ezkljs/engine` 22.0.1 wasm ≈9.8MB で in-process 検証）+ `docker compose --profile ezkl` / CI opt-in ジョブ。計測: prove ≈2–3s、proof ≈20KB、vk 34KB、engine verify ≈240ms。制約: バージョン完全一致が必須（engine は 22.0.1 のみ、22.3+/23.x の成果物は検証不可）、engine は logrows ≥14 のみ対応、`get_srs` は 22.0.1 で動作せず SRS コミット方式を採用、`gen_srs` 出力は engine 検証不可、入力領域は `a, b ∈ [0, 2^24]` — ONNX FLOAT 入力は 2^24 未満でのみ厳密（2^24+1 は 2^24 に丸まる）かつ range-check 分解（base 16384, n=2）が 2^28 上限のため。残課題: インフライト prove のキャンセル非対応 | ZKML 証明が sidecar 経由で動く |
-| 3-d provenance | `zktls-tlsn-v1`: `riskScore` の価格取得に TLSNotary sidecar を挟み `inputAttestations` を出す。`oracle-sig-v1` の代替と併せて `packages/verifier/src/provenance.ts` + `provenance.test.ts` を追加 | `requireInputProvenance` の否定テストが通る |
+| 3-d（完了）input provenance | `packages/protocol`（`InputAttestation` / `parseInputAttestation` / `attestationCommitment` / `ToolDescriptorMeta.externalInputs` / `clientCapabilities` の `requireInputProvenance`）+ 証明束縛（`ProveInput.inputAttestations` → `publicInputs` 末尾にコミットメント、demo-sig / demo-commit / tee-nitro / sidecar-mock の署名対象・検査に反映）+ `packages/verifier/src/provenance.ts`（`ProvenanceVerifier` / `verifyProvenance` / `OracleSigVerifier`、5 種の `provenance*` 理由）+ `packages/server/src/pricefeed.ts`（`OraclePriceFeed`: ed25519 + `/oracle-keys/demo` PEM。`TlsnPriceFeed`: sidecar `/attest`）+ `sidecars/tlsn`（単一 Rust バイナリ: loopback HTTPS fixture `test-server.io` + in-process notary + axum API、tlsn `v0.1.0-alpha.15` git ピン）+ `docker compose --profile tlsn` / CI opt-in ジョブ。`riskScore` は `riskScore(symbol, price)` となり attestation 付き価格を使う。計測: attest ≈1s（MPC-TLS セットアップ ≈670ms + request ≈93ms + notarize ≈118ms）、presentation bincode ≈5.3KB、notary 鍵 = secp256k1（33B SEC1）、verify ≈0.2ms。残課題: in-process TS 検証は `tlsn-core` が bare wasm32 で `getrandom` のため不可（sidecar `/verify` で代替、notary 鍵は origin-allowlisted registry でピン留め）、fixture サーバーは実取引所 API の代替、`data` フィールドは仕様のデモ拡張、`priceQuote` は attestation なし | `requireInputProvenance` の否定テストが通り、zkTLS 経路が sidecar 経由で動く |
 | 4 SDK 移植 | `modelcontextprotocol/typescript-sdk` の Extension API へ `packages/protocol` を移植（正典）。Python SDK 版は `ezkl-v1` サーバー側の第 2 参照実装として位置づける（#4 §4-4） | SDK フォーク/ブランチ |
 | 発展（任意） | `fhe-tfhe-v1`（`node-seal` または TFHE-rs WASM でクライアント暗号化 → サーバー準同型評価。正しさは vFHE 待ちのため機密性のみのデモ）、MPC / co-SNARK prover（複数データプロバイダーの入力を秘密分散したまま証明。MP-SPDZ / MPyC / mpz sidecar） | Open Questions の材料 |
 | SEP 提出 | `docs/spec/verifiable-tools.md` の Reference Implementation 節に SDK 実装と計測結果へのリンクを追記し、`modelcontextprotocol/modelcontextprotocol` に SEP PR を提出（事前に MCP org の `experimental-ext-*` で incubation するかを判断） | SEP PR |
@@ -239,7 +243,7 @@ mcp-verifiable-tools-demo/
 | Result binding（`outputCommitment` / `nonce` / 塩付きコミットメント） | Phase 2-a: `packages/protocol/src/types.ts`, `packages/prover/*`, `packages/verifier/*`, `tests/binding.test.ts` |
 | Tool descriptor metadata | Phase 2-a: `packages/server/src/tools.ts`（`tools/list` `_meta`）, `packages/verifier/src/registry.ts` |
 | Deferred proofs（`verifiable-tools/prove`） | Phase 2-a: `packages/server/src/prove.ts`（新規）, `tests/deferred-proof.test.ts` |
-| Input provenance（`inputAttestations`） | Phase 3-d: `sidecars/tlsn`, `packages/verifier/src/provenance.ts`（新規） |
+| Input provenance（`inputAttestations`） | Phase 3-d: `packages/verifier/src/provenance.ts`, `packages/server/src/pricefeed.ts`, `packages/prover-sidecar/src/provenance.ts`, `sidecars/tlsn`, `tests/provenance.test.ts`, `tests/tlsn-sidecar.test.ts` |
 | TEE attestation formats | Phase 3-a: `packages/protocol/src/cose.ts`, `packages/verifier/src/tee-nitro.ts`（モック attestation） |
 | Sidecar 合成 | Phase 3-a: `packages/prover-sidecar`, `packages/sidecar-mock`, `sidecars/`, `docker-compose.yml`。Phase 3-b: `sidecars/risc0`, `packages/prover-risc0`（WASM 検証） |
 | Rationale トレードオフ表 / Performance 計測義務 | Phase 2-b 以降: `docs/BENCHMARKS.md` |

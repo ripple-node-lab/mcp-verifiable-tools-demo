@@ -2,7 +2,8 @@
 // attested as an oracle-sig-v1 InputAttestation so the riskScore proof binds
 // the external input commitment in publicInputs.
 import { createPublicKey, generateKeyPairSync, sign } from "node:crypto";
-import { InputAttestation, JsonValue, attestationCommitment, b64u, jcs } from "@demo/protocol";
+import { InputAttestation, JsonValue, attestationCommitment, b64u, jcs, parseInputAttestation } from "@demo/protocol";
+import { readJsonBounded } from "@demo/prover-sidecar";
 
 export interface PriceFeed {
   fetch(symbol: string, signal?: AbortSignal): Promise<{ price: number; attestation: InputAttestation }>;
@@ -35,5 +36,36 @@ export class OraclePriceFeed implements PriceFeed {
       price,
       attestation: { type, source, commitment, data, proof: b64u(new Uint8Array(signature)), verificationKeyUri: this.verificationKeyUri }
     };
+  }
+}
+
+// zktls-tlsn-v1 price feed: fetches the fixture exchange through the TLSNotary
+// sidecar; /attest returns the attested InputAttestation directly.
+const TLSN_SYMBOL_PATTERN = /^[A-Za-z0-9._-]{1,16}$/;
+export class TlsnPriceFeed implements PriceFeed {
+  private readonly baseUrl: string;
+  private readonly timeoutMs: number;
+  constructor(options: { baseUrl: string; timeoutMs?: number }) {
+    this.baseUrl = options.baseUrl;
+    this.timeoutMs = options.timeoutMs ?? 30_000;
+  }
+  async fetch(symbol: string, signal?: AbortSignal): Promise<{ price: number; attestation: InputAttestation }> {
+    if (!TLSN_SYMBOL_PATTERN.test(symbol)) throw new Error(`invalid price symbol: ${symbol}`);
+    const timeout = AbortSignal.timeout(this.timeoutMs);
+    const response = await fetch(`${this.baseUrl}/attest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: `https://test-server.io/v1/price/${symbol}` }),
+      signal: signal ? AbortSignal.any([timeout, signal]) : timeout
+    });
+    if (!response.ok) throw new Error(`tlsn /attest failed: ${response.status}`);
+    const body = await readJsonBounded(response) as JsonValue;
+    const attestation = parseInputAttestation(body);
+    if (!attestation || attestation.type !== "zktls-tlsn-v1") throw new Error("tlsn /attest returned an invalid attestation");
+    let price: number;
+    try { price = (JSON.parse(attestation.data) as { price?: unknown }).price as number; }
+    catch { throw new Error("tlsn /attest returned invalid data"); }
+    if (!Number.isFinite(price)) throw new Error("tlsn /attest returned invalid data");
+    return { price, attestation };
   }
 }

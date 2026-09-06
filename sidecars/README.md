@@ -59,7 +59,19 @@ HTTP sidecar として合成する（`docs/PLAN.md` §2・§5）。MCP サーバ
   503 `{"error":"busy"}`。インフライト prove のキャンセルは非対応。
   検証は `@ezkljs/engine` の wasm（≈9.8MB、`packages/prover-ezkl`）で
   in-process。
-- `tlsn` は Phase 3-d 以降で追加予定。
+- `sidecars/tlsn/`（`zktls-tlsn-v1`）: TLSNotary の入力プルーベナンス
+  sidecar（Phase 3-d）。単一 Rust バイナリが 3 役を務める: loopback HTTPS
+  fixture（`test-server.io`、`GET /v1/price/{symbol}` → 決定的な demoPrice
+  JSON）、in-process notary（secp256k1、起動時生成または
+  `TLSN_NOTARY_KEY_HEX`）、HTTP API（`PORT` 4400）。`POST /attest` が
+  `InputAttestation`（`proof` = base64url の bincode Presentation）を返し、
+  `POST /verify` が Presentation・notary 鍵・開示された request line /
+  response body を検証して `{ok, serverName, data}` を返す。notary 鍵は
+  `GET /notary-key`（SPKI PEM）で配布し、クライアントは
+  origin-allowlisted registry でピン留めする。in-process の TS 検証は
+  `tlsn-core` が bare wasm32 で `getrandom` を要求するため不可で、検証は
+  sidecar に委譲する。`MAX_CONCURRENT_ATTESTATIONS`（既定 1）超過は
+  503 `{"error":"busy"}`。
 
 ## 動かし方
 
@@ -86,4 +98,12 @@ ezkl sidecar（prove ≈2–3 秒、opt-in）:
 docker compose --profile ezkl up --build -d --wait
 EZKL_SIDECAR_URL=http://127.0.0.1:4300 node --test tests/dist/ezkl-sidecar.test.js
 docker compose --profile ezkl down
+```
+
+tlsn sidecar（attest ≈1 秒、opt-in）:
+
+```sh
+docker compose --profile tlsn up --build -d --wait
+TLSN_SIDECAR_URL=http://127.0.0.1:4400 node --test tests/dist/tlsn-sidecar.test.js
+docker compose --profile tlsn down
 ```

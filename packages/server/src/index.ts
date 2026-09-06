@@ -18,7 +18,7 @@ import { errorResponse, handleMcpPost, paramsRecord } from "./http.js";
 import { ResultStore } from "./prove.js";
 import { TaskStore } from "./tasks.js";
 import { circuitHash, executeTool, isZkFormat, makeResult, toolList, ToolName, DescriptorOverride } from "./tools.js";
-import { OraclePriceFeed, PriceFeed } from "./pricefeed.js";
+import { OraclePriceFeed, PriceFeed, TlsnPriceFeed } from "./pricefeed.js";
 
 export interface DemoServerOptions {
   port?: number;
@@ -33,6 +33,7 @@ export interface DemoServerOptions {
   taskTtlMs?: number;
   teeNitro?: false | TeeNitroProverOptions;
   priceFeed?: PriceFeed;
+  tlsnSidecarUrl?: string;
   formatDescriptors?: { [format: string]: ToolFormatDescriptor };
 }
 const TASK_TTL_HEADROOM_MS = 30_000;
@@ -77,7 +78,8 @@ export class DemoServer {
       if (this.provers.has(prover.format)) throw new Error(`duplicate prover format: ${prover.format}`);
       this.provers.set(prover.format, prover);
     }
-    this.priceFeed = options.priceFeed ?? new OraclePriceFeed(() => this.url);
+    this.priceFeed = options.priceFeed ??
+      (options.tlsnSidecarUrl ? new TlsnPriceFeed({ baseUrl: options.tlsnSidecarUrl }) : new OraclePriceFeed(() => this.url));
     this.oracleKeyPem = this.priceFeed instanceof OraclePriceFeed ? String(this.priceFeed.publicKey.export({ type: "spki", format: "pem" })) : undefined;
     this.signingPublicKey = String(this.signingProver.publicKey.export({ type: "spki", format: "pem" }));
     this.blindPublicKey = b64u(rawX25519Public(this.blindKeys.publicKey));

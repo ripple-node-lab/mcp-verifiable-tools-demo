@@ -1,6 +1,6 @@
 # MCP Verifiable Tools Demo
 
-This repository is a Phase 1 + Phase 2-a + Phase 2-b + Phase 3-a reference
+This repository is a Phase 1 + Phase 2-a + Phase 2-b + Phase 3 (a–d) reference
 demo for the `io.modelcontextprotocol/verifiable-tools` extension on MCP
 `2026-07-28`. It demonstrates capability negotiation, locally verified tool
 results, asynchronous proof generation through Tasks, blind committed-input
@@ -85,6 +85,27 @@ verification runs in-process via the `@ezkljs/engine` 22.0.1 WASM build
 `0..2^24` — ONNX FLOAT ingest is only exact below 2^24 and the circuit's
 range-check decomposition caps at 2^28 (see `parseEzklAddArguments`).
 
+## Input provenance (Phase 3-d)
+
+Tools that consume external data advertise `externalInputs` in their
+`tools/list` descriptor and attach `inputAttestations` to the proof meta;
+each attestation's `commitment` (`sha256(data)`) is appended to
+`publicInputs` and covered by the proof signature/commitment, and clients
+declaring `requireInputProvenance` reject results without valid
+attestations (`provenanceMissing` / `provenanceMalformed` / `provenanceUnbound`
+/ `provenanceUnsupported` / `provenanceInvalid`). `riskScore` prices a
+symbol via a `PriceFeed`: by default the in-process `OraclePriceFeed`
+issues `oracle-sig-v1` attestations (ed25519 over `jcs({type, source,
+commitment})`, key pinned at `/oracle-keys/demo`); with `TLSN_SIDECAR_URL`
+(`docker compose --profile tlsn up --build -d --wait`, then
+`TLSN_SIDECAR_URL=http://127.0.0.1:4400 ...`) the Rust `sidecars/tlsn`
+sidecar issues `zktls-tlsn-v1` TLSNotary attestations instead — fixture
+exchange + in-process notary + prover in one binary, ~1 s per attestation,
+~5.3 KB presentation, secp256k1 notary key fetched via the
+origin-allowlisted key registry. Presentation verification runs in the
+sidecar because `tlsn-core` does not build for bare wasm32 (`getrandom`);
+the demo's scenario 10 runs only when `TLSN_SIDECAR_URL` is set.
+
 ## Repository layout
 
 - `packages/protocol`: extension constants, types, metadata, negotiation, and
@@ -93,19 +114,23 @@ range-check decomposition caps at 2^28 (see `parseEzklAddArguments`).
   (mock-attested COSE_Sign1) demo provers.
 - `packages/prover-snarkjs`: Circom/Groth16 `snarkjs-v2` prover and verifier.
 - `packages/prover-noir`: Noir/UltraHonk `noir-v1` prover and verifier.
-- `packages/verifier`: local verifiers, verification-key pinning, and the
-  `tee-nitro-v1` attestation verifier.
-- `packages/server`: Streamable HTTP MCP server and demo tools.
-- `packages/client`: verifying client and seven-scenario demo.
+- `packages/verifier`: local verifiers, verification-key pinning, the
+  `tee-nitro-v1` attestation verifier, and `provenance.ts`
+  (`verifyProvenance`, `ProvenanceVerifier`, `OracleSigVerifier`).
+- `packages/server`: Streamable HTTP MCP server, demo tools, and
+  `pricefeed.ts` (`OraclePriceFeed` in-process, `TlsnPriceFeed` via the
+  tlsn sidecar).
+- `packages/client`: verifying client and ten-scenario demo.
 - `packages/prover-risc0`: `risc0-v1` verifier (WASM build of `risc0-zkvm`).
 - `packages/prover-ezkl`: `ezkl-v1` verifier (`@ezkljs/engine` WASM) and the
   committed `add` circuit artifacts (onnx / settings / vk / SRS).
 - `packages/prover-sidecar`: HTTP sidecar contract adapter (`SidecarProver`,
-  `SidecarVerifier`, `sidecarHealth`).
+  `SidecarVerifier`, `sidecarHealth`) plus `TlsnProvenanceVerifier` for
+  `zktls-tlsn-v1` attestations.
 - `packages/sidecar-mock`: reference sidecar implementing `demo-sig-sidecar-v1`.
-- `sidecars`: sidecar README, mock + risc0 + ezkl Dockerfiles, Nitro mock
+- `sidecars`: sidecar README, mock + risc0 + ezkl + tlsn Dockerfiles, Nitro mock
   fixtures, risc0 Rust workspace, wasm verifier source, ezkl sidecar + proof
-  fixtures.
+  fixtures, tlsn Rust sidecar.
 - `examples`: representative JSON-RPC messages.
 - `tests`: deterministic `node:test` integration tests.
 
@@ -115,7 +140,7 @@ Further reading: [English specification](docs/spec/verifiable-tools.md),
 [issue #94](https://github.com/zk-tokyo/advanced-cryptography-2026/issues/94).
 The specification now includes use-case narrative and result-binding fields
 (`outputCommitment` / `nonce` / `tools/list` descriptors / `inputAttestations` /
-deferred proofs), implemented here through Phase 3-a of [docs/PLAN.md](docs/PLAN.md).
+deferred proofs), implemented here through Phase 3-d of [docs/PLAN.md](docs/PLAN.md).
 The demo proof formats are not zero-knowledge; `hpke-v1` is real RFC 9180 base mode
 implemented with `node:crypto` and self-tested against the RFC vector. Expired
 `resultId` values return `resultExpired` for 2×TTL after expiry because of the
@@ -166,7 +191,7 @@ MCP `2026-07-28` 上で `io.modelcontextprotocol/verifiable-tools` 拡張の
 暗号化した引数によるブラインド実行、実 ZK 証明（`snarkjs-v2` Groth16 /
 `noir-v1` UltraHonk、RISC Zero zkVM の `risc0-v1` は Rust sidecar 経由）、
 `tee-nitro-v1` attestation、HTTP sidecar 合成を示すデモです。
-Phase 1 + Phase 2-a + Phase 2-b + Phase 3-a の実装を含み、`demo-sig-v1` と
+Phase 1 + Phase 2-a + Phase 2-b + Phase 3-a〜d の実装を含み、`demo-sig-v1` と
 `demo-commit-v1` は ZK 証明ではなく、`hpke-v1` は `node:crypto` による
 RFC 9180 base mode です。`tee-nitro-v1` は COSE_Sign1 attestation の
 証明書チェーン・PCR measurement・`user_data` による鍵束縛・freshness を
@@ -191,9 +216,20 @@ TS」）。`RISC0_SIDECAR_URL` 指定時のみデモのシナリオ 8 が動き�
 制限します（ONNX FLOAT 入力は 2^24 未満でのみ厳密、回路の range-check
 分解は 2^28 が上限 — `parseEzklAddArguments` 参照）。
 
+Phase 3-d は入力プルーベナンスを追加します: `externalInputs` ツールは
+`inputAttestations` を証明に付し、各コミットメント（`sha256(data)`）を
+`publicInputs` 末尾に束縛します。`requireInputProvenance` を宣言した
+クライアントは妥当な attestation の無い結果を拒否します。`riskScore`
+は価格を `PriceFeed` から取得し、既定では in-process `OraclePriceFeed`
+の `oracle-sig-v1` attestation（ed25519、`/oracle-keys/demo` で鍵配布）、
+`TLSN_SIDECAR_URL` 指定時は `sidecars/tlsn` の `zktls-tlsn-v1`
+（TLSNotary）attestation を使います（デモ シナリオ 10）。`tlsn-core` は
+bare wasm32 では `getrandom` のためビルドできないため、Presentation 検証は
+Rust sidecar に委譲し、notary 鍵は registry でピン留めします。
+
 仕様にはユースケースの説明と結果束縛フィールド（`outputCommitment` / `nonce` /
 `tools/list` 記述子 / `inputAttestations` / 遅延証明）も含まれており、
-docs/PLAN.md の Phase 3-a までに実装済みです。なお、デモは `resultId` の principal
+docs/PLAN.md の Phase 3-d までに実装済みです。なお、デモは `resultId` の principal
 binding（認可主体への束縛）を実装していません。期限切れの `resultId` は、
 保持された tombstone により期限切れ後 2×TTL の間は `resultExpired` を返し、
 その後は `resultNotFound` を返します。デモには認証がないため、principal/session
