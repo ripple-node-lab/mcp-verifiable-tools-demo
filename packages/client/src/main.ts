@@ -7,6 +7,7 @@ const server = await startServer({
   port: 0,
   risc0SidecarUrl: process.env.RISC0_SIDECAR_URL,
   risc0TimeoutMs: process.env.RISC0_SIDECAR_TIMEOUT_MS ? Number(process.env.RISC0_SIDECAR_TIMEOUT_MS) : undefined,
+  ezklSidecarUrl: process.env.EZKL_SIDECAR_URL,
 });
 try {
   const client = new VerifiableClient(server.mcpUrl);
@@ -58,6 +59,21 @@ try {
     console.log(`8. zk add (risc0-v1 sidecar): ${call.result.content[0].text} (verified, proof ${proofBytes} bytes, prove ${proveMs.toFixed(2)} ms, verify ${verifyMs.toFixed(2)} ms)`);
   } else {
     console.log("8. zk add (risc0-v1 sidecar): skipped (RISC0_SIDECAR_URL unset)");
+  }
+  if (process.env.EZKL_SIDECAR_URL) {
+    const proveStart = performance.now();
+    const call = await client.callTool("add", { a: 20, b: 22 }, { proofFormat: "ezkl-v1" });
+    if (call.result.resultType !== "complete") throw new Error("unexpected ezkl task");
+    const proveMs = performance.now() - proveStart;
+    const verifyStart = performance.now();
+    const outcome = await client.verify(call.result, { a: 20, b: 22 }, "add", { nonce: call.nonce });
+    const verifyMs = performance.now() - verifyStart;
+    if (!outcome.ok) throw new Error(`ezkl-v1 verification failed: ${outcome.reason}`);
+    const proof = call.result._meta?.[EXTENSION_ID]?.proof;
+    const proofBytes = typeof proof === "string" ? Buffer.from(proof, "base64url").byteLength : 0;
+    console.log(`9. zk add (ezkl-v1 sidecar): ${call.result.content[0].text} (verified, proof ${proofBytes} bytes, prove ${proveMs.toFixed(2)} ms, verify ${verifyMs.toFixed(2)} ms)`);
+  } else {
+    console.log("9. zk add (ezkl-v1 sidecar): skipped (EZKL_SIDECAR_URL unset)");
   }
 } catch (error: unknown) {
   console.error(error instanceof Error ? error.message : "demo failed");

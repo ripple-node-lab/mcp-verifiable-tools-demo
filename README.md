@@ -75,6 +75,16 @@ verification runs in-process in a 1.5 MB WASM build of `risc0-zkvm`
 receipts are ~222 KB and take ~40–60 s to prove on CPU; the demo's scenario 8
 runs only when `RISC0_SIDECAR_URL` is set.
 
+`ezkl-v1` (Phase 3-c) is a real ZKML format: proving runs in the Python
+`sidecars/ezkl` sidecar (`docker compose --profile ezkl up --build -d
+--wait`, then `EZKL_SIDECAR_URL=http://127.0.0.1:4300 ...`), while
+verification runs in-process via the `@ezkljs/engine` 22.0.1 WASM build
+(`packages/prover-ezkl`) — generate on Python, verify in TS. Proofs are
+~20 KB and take ~2–3 s to produce; the demo's scenario 9 runs only when
+`EZKL_SIDECAR_URL` is set. `ezkl-v1` restricts `add` inputs to
+`0..2^24` — ONNX FLOAT ingest is only exact below 2^24 and the circuit's
+range-check decomposition caps at 2^28 (see `parseEzklAddArguments`).
+
 ## Repository layout
 
 - `packages/protocol`: extension constants, types, metadata, negotiation, and
@@ -88,11 +98,14 @@ runs only when `RISC0_SIDECAR_URL` is set.
 - `packages/server`: Streamable HTTP MCP server and demo tools.
 - `packages/client`: verifying client and seven-scenario demo.
 - `packages/prover-risc0`: `risc0-v1` verifier (WASM build of `risc0-zkvm`).
+- `packages/prover-ezkl`: `ezkl-v1` verifier (`@ezkljs/engine` WASM) and the
+  committed `add` circuit artifacts (onnx / settings / vk / SRS).
 - `packages/prover-sidecar`: HTTP sidecar contract adapter (`SidecarProver`,
   `SidecarVerifier`, `sidecarHealth`).
 - `packages/sidecar-mock`: reference sidecar implementing `demo-sig-sidecar-v1`.
-- `sidecars`: sidecar README, mock + risc0 Dockerfiles, Nitro mock fixtures,
-  risc0 Rust workspace, wasm verifier source.
+- `sidecars`: sidecar README, mock + risc0 + ezkl Dockerfiles, Nitro mock
+  fixtures, risc0 Rust workspace, wasm verifier source, ezkl sidecar + proof
+  fixtures.
 - `examples`: representative JSON-RPC messages.
 - `tests`: deterministic `node:test` integration tests.
 
@@ -171,6 +184,12 @@ docker compose --profile sidecar down
 `risc0-v1`（Phase 3-b）は prove を Rust sidecar、検証を in-process WASM
 （`packages/prover-risc0`）で行う実 zkVM 形式です（「生成は他言語、検証は
 TS」）。`RISC0_SIDECAR_URL` 指定時のみデモのシナリオ 8 が動きます。
+`ezkl-v1`（Phase 3-c）は prove を Python `ezkl` sidecar（`docker compose
+--profile ezkl`）、検証を `@ezkljs/engine` の WASM で in-process に行う
+実 ZKML 形式です（`packages/prover-ezkl`）。`EZKL_SIDECAR_URL` 指定時のみ
+デモのシナリオ 9 が動きます。`ezkl-v1` は `add` の入力を `0..2^24` に
+制限します（ONNX FLOAT 入力は 2^24 未満でのみ厳密、回路の range-check
+分解は 2^28 が上限 — `parseEzklAddArguments` 参照）。
 
 仕様にはユースケースの説明と結果束縛フィールド（`outputCommitment` / `nonce` /
 `tools/list` 記述子 / `inputAttestations` / 遅延証明）も含まれており、

@@ -103,6 +103,7 @@ mcp-verifiable-tools-demo/
 │   ├── prover-snarkjs/           # snarkjs-v2（Circom/Groth16。Phase 2-b）
 │   ├── prover-noir/              # noir-v1（Noir/UltraHonk。Phase 2-b）
 │   ├── prover-risc0/             # risc0-v1 WASM 検証器（Phase 3-b）
+│   ├── prover-ezkl/              # ezkl-v1 engine 検証器 + add 回路成果物（Phase 3-c）
 │   ├── prover-sidecar/           # sidecar HTTP 契約アダプタ（Phase 3-a）
 │   │   └── src/
 │   │       ├── contract.ts       # GET /healthz, POST /prove, POST /verify, GET /vk/{circuitHash}
@@ -127,7 +128,8 @@ mcp-verifiable-tools-demo/
 │   ├── README.md                 # HTTP 契約と起動手順
 │   ├── mock/Dockerfile           # sidecar-mock のコンテナ
 │   ├── nitro/                    # gen-mock-fixtures.sh + mock-fixtures/（モック root CA / PCR / 鍵）
-│   └── risc0/                    # Rust sidecar（guest: u32 add、host: tiny_http HTTP 契約）+ wasm-verify + fixtures/ + image-id.txt（Phase 3-b）
+│   ├── risc0/                    # Rust sidecar（guest: u32 add、host: tiny_http HTTP 契約）+ wasm-verify + fixtures/ + image-id.txt（Phase 3-b）
+│   └── ezkl/                     # Python sidecar（stdlib HTTP 契約）+ fixtures/（Phase 3-c）
 ├── docker-compose.yml            # `docker compose --profile sidecar`（opt-in）
 ├── tests/                        # node:test（統合テスト）
 │   ├── negotiation.test.ts
@@ -139,7 +141,9 @@ mcp-verifiable-tools-demo/
 │   ├── tee-nitro.test.ts         # Phase 3-a
 │   ├── sidecar.test.ts           # Phase 3-a（SIDECAR_URL 指定時は外部 sidecar も検査）
 │   ├── risc0.test.ts             # Phase 3-b（コミット済み receipt fixture を WASM で検証）
-│   └── risc0-sidecar.test.ts     # Phase 3-b（RISC0_SIDECAR_URL 指定時のみ）
+│   ├── risc0-sidecar.test.ts     # Phase 3-b（RISC0_SIDECAR_URL 指定時のみ）
+│   ├── ezkl.test.ts              # Phase 3-c（コミット済み proof fixture を engine で検証）
+│   └── ezkl-sidecar.test.ts      # Phase 3-c（EZKL_SIDECAR_URL 指定時のみ）
 └── .github/workflows/ci.yml      # npm ci && npm run build && npm test + sidecar opt-in ジョブ
 ```
 
@@ -187,6 +191,8 @@ mcp-verifiable-tools-demo/
 | `sidecar.test.ts`（Phase 3-a） | mock sidecar（`demo-sig-sidecar-v1`）の prove / verify 往復、sidecar が binding フィールドを改変・停止している場合は JSON-RPC エラーで結果を返さない、AbortSignal、`sidecarHealth`、`SIDECAR_URL` 指定時の外部 sidecar 疎通 |
 | `risc0.test.ts`（Phase 3-a〜b 既定） | 実 composite receipt フィクスチャの in-process WASM 検証 + 否定系（改ざん receipt / 誤 circuitHash / publicInputs 不一致 / dev-mode Fake 拒否） |
 | `risc0-sidecar.test.ts`（Phase 3-b、opt-in） | `RISC0_SIDECAR_URL` 指定時のみ: `/healthz` の imageId がピンと一致、DemoServer→client の end-to-end、`/verify` 応答、`/prove` の circuitHashMismatch → 400 |
+| `ezkl.test.ts`（Phase 3-c 既定） | 実証明フィクスチャの `@ezkljs/engine` in-process 検証 + 否定系（改ざん proof / instances / 誤 circuitHash / publicInputs 不一致 / AbortError） |
+| `ezkl-sidecar.test.ts`（Phase 3-c、opt-in） | `EZKL_SIDECAR_URL` 指定時のみ: `/healthz` の circuitHash がピンと一致、DemoServer→client の end-to-end、`/verify` 応答、`/prove` の circuitHashMismatch → 400 |
 
 ## 5. 実装フェーズ
 
@@ -197,7 +203,7 @@ mcp-verifiable-tools-demo/
 | 2-b 実 ZK（完了） | `snarkjs-v2`（Groth16、circom `add` 回路を事前コンパイルして `wasm` / `zkey` / `vk.json` を同梱。ローカル単一参加者 trusted setup はデモ専用）と Noir（`@noir-lang/noir_js` + `@aztec/bb.js`, UltraHonk, trusted setup 不要）を別 workspace（`packages/prover-snarkjs`, `packages/prover-noir`）で実装し、`npm test` 既定に含めた。 | 実 ZK 証明 2 形式、実測値は [`docs/BENCHMARKS.md`](BENCHMARKS.md) |
 | 3-a（完了）sidecar 基盤 + `tee-nitro-v1` | sidecar HTTP 契約（`/healthz` / `/prove` / `/verify` / `/vk/{circuitHash}`）+ `packages/prover-sidecar` アダプタ（binding フィールドの echo 検査）+ `packages/sidecar-mock`（`demo-sig-sidecar-v1`）+ `docker compose --profile sidecar` / CI opt-in ジョブ。`tee-nitro-v1` は COSE_Sign1 / CBOR を protocol に実装し、chain / PCR measurement / user_data 鍵束縛 / nonce / freshness の検証を TS で実装。attestation は `sidecars/nitro/mock-fixtures` のモック root CA・モック PCR で発行（AWS Nitro root ではない） | sidecar 形式が opt-in で動き、`teeAttestation` が検証可能な契約になる |
 | 3-b（完了）`risc0-v1` | `sidecars/risc0`（Rust workspace、`risc0-zkvm`/`risc0-build` 3.0.6 ピン、`tiny_http` HTTP 契約、guest = u32 `checked_add` → 12B LE journal）+ `packages/prover-risc0`（検証は `risc0-zkvm` の wasm32 ビルドで in-process、≈1.5MB・実 receipt を ≈40–60ms で検証）+ `docker compose --profile risc0` / CI opt-in ジョブ。計測: composite prove ≈19s（docker, CPU）/ ≈40–50s（bare metal）、receipt ≈222KB、dev-mode receipt ≈88ms / 825B。Groth16 圧縮（→≈0.2KB）は GPU / `risczero/risc0-groth16-prover` docker が必要なため未実施。残課題: インフライト prove のキャンセル非対応（`SidecarProver` の abort は HTTP 切断のみで r0vm ジョブは完走、`MAX_CONCURRENT_PROOFS` でスロット占有） | zkVM receipt 証明が sidecar 経由で動き、検証は WASM で TS に閉じる |
-| 3-c `ezkl-v1` | 生成は Python `ezkl` sidecar、検証は `@ezkljs/engine`（WASM）で TS 側（「生成は他言語、検証は TS」の非対称性を体現） | ZKML 証明が sidecar 経由で動く |
+| 3-c（完了）`ezkl-v1` | `sidecars/ezkl`（`python:3.12-slim` + `ezkl==22.0.1` ピン、stdlib `http.server`、`add` 回路 = ONNX 単一 `Add` + scale 0 で整数厳密 / logrows=14、SRS はコミット済み perpetual powers-of-tau 2.1MB、pk 117MB は起動時 `ezkl.setup` で再生成＋vk sha256 突合）+ `packages/prover-ezkl`（`@ezkljs/engine` 22.0.1 wasm ≈9.8MB で in-process 検証）+ `docker compose --profile ezkl` / CI opt-in ジョブ。計測: prove ≈2–3s、proof ≈20KB、vk 34KB、engine verify ≈240ms。制約: バージョン完全一致が必須（engine は 22.0.1 のみ、22.3+/23.x の成果物は検証不可）、engine は logrows ≥14 のみ対応、`get_srs` は 22.0.1 で動作せず SRS コミット方式を採用、`gen_srs` 出力は engine 検証不可、入力領域は `a, b ∈ [0, 2^24]` — ONNX FLOAT 入力は 2^24 未満でのみ厳密（2^24+1 は 2^24 に丸まる）かつ range-check 分解（base 16384, n=2）が 2^28 上限のため。残課題: インフライト prove のキャンセル非対応 | ZKML 証明が sidecar 経由で動く |
 | 3-d provenance | `zktls-tlsn-v1`: `riskScore` の価格取得に TLSNotary sidecar を挟み `inputAttestations` を出す。`oracle-sig-v1` の代替と併せて `packages/verifier/src/provenance.ts` + `provenance.test.ts` を追加 | `requireInputProvenance` の否定テストが通る |
 | 4 SDK 移植 | `modelcontextprotocol/typescript-sdk` の Extension API へ `packages/protocol` を移植（正典）。Python SDK 版は `ezkl-v1` サーバー側の第 2 参照実装として位置づける（#4 §4-4） | SDK フォーク/ブランチ |
 | 発展（任意） | `fhe-tfhe-v1`（`node-seal` または TFHE-rs WASM でクライアント暗号化 → サーバー準同型評価。正しさは vFHE 待ちのため機密性のみのデモ）、MPC / co-SNARK prover（複数データプロバイダーの入力を秘密分散したまま証明。MP-SPDZ / MPyC / mpz sidecar） | Open Questions の材料 |

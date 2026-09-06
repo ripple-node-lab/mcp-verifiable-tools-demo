@@ -42,6 +42,14 @@ export function parseAddArguments(value: JsonValue): { a: number; b: number } | 
       value.a + value.b > 0xffffffff) return undefined;
   return { a: value.a, b: value.b };
 }
+// ezkl-v1 domain: ONNX FLOAT input ingest is only exact for |x| < 2^24, and
+// the circuit's range-check decomposition (base 16384, n=2) caps at 2^28 —
+// a + b ≤ 2^25 stays well inside it.
+export const EZKL_MAX_INPUT = 2 ** 24;
+export function parseEzklAddArguments(value: JsonValue): { a: number; b: number } | undefined {
+  const args = parseAddArguments(value);
+  return args !== undefined && args.a <= EZKL_MAX_INPUT && args.b <= EZKL_MAX_INPUT ? args : undefined;
+}
 function circuitHash(tool: string): string {
   return `0x${createHash("sha256").update(`verifiable-tools-demo:${tool}:v1`).digest("hex")}`;
 }
@@ -56,6 +64,7 @@ export const PINNED_CIRCUITS: { [tool: string]: { default: string; formats?: { [
       "snarkjs-v2": "0xfb5e4566f5be574f3e95c0356e19ecef88dabd0692edcf5f4be688106e9968c7",
       "noir-v1": "0x70d3e40690fb97fbcace5ce1d3114282e7dfff1387b125767b6a942e1ca3261e",
       "risc0-v1": "0xe9e822f1e91ea14c21f72df178573f76a9b1c0e0d048deeed216a7e47a7fdfa7",
+      "ezkl-v1": "0x0abd17111820f09cbad53deb340becb9739236eb1278e686f2189c77fd09d622",
       "demo-sig-v1": circuitHash("add"),
       "demo-commit-v1": circuitHash("add")
     }
