@@ -5,21 +5,25 @@ import {
   isRecord, jcs, unb64u, verifiableCapability
 } from "@demo/protocol";
 import { DemoCommitVerifier, DemoSigVerifier, VerificationKeyRegistry, VerifyOutcome, verifyResult } from "@demo/verifier";
+import { NoirVerifier } from "@demo/prover-noir";
+import { SnarkjsVerifier } from "@demo/prover-snarkjs";
 import { encryptArguments, generateReplyKeyPair } from "./blind.js";
 import { pollTask, RpcRequest } from "./tasks.js";
 
 export interface DiscoverResult { proofFormats: string[]; serverProofFormats: string[]; blindPublicKeys: { [scheme: string]: string }; blindEncryptionSchemes: string[]; blindExecution: boolean; resultTtlMs?: number; }
 export interface CallResponse { result: CallToolResult | TaskEnvelope; nonce: string; }
 export class VerifiableClient {
-  private capabilities: ClientCapabilities = clientCapabilities(["demo-sig-v1", "demo-commit-v1"]);
+  private capabilities: ClientCapabilities = clientCapabilities(["snarkjs-v2", "noir-v1", "demo-sig-v1", "demo-commit-v1"]);
   private readonly registry: VerificationKeyRegistry;
   private readonly sigVerifier: DemoSigVerifier;
   private readonly commitVerifier = new DemoCommitVerifier();
+  private readonly snarkjsVerifier = new SnarkjsVerifier();
+  private readonly noirVerifier = new NoirVerifier();
   private discovered: DiscoverResult | undefined;
   private descriptors = new Map<string, ToolDescriptorMeta>();
   constructor(private readonly endpoint: string) { this.registry = new VerificationKeyRegistry([new URL(endpoint).origin]); this.sigVerifier = new DemoSigVerifier(this.registry); }
   async discover(): Promise<DiscoverResult> {
-    const descriptors = new Map<string, ToolDescriptorMeta>();
+    this.descriptors.clear();
     const response = await this.request("server/discover", {});
     const result = asRecord(response.result);
     const extension = asRecord(asRecord(asRecord(result.capabilities).extensions)[EXTENSION_ID]);
@@ -32,6 +36,7 @@ export class VerifiableClient {
     if (proofFormats.length === 0) throw new Error("no mutually supported proof format");
     const tools = asRecord((await this.request("tools/list", {})).result).tools;
     if (!Array.isArray(tools)) throw new Error("malformed tools/list response");
+    const descriptors = new Map<string, ToolDescriptorMeta>();
     for (const item of tools) {
       const tool = asRecord(item);
       const name = asString(tool.name);
@@ -40,8 +45,15 @@ export class VerifiableClient {
       const descriptor = extensionMeta as unknown as ToolDescriptorMeta;
       const expected = expectedCircuitHash(name);
       const formats = isRecord(descriptor.formats) ? Object.entries(descriptor.formats) : [];
+      const validFormats = Object.fromEntries(formats.filter(([, value]) => isRecord(value)).map(([format, value]) => {
+        const entry = value as { [key: string]: JsonValue };
+        return [format, {
+          ...(typeof entry.circuitHash === "string" ? { circuitHash: entry.circuitHash } : {}),
+          ...(typeof entry.verificationKeyUri === "string" ? { verificationKeyUri: entry.verificationKeyUri } : {})
+        }];
+      }));
       if (descriptor.circuitHash !== expected || formats.some(([format, value]) => isRecord(value) && typeof value.circuitHash === "string" && value.circuitHash !== expectedCircuitHash(name, format))) throw new Error(`tool descriptor circuitHash mismatch for ${name}`);
-      descriptors.set(name, descriptor);
+      descriptors.set(name, { ...descriptor, formats: validFormats });
     }
     this.descriptors = descriptors;
     this.discovered = { proofFormats, serverProofFormats: formats, blindPublicKeys, blindEncryptionSchemes, blindExecution, resultTtlMs };
@@ -60,13 +72,18 @@ export class VerifiableClient {
   async verify(result: CallToolResult, args: JsonValue, tool: string, options: { nonce?: string; salt?: Uint8Array } = {}): Promise<VerifyOutcome> {
     const meta = result._meta?.[EXTENSION_ID];
     const formats = verifiableCapability(this.capabilities)?.proofFormats ?? [];
-    const verifiers = [...(formats.includes("demo-sig-v1") ? [this.sigVerifier] : []), ...(formats.includes("demo-commit-v1") ? [this.commitVerifier] : [])];
+    const verifiers = [
+      ...(formats.includes("snarkjs-v2") ? [this.snarkjsVerifier] : []),
+      ...(formats.includes("noir-v1") ? [this.noirVerifier] : []),
+      ...(formats.includes("demo-sig-v1") ? [this.sigVerifier] : []),
+      ...(formats.includes("demo-commit-v1") ? [this.commitVerifier] : [])
+    ];
     const descriptor = this.descriptors.get(tool);
     const format = meta?.proofFormat;
     const verificationKeyUri = format === undefined || descriptor === undefined
       ? undefined
       : descriptor.formats?.[format]?.verificationKeyUri ?? descriptor.verificationKeyUri;
-    return verifyResult(meta, { arguments: args, content: result.content, nonce: options.nonce, salt: options.salt, expectedCircuitHash: expectedCircuitHash(tool, format), verificationKeyUri }, verifiers);
+    return verifyResult(meta, { arguments: args, content: result.content, nonce: options.nonce, salt: options.salt, expectedCircuitHash: expectedCircuitHash(tool, format), verificationKeyUri, registry: this.registry }, verifiers);
   }
   async callAndVerify(name: string, args: JsonValue, proofFormat?: string): Promise<CallToolResult> {
     const value = await this.callTool(name, args, { proofFormat });

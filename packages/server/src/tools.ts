@@ -16,19 +16,27 @@ export function toolList(baseUrl: string, override?: DescriptorOverride): JsonVa
     const hash = expectedCircuitHash(name);
     const descriptor: ToolDescriptorMeta = {
       circuitHash: hash,
-      proofFormats: ["demo-sig-v1", "demo-commit-v1"],
+      proofFormats: name === "add" ? ["snarkjs-v2", "noir-v1", "demo-sig-v1", "demo-commit-v1"] : ["demo-sig-v1", "demo-commit-v1"],
       proofPolicy,
       verificationKeyUri: `${baseUrl}/vk/${hash}`,
       blind,
-      formats: { "demo-sig-v1": { verificationKeyUri: `${baseUrl}/vk/${hash}` }, "demo-commit-v1": {} }
+      formats: name === "add"
+        ? {
+            "snarkjs-v2": { circuitHash: expectedCircuitHash(name, "snarkjs-v2"), verificationKeyUri: `${baseUrl}/vk/${expectedCircuitHash(name, "snarkjs-v2")}` },
+            "noir-v1": { circuitHash: expectedCircuitHash(name, "noir-v1"), verificationKeyUri: `${baseUrl}/vk/${expectedCircuitHash(name, "noir-v1")}` },
+            "demo-sig-v1": { circuitHash: hash, verificationKeyUri: `${baseUrl}/vk/${hash}` },
+            "demo-commit-v1": { circuitHash: hash }
+          }
+        : { "demo-sig-v1": { verificationKeyUri: `${baseUrl}/vk/${hash}` }, "demo-commit-v1": {} }
     };
     const overridden = override ? override(name, descriptor) : descriptor;
     return { name, description, inputSchema, ...(overridden ? { _meta: { [EXTENSION_ID]: overridden as unknown as JsonValue } } : {}) };
   });
 }
-export function executeTool(name: ToolName, args: JsonValue): ToolExecution {
+export function executeTool(name: ToolName, args: JsonValue, zk = false): ToolExecution {
   if (!isObject(args)) throw new JsonRpcProtocolError(-32602, "arguments must be an object");
-  if (name === "add" && typeof args.a === "number" && typeof args.b === "number") return { output: String(add(args.a, args.b)), arguments: args };
+  if (name === "add" && typeof args.a === "number" && typeof args.b === "number" &&
+      (!zk || (Number.isInteger(args.a) && Number.isInteger(args.b) && args.a >= 0 && args.a <= 0xffffffff && args.b >= 0 && args.b <= 0xffffffff))) return { output: String(add(args.a, args.b)), arguments: args };
   if (name === "riskScore" && typeof args.symbol === "string") return { output: String(riskScore(args.symbol)), arguments: args };
   if (name === "privateCreditCheck" && typeof args.income === "number" && typeof args.debt === "number") return { output: privateCreditCheck(args.income, args.debt), arguments: args };
   if (name === "priceQuote" && typeof args.symbol === "string") return { output: String(riskScore(args.symbol) * 7 + 100), arguments: args };
