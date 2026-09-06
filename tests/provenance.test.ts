@@ -142,6 +142,60 @@ test("feed failure with requireInputProvenance returns -32603", async () => with
   assert.equal(required.error?.message, "input provenance unavailable");
 }));
 
+test("an attestation payload inconsistent with the request fails the call", async () => withServerOptions({
+  priceFeed: { fetch: () => Promise.resolve({
+    type: "oracle-sig-v1",
+    source: "oracle://demo-exchange/v1/price/AAPL",
+    commitment: attestationCommitment('{"currency":"USD","price":1,"symbol":"MSFT"}'),
+    data: '{"currency":"USD","price":1,"symbol":"MSFT"}'
+  }) }
+}, async (server) => {
+  const required = await rpc(server, "tools/call", {
+    name: "riskScore", arguments: { symbol: "AAPL" },
+    _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["demo-sig-v1"], { requireInputProvenance: true }) }
+  }, { "Mcp-Name": "riskScore" });
+  assert.equal(required.error?.code, -32603);
+  assert.equal(required.error?.message, "input provenance unavailable");
+  const optional = await rpc(server, "tools/call", {
+    name: "riskScore", arguments: { symbol: "AAPL" },
+    _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["demo-sig-v1"]) }
+  }, { "Mcp-Name": "riskScore" });
+  assert.equal(optional.error?.code, -32603);
+  assert.equal(optional.error?.message, "attested price payload mismatch");
+}));
+
+test("cancelling a riskScore task during the feed leaves it cancelled", async () => withServerOptions({
+  priceFeed: { fetch: (_symbol, signal) => new Promise((_resolve, reject) => {
+    signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+  }) }
+}, async (server) => {
+  const created = await rpc(server, "tools/call", {
+    name: "riskScore", arguments: { symbol: "AAPL" },
+    _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["demo-sig-v1"], { tasks: true, requireInputProvenance: true }) }
+  }, { "Mcp-Name": "riskScore" });
+  const taskId = String(created.result?.taskId);
+  // The task waits 300 ms before executing; let the feed get in flight first.
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const cancelled = await rpc(server, "tasks/cancel", { taskId });
+  assert.equal(cancelled.result?.status, "cancelled");
+  const later = await rpc(server, "tasks/get", { taskId });
+  assert.equal(later.result?.status, "cancelled");
+  assert.equal(later.result?.error, undefined);
+}));
+
+test("riskScore rejects invalid arguments before fetching the feed", async () => withServerOptions({
+  priceFeed: { fetch: () => Promise.reject(new Error("feed must not be called")) }
+}, async (server) => {
+  for (const args of [{}, { symbol: 123 }]) {
+    const response = await rpc(server, "tools/call", {
+      name: "riskScore", arguments: args,
+      _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["demo-sig-v1"], { requireInputProvenance: true }) }
+    }, { "Mcp-Name": "riskScore" });
+    assert.equal(response.error?.code, -32602);
+    assert.equal(response.error?.message, "invalid arguments for riskScore");
+  }
+}));
+
 test("attestation commitment equals sha256 of data", () => {
   const data = jcs({ symbol: "AAPL", price: 386, currency: "USD" } as never);
   assert.equal(attestationCommitment(data), `0x${createHash("sha256").update(data).digest("hex")}`);

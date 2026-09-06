@@ -18,7 +18,7 @@ import { errorResponse, handleMcpPost, paramsRecord } from "./http.js";
 import { ResultStore } from "./prove.js";
 import { TaskStore } from "./tasks.js";
 import { circuitHash, executeTool, isZkFormat, makeResult, toolList, ToolName, DescriptorOverride } from "./tools.js";
-import { OraclePriceFeed, PriceFeed, TlsnPriceFeed } from "./pricefeed.js";
+import { OraclePriceFeed, PriceFeed, TlsnPriceFeed, priceFromAttestation } from "./pricefeed.js";
 
 export interface DemoServerOptions {
   port?: number;
@@ -178,11 +178,15 @@ export class DemoServer {
       let price: number | undefined;
       let inputAttestations: InputAttestation[] | undefined;
       if (tool === "riskScore") {
+        if (!isRecord(params.arguments) || typeof params.arguments.symbol !== "string") {
+          throw new JsonRpcProtocolError(-32602, "invalid arguments for riskScore");
+        }
         try {
-          const fetched = await this.priceFeed.fetch(String(isRecord(params.arguments) ? params.arguments.symbol : ""), signal);
-          price = fetched.price;
-          inputAttestations = [fetched.attestation];
+          const attestation = await this.priceFeed.fetch(params.arguments.symbol, signal);
+          price = priceFromAttestation(attestation, params.arguments.symbol);
+          inputAttestations = [attestation];
         } catch (error) {
+          if (signal?.aborted) throw error;
           if (capability?.requireInputProvenance === true) throw new JsonRpcProtocolError(-32603, "input provenance unavailable");
           throw error;
         }
