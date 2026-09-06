@@ -3,6 +3,7 @@
 対象仕様: [`docs/spec/verifiable-tools.md`](spec/verifiable-tools.md)（英語 / SEP 提出用）、[`docs/spec/verifiable-tools.ja.md`](spec/verifiable-tools.ja.md)（日本語）
 関連 issue: https://github.com/zk-tokyo/advanced-cryptography-2026/issues/94
 技術選定の根拠: [#3 ZK / MPC / FHE ライブラリ調査](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/issues/3)、[#4 言語基盤の分析](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/issues/4)、[#6 ACP 2026 で学んだ技術要素](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/issues/6)
+プラン外の拡張候補（特定製品・事例に由来する示唆）: [`docs/EXTENSIONS.md`](EXTENSIONS.md)
 
 ## 1. 目的
 
