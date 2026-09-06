@@ -8,10 +8,13 @@ export interface VerifyContext {
   verificationKeyUri?: string;
   registry?: VerificationKeyRegistryLike;
 }
-export interface VerificationKeyRegistryLike { get(circuitHash: string, uri: string): Promise<unknown>; }
+export interface VerificationKeyRegistryLike {
+  get(circuitHash: string, uri: string): Promise<unknown>;
+  getBytes?(circuitHash: string, uri: string): Promise<Uint8Array>;
+}
 export interface Verifier {
   readonly format: string;
-  verify(meta: VerifiableToolsMeta, context: VerifyContext): Promise<boolean>;
+  verify(meta: VerifiableToolsMeta, context: VerifyContext, options?: { signal?: AbortSignal }): Promise<boolean>;
 }
 export type VerifyOutcome =
   | { ok: true }

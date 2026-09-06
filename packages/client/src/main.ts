@@ -1,4 +1,6 @@
 import { startServer } from "@demo/server";
+import { closeProverWorker as closeNoirWorker, destroy as destroyNoir } from "@demo/prover-noir";
+import { closeProverWorker as closeSnarkjsWorker } from "@demo/prover-snarkjs";
 import { VerifiableClient } from "./client.js";
 import { EXTENSION_ID } from "@demo/protocol";
 const server = await startServer({ port: 0 });
@@ -24,9 +26,26 @@ try {
   console.log(`4. deferred priceQuote: ${proved.result.content[0].text} (verified ${proved.result._meta?.[EXTENSION_ID]?.proofFormat})`);
   const tee = await client.callAndVerify("add", { a: 1, b: 2 }, "tee-nitro-v1");
   console.log(`5. tee add: ${tee.content[0].text} (verified tee-nitro-v1)`);
+  client.setCapabilities({ proofFormats: discovery.proofFormats });
+  for (const [number, format, label] of [[6, "snarkjs-v2", "snarkjs-v2 Groth16"], [7, "noir-v1", "noir-v1 UltraHonk"]] as const) {
+    const proveStart = performance.now();
+    const call = await client.callTool("add", { a: 20, b: 22 }, { proofFormat: format });
+    if (call.result.resultType !== "complete") throw new Error("unexpected ZK task");
+    const proveMs = performance.now() - proveStart;
+    const verifyStart = performance.now();
+    const outcome = await client.verify(call.result, { a: 20, b: 22 }, "add", { nonce: call.nonce });
+    const verifyMs = performance.now() - verifyStart;
+    if (!outcome.ok) throw new Error(`${format} verification failed: ${outcome.reason}`);
+    const proof = call.result._meta?.[EXTENSION_ID]?.proof;
+    const proofBytes = typeof proof === "string" ? Buffer.from(proof.startsWith("0x") ? proof.slice(2) : proof, format === "snarkjs-v2" ? "base64url" : "hex").byteLength : 0;
+    console.log(`${number}. zk add (${label}): ${call.result.content[0].text} (verified, proof ${proofBytes} bytes, prove ${proveMs.toFixed(2)} ms, verify ${verifyMs.toFixed(2)} ms)`);
+  }
 } catch (error: unknown) {
   console.error(error instanceof Error ? error.message : "demo failed");
   process.exitCode = 1;
 } finally {
   await server.close();
+  closeSnarkjsWorker();
+  closeNoirWorker();
+  await destroyNoir();
 }

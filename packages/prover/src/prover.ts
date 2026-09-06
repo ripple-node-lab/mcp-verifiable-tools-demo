@@ -1,6 +1,7 @@
 import { JsonValue, VerifiableToolsMeta } from "@demo/protocol";
 import { createHash } from "node:crypto";
 export interface ProveInput {
+  arguments: JsonValue;
   circuitHash: string;
   inputCommitment: string;
   outputCommitment: string;

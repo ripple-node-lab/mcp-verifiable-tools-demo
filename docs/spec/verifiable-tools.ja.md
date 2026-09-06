@@ -641,11 +641,32 @@ MCP `2026-07-28` で公式の長時間タスクモデルが確立した。本拡
 SEP が "Final" 状態になる前に参考実装が必要となる。プロトタイプは <https://github.com/ripple-node-lab/mcp-verifiable-tools-demo> にある（TypeScript、MCP `2026-07-28` Streamable HTTP、`npm install && npm test`）。その計画（`docs/PLAN.md`）は、重いツールチェーンなしにレビュアーが各段階を実行できるよう構成されている。
 
 - Phase 1（完了）：トランスポート、ネゴシエーション、Tasks 統合、依存ゼロの代替形式（`demo-sig-v1`、`demo-commit-v1`）によるブラインド呼び出し。これらは*暗号学的証明ではなく*、その旨を明記する。
-- Phase 2：npm からプロセス内で動く実 ZK 形式（circom 回路上の `snarkjs-v2` Groth16、第二候補として Noir/UltraHonk）に加え、本改訂の結果束縛フィールド（`outputCommitment`、`nonce`、`tools/list` 記述子）と、証明生成・検証の実測値。
+- Phase 2-b：npm からプロセス内で動く 2 つの実 ZK 形式（Circom 回路上の `snarkjs-v2` Groth16 と `noir-v1` UltraHonk）に加え、本改訂の結果束縛フィールドと証明生成・検証の実測値。
 - Phase 3：prover が TypeScript ではない sidecar 形式。`risc0-v1`（Rust zkVM）、`ezkl-v1`（Python/CLI prover、WASM verifier）、`tee-nitro-v1`（TypeScript での Attestation 検証、エンクレーブビルドは opt-in）、価格フィードシナリオ向けの `zktls-tlsn-v1` 入力 Attestation。
 - Phase 4：プロトコル層を `modelcontextprotocol/typescript-sdk` へ移植。
 
 CI 結果と形式ごとのベンチマークは、各 Phase が実現した時点でここにリンクする。
+
+### 規範外付録：参考デモが実装する形式プロファイル
+
+参考デモは `add` に対して次の具体的な形式を実装する。どちらも
+`publicInputs = [outputCommitment, inputCommitment, nonce ?? "0x", ...nativeTail]`
+を束縛する。
+
+- `snarkjs-v2`：`proof` は snarkjs Groth16 JSON を JCS 直列化した値の
+  パディングなし base64url、native tail は十進文字列 `[c, a, b]`。
+  検証鍵文書はコミット済み Circom `vk.json` のバイト列である。
+- `noir-v1`：`proof` は `0x` に続く小文字 16 進の proof バイト列、native
+  tail はパディング済み小文字 16 進フィールド文字列 `[a, b, c]`。
+  検証鍵文書は JCS JSON
+  `{"format":"noir-v1","vk":"<base64url raw vk bytes>"}` である。
+
+両形式とも `a`、`b`、および checked `u32` の和 `a + b` は
+`[0, 2^32 - 1]` に収まらなければならず、オーバーフローやその他の不正な
+引数は `-32602` で拒否しなければならない。
+
+両形式とも `circuitHash` は `verificationKeyUri` で配信される正確なバイト列
+（JSON の直列化と空白を含む）の SHA-256 に `0x` を付けた値である。
 
 ## 15. パフォーマンスへの影響
 

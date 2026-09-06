@@ -25,7 +25,7 @@ MCP SEP ガイドラインの「Prototype Requirements」と設計原則「Demon
   - `demo-sig-v1`: 「TEE Attestation 相当」のシミュレーション。Prover が `circuitHash || inputCommitment || outputHash` を Ed25519 署名する。`verificationKeyUri` から公開鍵を取得して検証する。
   - `demo-commit-v1`: 「ZK 証明相当」のシミュレーション。`publicInputs = [output, inputCommitment]`、`proof = SHA-256(circuitHash || publicInputs)`。証明としての健全性は無いが、フィールドの流れ（`publicInputs` / `circuitHash` / `verificationKeyUri`）を確認できる。
   - README で **これらは暗号学的な ZK ではないこと** を明記する。
-- **Phase 2 で実エンジンを追加する。** `snarkjs-v2`（Groth16, 小さな circom 回路の事前コンパイル済み `wasm` / `zkey` / `vk.json` を同梱）と Noir（UltraHonk）を npm だけで動く実 ZK バックエンドとする。`ezkl-v1` / `risc0-v1` / TEE / zkTLS は Phase 3 で sidecar として合成する（§5）。
+- **Phase 2-b（完了）で実エンジンを追加した。** `snarkjs-v2`（Groth16, 小さな Circom 回路の事前コンパイル済み `wasm` / `zkey` / `vk.json` を同梱）と Noir（UltraHonk）を npm だけで動く実 ZK バックエンドとして実装した。`ezkl-v1` / `risc0-v1` / TEE / zkTLS は Phase 3 で sidecar として合成する（§5）。
 - **SDK 依存を避ける。** 公式 SDK の 2026-07-28 対応状況に左右されないよう、JSON-RPC 2.0 + Streamable HTTP（POST のみ）を薄く自前実装する。将来 `typescript-sdk` の Extension API に載せ替えられるよう、プロトコル処理は `packages/protocol` に隔離する。
 - **言語方針（#4 の結論）: プロトコル層・クライアント検証層は TypeScript、証明バックエンドは engine ごとに最適な言語をアダプタ経由で合成する。** 判断の軸は上記「本質は証明をどう運ぶか」と同じで、言語の境界も同じ場所に置く。
   - `packages/protocol` / `server` / `client` / `verifier` は TS を維持する。MCP の正典スキーマと Phase 4 の移植先（`typescript-sdk`）が TS であり、検証器は IDE / エージェントホスト（多くが TS）へ npm / WASM で配布できる必要があるため。
@@ -100,6 +100,8 @@ mcp-verifiable-tools-demo/
 │   │       │   ├── riskScore.ts  # riskScore(symbol): 遅延付き非同期証明（tasks）
 │   │       │   └── creditCheck.ts# privateCreditCheck: ブラインド専用
 │   │       └── main.ts           # `npm run server`
+│   ├── prover-snarkjs/           # snarkjs-v2（Circom/Groth16。Phase 2-b）
+│   ├── prover-noir/              # noir-v1（Noir/UltraHonk。Phase 2-b）
 │   ├── prover-sidecar/           # sidecar HTTP 契約アダプタ（Phase 3-a）
 │   │   └── src/
 │   │       ├── contract.ts       # GET /healthz, POST /prove, POST /verify, GET /vk/{circuitHash}
@@ -112,7 +114,7 @@ mcp-verifiable-tools-demo/
 │           ├── client.ts         # discover → capability 交差 → tools/call → verify
 │           ├── tasks.ts          # pollIntervalMs に従う tasks/get ポーリング
 │           ├── blind.ts          # 引数暗号化 + inputCommitment 生成 → verifiable-tools/call
-│           └── main.ts           # `npm run demo` で 5 シナリオを順に実行
+│           └── main.ts           # `npm run demo` で 7 シナリオを順に実行
 ├── examples/                     # 仕様書と同じ JSON メッセージのサンプル（fixture としてテストでも使用）
 │   ├── discover.json
 │   ├── tools-call.request.json
@@ -175,7 +177,7 @@ mcp-verifiable-tools-demo/
 | `descriptor.test.ts`（Phase 2-a） | `tools/list` の `circuitHash` がピン留め値と異なる → 黙って受理せずエラーとして表面化 |
 | `deferred-proof.test.ts`（Phase 2-a） | `proofPolicy: onDemand` の tool → `resultId` のみ返る → `verifiable-tools/prove` で `content` がバイト一致し証明が検証成功 / `resultTtlMs` 経過後は `resultExpired` |
 | `provenance.test.ts`（Phase 3） | `requireInputProvenance: true` で `inputAttestations` 欠落・不正 → 主証明が有効でも拒否 |
-| `randomness.test.ts`（Phase 2-b 以降） | 証明ごとに乱数が再利用されていないこと（Week 3 nonce 再利用 / Week 2 Beaver triple 再利用の教訓） |
+| `randomness.test.ts`（Phase 2-b） | snarkjs / Noir の同一入力でも異なる証明が生成され、双方が検証できること |
 | `cbor.test.ts`（Phase 3-a） | RFC 8949 Appendix A ベクトルの decode / canonical encode、indefinite-length・trailing・truncated 入力の拒否 |
 | `tee-nitro.test.ts`（Phase 3-a） | `tee-nitro-v1` 正常系（attestation 検証・`verificationKeyUri` 非出力・tools/list 記述子）+ `verifyDetailed` の否定系（measurement / chain / user_data / nonce / freshness / 証明署名 / malformed）+ `teeNitro: false` で非広告・requireProof エラー |
 | `sidecar.test.ts`（Phase 3-a） | mock sidecar（`demo-sig-sidecar-v1`）の prove / verify 往復、sidecar が binding フィールドを改変・停止している場合は JSON-RPC エラーで結果を返さない、AbortSignal、`sidecarHealth`、`SIDECAR_URL` 指定時の外部 sidecar 疎通 |
@@ -186,7 +188,7 @@ mcp-verifiable-tools-demo/
 |---|---|---|
 | 1（完了） | 上記構成の雛形 + `demo-sig-v1` / `demo-commit-v1` + 3 シナリオ + テスト + CI | `npm run demo` / `npm test` が通る |
 | 2-a（完了） | `outputCommitment` / `nonce` / salted JCS commitments / `tools/list` descriptors / `formats` overrides / `priceQuote` on-demand proofs + `verifiable-tools/prove` / `resultTtlMs` / abortable `tasks/cancel` / `replyPublicKey` / RFC 9180 base-mode `hpke-v1` を protocol・server・client に実装し、binding / deferred / descriptor / HPKE 否定テストを追加。 | 既存 2 形式のまま、改訂仕様の Phase 2-a フィールドが `npm test` で検証される |
-| 2-b 実 ZK（in-process） | `snarkjs-v2`（Groth16、circom `add` 回路を事前コンパイルして `wasm` / `zkey` / `vk.json` を同梱。Week 1 の under-constrained 攻撃をレビュー観点にする）。第 2 形式として Noir（`@noir-lang/noir_js` + `@aztec/bb.js`, UltraHonk, トラステッドセットアップ不要）を採用し、同じ `add` を 2 系統で示す。両者は別 workspace（`packages/prover-snarkjs`, `packages/prover-noir`）に隔離するが `npm test` 既定に含める。各形式の proving 時間・メモリ・証明サイズ・検証時間・検証器依存サイズを `docs/BENCHMARKS.md` に記録 | 実 ZK 証明が 2 形式動き、計測値が公開される |
+| 2-b 実 ZK（完了） | `snarkjs-v2`（Groth16、circom `add` 回路を事前コンパイルして `wasm` / `zkey` / `vk.json` を同梱。ローカル単一参加者 trusted setup はデモ専用）と Noir（`@noir-lang/noir_js` + `@aztec/bb.js`, UltraHonk, trusted setup 不要）を別 workspace（`packages/prover-snarkjs`, `packages/prover-noir`）で実装し、`npm test` 既定に含めた。 | 実 ZK 証明 2 形式、実測値は [`docs/BENCHMARKS.md`](BENCHMARKS.md) |
 | 3-a（完了）sidecar 基盤 + `tee-nitro-v1` | sidecar HTTP 契約（`/healthz` / `/prove` / `/verify` / `/vk/{circuitHash}`）+ `packages/prover-sidecar` アダプタ（binding フィールドの echo 検査）+ `packages/sidecar-mock`（`demo-sig-sidecar-v1`）+ `docker compose --profile sidecar` / CI opt-in ジョブ。`tee-nitro-v1` は COSE_Sign1 / CBOR を protocol に実装し、chain / PCR measurement / user_data 鍵束縛 / nonce / freshness の検証を TS で実装。attestation は `sidecars/nitro/mock-fixtures` のモック root CA・モック PCR で発行（AWS Nitro root ではない） | sidecar 形式が opt-in で動き、`teeAttestation` が検証可能な契約になる |
 | 3-b `risc0-v1` | `sidecars/risc0/Dockerfile`（Rust host を Docker 化し `prove(circuitHash, witness) -> receipt` を HTTP で提供）。検証は Rust sidecar `/verify` か `risc0-zkvm` verifier の WASM ビルド（可否を冒頭で PoC） | zkVM receipt 証明が sidecar 経由で動く |
 | 3-c `ezkl-v1` | 生成は Python `ezkl` sidecar、検証は `@ezkljs/engine`（WASM）で TS 側（「生成は他言語、検証は TS」の非対称性を体現） | ZKML 証明が sidecar 経由で動く |

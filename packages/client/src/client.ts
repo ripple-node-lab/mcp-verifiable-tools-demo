@@ -7,6 +7,8 @@ import {
 } from "@demo/protocol";
 import { mockNitroFixturesDir } from "@demo/prover";
 import { DemoCommitVerifier, DemoSigVerifier, TeeNitroVerifier, TeeNitroVerifierOptions, VerificationKeyRegistry, Verifier, VerifyOutcome, verifyResult } from "@demo/verifier";
+import { NoirVerifier } from "@demo/prover-noir";
+import { SnarkjsVerifier } from "@demo/prover-snarkjs";
 import { encryptArguments, generateReplyKeyPair } from "./blind.js";
 import { pollTask, RpcRequest } from "./tasks.js";
 
@@ -22,6 +24,8 @@ export class VerifiableClient {
   private readonly registry: VerificationKeyRegistry;
   private readonly sigVerifier: DemoSigVerifier;
   private readonly commitVerifier = new DemoCommitVerifier();
+  private readonly snarkjsVerifier = new SnarkjsVerifier();
+  private readonly noirVerifier = new NoirVerifier();
   private readonly extraVerifiers: Verifier[];
   private readonly teeNitroOption: TeeNitroVerifierOptions | false | undefined;
   private teeVerifier: TeeNitroVerifier | undefined;
@@ -32,11 +36,10 @@ export class VerifiableClient {
     this.sigVerifier = new DemoSigVerifier(this.registry);
     this.extraVerifiers = options.verifiers ?? [];
     this.teeNitroOption = options.teeNitro;
-    const formats = ["demo-sig-v1", "demo-commit-v1", ...(this.teeNitroOption === false ? [] : ["tee-nitro-v1"]), ...this.extraVerifiers.map((verifier) => verifier.format)];
+    const formats = ["snarkjs-v2", "noir-v1", "demo-sig-v1", "demo-commit-v1", ...(this.teeNitroOption === false ? [] : ["tee-nitro-v1"]), ...this.extraVerifiers.map((verifier) => verifier.format)];
     this.capabilities = clientCapabilities([...new Set(formats)]);
   }
   async discover(): Promise<DiscoverResult> {
-    const descriptors = new Map<string, ToolDescriptorMeta>();
     const response = await this.request("server/discover", {});
     const result = asRecord(response.result);
     const extension = asRecord(asRecord(asRecord(result.capabilities).extensions)[EXTENSION_ID]);
@@ -55,6 +58,7 @@ export class VerifiableClient {
     }
     const tools = asRecord((await this.request("tools/list", {})).result).tools;
     if (!Array.isArray(tools)) throw new Error("malformed tools/list response");
+    const descriptors = new Map<string, ToolDescriptorMeta>();
     for (const item of tools) {
       const tool = asRecord(item);
       const name = asString(tool.name);
@@ -63,8 +67,15 @@ export class VerifiableClient {
       const descriptor = extensionMeta as unknown as ToolDescriptorMeta;
       const expected = expectedCircuitHash(name);
       const formats = isRecord(descriptor.formats) ? Object.entries(descriptor.formats) : [];
+      const validFormats = Object.fromEntries(formats.filter(([, value]) => isRecord(value)).map(([format, value]) => {
+        const entry = value as { [key: string]: JsonValue };
+        return [format, {
+          ...(typeof entry.circuitHash === "string" ? { circuitHash: entry.circuitHash } : {}),
+          ...(typeof entry.verificationKeyUri === "string" ? { verificationKeyUri: entry.verificationKeyUri } : {})
+        }];
+      }));
       if (descriptor.circuitHash !== expected || formats.some(([format, value]) => isRecord(value) && typeof value.circuitHash === "string" && PINNED_CIRCUITS[name]?.formats?.[format] !== undefined && value.circuitHash !== expectedCircuitHash(name, format))) throw new Error(`tool descriptor circuitHash mismatch for ${name}`);
-      descriptors.set(name, descriptor);
+      descriptors.set(name, { ...descriptor, formats: validFormats });
     }
     this.descriptors = descriptors;
     this.discovered = { proofFormats, serverProofFormats: formats, blindPublicKeys, blindEncryptionSchemes, blindExecution, resultTtlMs };
@@ -87,6 +98,8 @@ export class VerifiableClient {
     }
     const formats = verifiableCapability(this.capabilities)?.proofFormats ?? [];
     const verifiers: Verifier[] = [
+      ...(formats.includes("snarkjs-v2") ? [this.snarkjsVerifier] : []),
+      ...(formats.includes("noir-v1") ? [this.noirVerifier] : []),
       ...(formats.includes("demo-sig-v1") ? [this.sigVerifier] : []),
       ...(formats.includes("demo-commit-v1") ? [this.commitVerifier] : []),
       ...(this.teeVerifier && formats.includes("tee-nitro-v1") ? [this.teeVerifier] : []),
@@ -98,7 +111,7 @@ export class VerifiableClient {
       ? undefined
       : descriptor.formats?.[format]?.verificationKeyUri ?? descriptor.verificationKeyUri;
     const formatHash = format === undefined ? undefined : descriptor?.formats?.[format]?.circuitHash;
-    return verifyResult(meta, { arguments: args, content: result.content, nonce: options.nonce, salt: options.salt, expectedCircuitHash: formatHash ?? expectedCircuitHash(tool, format), verificationKeyUri }, verifiers);
+    return verifyResult(meta, { arguments: args, content: result.content, nonce: options.nonce, salt: options.salt, expectedCircuitHash: formatHash ?? expectedCircuitHash(tool, format), verificationKeyUri, registry: this.registry }, verifiers);
   }
   async callAndVerify(name: string, args: JsonValue, proofFormat?: string): Promise<CallToolResult> {
     const value = await this.callTool(name, args, { proofFormat });

@@ -35,6 +35,13 @@ export function requestMeta(capabilities: ClientCapabilities, clientInfo = { nam
 export function isRecord(value: unknown): value is { [key: string]: JsonValue } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+export function parseAddArguments(value: JsonValue): { a: number; b: number } | undefined {
+  if (!isRecord(value) ||
+      typeof value.a !== "number" || !Number.isInteger(value.a) || value.a < 0 || value.a > 0xffffffff ||
+      typeof value.b !== "number" || !Number.isInteger(value.b) || value.b < 0 || value.b > 0xffffffff ||
+      value.a + value.b > 0xffffffff) return undefined;
+  return { a: value.a, b: value.b };
+}
 function circuitHash(tool: string): string {
   return `0x${createHash("sha256").update(`verifiable-tools-demo:${tool}:v1`).digest("hex")}`;
 }
@@ -43,7 +50,15 @@ function pinned(tool: string): { default: string; formats: { [format: string]: s
   return { default: hash, formats: { "demo-sig-v1": hash, "demo-commit-v1": hash } };
 }
 export const PINNED_CIRCUITS: { [tool: string]: { default: string; formats?: { [format: string]: string } } } = {
-  add: pinned("add"),
+  add: {
+    default: circuitHash("add"),
+    formats: {
+      "snarkjs-v2": "0xfb5e4566f5be574f3e95c0356e19ecef88dabd0692edcf5f4be688106e9968c7",
+      "noir-v1": "0x70d3e40690fb97fbcace5ce1d3114282e7dfff1387b125767b6a942e1ca3261e",
+      "demo-sig-v1": circuitHash("add"),
+      "demo-commit-v1": circuitHash("add")
+    }
+  },
   riskScore: pinned("riskScore"),
   privateCreditCheck: pinned("privateCreditCheck"),
   priceQuote: pinned("priceQuote")

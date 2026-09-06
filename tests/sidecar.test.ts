@@ -90,7 +90,7 @@ test("a closed sidecar yields a JSON-RPC error and the server keeps answering di
 
 test("SidecarProver rejects with AbortError on an aborted signal", async () => {
   const prover = new SidecarProver({ baseUrl: "http://127.0.0.1:1", format: SIDECAR_FORMAT });
-  const input: ProveInput = { circuitHash: "0x", inputCommitment: "0x", outputCommitment: "0x", output: "1" };
+  const input: ProveInput = { arguments: {}, circuitHash: "0x", inputCommitment: "0x", outputCommitment: "0x", output: "1" };
   const abort = new AbortController();
   abort.abort();
   try {
