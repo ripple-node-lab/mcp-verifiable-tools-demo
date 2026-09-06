@@ -87,3 +87,10 @@ test("risc0-v1 rejects a dev-mode fake receipt", async () => {
   const outcome = await verifyResult(meta, context(), [new Risc0Verifier()]);
   assert.deepEqual(outcome, { ok: false, reason: "proofInvalid" });
 });
+
+test("risc0-v1 verifier rejects with AbortError on a pre-aborted signal", async () => {
+  const meta = await fixtureMeta();
+  await assert.rejects(() => new Risc0Verifier().verify(meta, context(), { signal: AbortSignal.abort() }));
+  const error = await new Risc0Verifier().verify(meta, context(), { signal: AbortSignal.abort() }).catch((e: unknown) => e);
+  assert.equal((error as DOMException).name, "AbortError");
+});

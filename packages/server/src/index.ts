@@ -27,6 +27,7 @@ export interface DemoServerOptions {
   provers?: Prover[];
   risc0SidecarUrl?: string;
   risc0TimeoutMs?: number;
+  taskTtlMs?: number;
   teeNitro?: false | TeeNitroProverOptions;
   formatDescriptors?: { [format: string]: ToolFormatDescriptor };
 }
@@ -48,7 +49,8 @@ export class DemoServer {
   private port = 0;
   constructor(options: DemoServerOptions = {}) {
     this.host = options.host ?? "127.0.0.1";
-    this.tasks = new TaskStore();
+    const risc0TimeoutMs = options.risc0TimeoutMs ?? 180_000;
+    this.tasks = new TaskStore({ ttlMs: options.taskTtlMs ?? (options.risc0SidecarUrl ? Math.max(60_000, risc0TimeoutMs) : 60_000) });
     this.results = new ResultStore(options.resultTtlMs ?? RESULT_TTL_MS);
     this.descriptorOverride = options.descriptorOverride;
     this.verificationKeyOverrides = options.verificationKeyOverrides ?? {};
@@ -57,7 +59,7 @@ export class DemoServer {
     this.provers.set("demo-commit-v1", new DemoCommitProver());
     this.provers.set(SNARK_FORMAT, snarkProver);
     this.provers.set(NOIR_FORMAT, noirProver);
-    if (options.risc0SidecarUrl) this.provers.set("risc0-v1", new SidecarProver({ baseUrl: options.risc0SidecarUrl, format: "risc0-v1", timeoutMs: options.risc0TimeoutMs ?? 180_000 }));
+    if (options.risc0SidecarUrl) this.provers.set("risc0-v1", new SidecarProver({ baseUrl: options.risc0SidecarUrl, format: "risc0-v1", timeoutMs: risc0TimeoutMs }));
     if (options.teeNitro !== false) {
       const userData = new Uint8Array(createHash("sha256").update(rawX25519Public(this.blindKeys.publicKey)).digest());
       const tee = options.teeNitro ? new TeeNitroProver({ userData, ...options.teeNitro }) : TeeNitroProver.fromMockFixtures(mockNitroFixturesDir(), { userData });

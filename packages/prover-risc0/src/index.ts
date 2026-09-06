@@ -54,7 +54,7 @@ async function verifyReceiptWasm(proof: Uint8Array, imageId: Uint8Array): Promis
   }
 }
 
-export async function verifyRisc0(meta: VerifiableToolsMeta, context: VerifyContext): Promise<boolean> {
+export async function verifyRisc0(meta: VerifiableToolsMeta, context: VerifyContext, signal?: AbortSignal): Promise<boolean> {
   if (meta.proofFormat !== FORMAT || meta.circuitHash !== context.expectedCircuitHash || !meta.proof) return false;
   let imageId: Uint8Array;
   try { imageId = imageIdFromCircuitHash(context.expectedCircuitHash); } catch { return false; }
@@ -62,6 +62,7 @@ export async function verifyRisc0(meta: VerifiableToolsMeta, context: VerifyCont
   try {
     journal = await verifyReceiptWasm(Uint8Array.from(Buffer.from(meta.proof, "base64url")), imageId);
   } catch { return false; }
+  signal?.throwIfAborted();
   if (!journal || journal.length !== 12) return false;
   const view = new DataView(journal.buffer, journal.byteOffset, journal.byteLength);
   const a = view.getUint32(0, true), b = view.getUint32(4, true), sum = view.getUint32(8, true);
@@ -77,7 +78,8 @@ export async function verifyRisc0(meta: VerifiableToolsMeta, context: VerifyCont
 export class Risc0Verifier implements Verifier {
   readonly format = FORMAT;
   async verify(meta: VerifiableToolsMeta, context: VerifyContext, options: { signal?: AbortSignal } = {}): Promise<boolean> {
-    try { return await verifyRisc0(meta, context); } catch (error) {
+    options.signal?.throwIfAborted();
+    try { return await verifyRisc0(meta, context, options.signal); } catch (error) {
       if (options.signal?.aborted) throw error;
       return false;
     }

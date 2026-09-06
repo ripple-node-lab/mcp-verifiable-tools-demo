@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { VerifiableClient } from "@demo/client";
 import { TaskStore } from "@demo/server";
 import { clientCapabilities, JsonRpcProtocolError, META_CLIENT_CAPABILITIES } from "@demo/protocol";
-import { withServer, rpc, expectTask } from "./helpers.js";
+import { withServer, withServerOptions, rpc, expectTask } from "./helpers.js";
 test("riskScore is synchronous without tasks and asynchronous with tasks", async () => withServer(async (server) => {
   const plain = await rpc(server, "tools/call", { name: "riskScore", arguments: { symbol: "AAPL" }, _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["demo-sig-v1"]) } }, { "Mcp-Name": "riskScore" });
   assert.equal(plain.result?.resultType, "complete");
@@ -69,4 +69,22 @@ test("working tasks abort when their TTL expires", async () => {
   await new Promise<void>((resolve) => setTimeout(resolve, 20));
   assert.equal(store.get(task.taskId)?.status, "failed");
   assert.equal(aborted, true);
+});
+test("task TTL covers the risc0 proving timeout when the sidecar is configured", async () => {
+  await withServerOptions({ risc0SidecarUrl: "http://127.0.0.1:1", risc0TimeoutMs: 120_000 }, async (server) => {
+    const client = new VerifiableClient(server.mcpUrl);
+    await client.discover();
+    client.setCapabilities({ proofFormats: ["demo-sig-v1"] }, true);
+    const task = expectTask((await client.callTool("riskScore", { symbol: "AAPL" }, { proofFormat: "demo-sig-v1" })).result);
+    assert.equal(task.ttlMs, 120_000);
+    await rpc(server, "tasks/cancel", { taskId: task.taskId });
+  });
+  await withServer(async (server) => {
+    const client = new VerifiableClient(server.mcpUrl);
+    await client.discover();
+    client.setCapabilities({ proofFormats: ["demo-sig-v1"] }, true);
+    const task = expectTask((await client.callTool("riskScore", { symbol: "AAPL" }, { proofFormat: "demo-sig-v1" })).result);
+    assert.equal(task.ttlMs, 60_000);
+    await rpc(server, "tasks/cancel", { taskId: task.taskId });
+  });
 });
