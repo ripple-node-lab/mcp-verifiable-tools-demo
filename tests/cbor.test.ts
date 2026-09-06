@@ -36,6 +36,28 @@ test("cbor rejects trailing bytes and truncation", () => {
   assert.throws(() => cborDecode(hex("8301")));
 });
 
+test("cbor encodes maps deterministically (RFC 8949 §4.2.1)", () => {
+  const forward = new Map<CborValue, CborValue>([[1, 1], ["a", 1], [1000, 1], ["zz", 1]]);
+  const reverse = new Map<CborValue, CborValue>([["zz", 1], [1000, 1], ["a", 1], [1, 1]]);
+  const expected = "a401016161011903e801627a7a01";
+  assert.equal(toHex(cborEncode(forward)), expected);
+  assert.equal(toHex(cborEncode(reverse)), expected);
+  assert.deepEqual(cborDecode(hex(expected)), forward);
+});
+
+test("cbor sorts nested map keys deterministically", () => {
+  const one = cborEncode({ b: new Map<CborValue, CborValue>([["d", 1], ["c", 1]]), a: 0 });
+  const two = cborEncode({ a: 0, b: new Map<CborValue, CborValue>([["c", 1], ["d", 1]]) });
+  const expected = "a26161006162a2616301616401";
+  assert.equal(toHex(one), expected);
+  assert.equal(toHex(two), expected);
+});
+
+test("cbor rejects duplicate encoded map keys", () => {
+  const dup = new Map<CborValue, CborValue>([[new Uint8Array([1]), 1], [new Uint8Array([1]), 2]]);
+  assert.throws(() => cborEncode(dup));
+});
+
 test("cbor rejects integers beyond 2^53", () => {
   assert.throws(() => cborDecode(hex("1bffffffffffffffff")));
   assert.throws(() => cborEncode(Number.MAX_SAFE_INTEGER + 1));

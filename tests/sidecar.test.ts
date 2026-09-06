@@ -4,8 +4,8 @@ import { createServer } from "node:http";
 import { VerifiableClient } from "@demo/client";
 import { DemoServer } from "@demo/server";
 import { EXTENSION_ID, META_CLIENT_CAPABILITIES, VerifiableToolsMeta, clientCapabilities, expectedCircuitHash, freshNonce } from "@demo/protocol";
-import { ProveInput } from "@demo/prover";
-import { DemoSigVerifier, VerificationKeyRegistry, VerifyContext } from "@demo/verifier";
+import { DemoSigProver, Prover, ProveInput } from "@demo/prover";
+import { DemoSigVerifier, VerificationKeyRegistry, Verifier, VerifyContext } from "@demo/verifier";
 import { SidecarProver, SidecarVerifier, sidecarHealth } from "@demo/prover-sidecar";
 import { SIDECAR_FORMAT, startMockSidecar } from "@demo/sidecar-mock";
 import { expectComplete, rpc, withServerOptions } from "./helpers.js";
@@ -99,6 +99,37 @@ test("SidecarProver rejects with AbortError on an aborted signal", async () => {
   } catch (error: unknown) {
     assert.ok(error instanceof DOMException && (error as DOMException).name === "AbortError");
   }
+});
+
+test("a descriptor-supplied circuitHash is used for proving and verified by the client", async () => {
+  const customHash = `0x${"cd".repeat(32)}`;
+  class EchoProver implements Prover {
+    readonly format = "custom-hash-v1";
+    async prove(input: ProveInput): Promise<VerifiableToolsMeta> {
+      return { proof: "0x01", proofFormat: this.format, circuitHash: input.circuitHash, inputCommitment: input.inputCommitment, outputCommitment: input.outputCommitment, ...(input.nonce === undefined ? {} : { nonce: input.nonce }) };
+    }
+  }
+  class EchoVerifier implements Verifier {
+    readonly format = "custom-hash-v1";
+    async verify(meta: VerifiableToolsMeta): Promise<boolean> { return meta.circuitHash === customHash; }
+  }
+  await withServerOptions({
+    provers: [new EchoProver()],
+    formatDescriptors: { "custom-hash-v1": () => ({ circuitHash: customHash }) }
+  }, async (server: DemoServer) => {
+    const client = new VerifiableClient(server.mcpUrl, { verifiers: [new EchoVerifier()] });
+    await client.discover();
+    const descriptor = client.descriptor("add");
+    assert.equal(descriptor?.formats?.["custom-hash-v1"]?.circuitHash, customHash);
+    const result = await client.callAndVerify("add", { a: 1, b: 2 }, "custom-hash-v1");
+    const meta = result._meta?.[EXTENSION_ID] as VerifiableToolsMeta;
+    assert.equal(meta.circuitHash, customHash);
+  });
+});
+
+test("server rejects extra provers that collide with a built-in format", async () => {
+  assert.throws(() => new DemoServer({ provers: [new DemoSigProver()] }), /duplicate prover format/);
+  assert.throws(() => new DemoServer({ provers: [new DemoSigProver("tee-nitro-v1")] }), /duplicate prover format/);
 });
 
 if (process.env.SIDECAR_URL) {

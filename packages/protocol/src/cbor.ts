@@ -1,5 +1,5 @@
 // Minimal CBOR (RFC 8949) subset: definite lengths only, no floats.
-export type CborValue = number | string | boolean | null | undefined | Uint8Array | CborValue[] | Map<CborValue, CborValue> | CborTag;
+export type CborValue = number | string | boolean | null | undefined | Uint8Array | CborValue[] | Map<CborValue, CborValue> | { [key: string]: CborValue } | CborTag;
 export class CborTag {
   constructor(readonly tag: number, readonly value: CborValue) {}
 }
@@ -42,8 +42,7 @@ function write(value: CborValue, parts: Uint8Array[], depth: number): void {
     parts.push(head(4, value.length));
     for (const item of value) write(item, parts, depth + 1);
   } else if (value instanceof Map) {
-    parts.push(head(5, value.size));
-    for (const [key, item] of value) { write(key, parts, depth + 1); write(item, parts, depth + 1); }
+    writeMap([...value.entries()], parts, depth);
   } else if (value instanceof CborTag) {
     parts.push(head(6, value.tag));
     write(value.value, parts, depth + 1);
@@ -52,10 +51,28 @@ function write(value: CborValue, parts: Uint8Array[], depth: number): void {
   else if (value === null) parts.push(new Uint8Array([0xf6]));
   else if (value === undefined) parts.push(new Uint8Array([0xf7]));
   else if (typeof value === "object") {
-    const entries = Object.entries(value as { [key: string]: CborValue });
-    parts.push(head(5, entries.length));
-    for (const [key, item] of entries) { write(key, parts, depth + 1); write(item, parts, depth + 1); }
+    writeMap(Object.entries(value as { [key: string]: CborValue }), parts, depth);
   } else throw new Error("cbor: unsupported value");
+}
+
+// RFC 8949 §4.2.1: sort by encoded key length, then bytewise; reject duplicate encodings.
+function writeMap(entries: [CborValue, CborValue][], parts: Uint8Array[], depth: number): void {
+  const encoded = entries.map(([key, item]) => ({ key: cborEncode(key), item }));
+  encoded.sort((a, b) => a.key.length - b.key.length || lexCompare(a.key, b.key));
+  for (let index = 1; index < encoded.length; index++) {
+    const previous = encoded[index - 1].key;
+    const current = encoded[index].key;
+    if (previous.length === current.length && previous.every((byte, offset) => byte === current[offset])) throw new Error("cbor: duplicate map key");
+  }
+  parts.push(head(5, encoded.length));
+  for (const entry of encoded) { parts.push(entry.key); write(entry.item, parts, depth + 1); }
+}
+
+function lexCompare(a: Uint8Array, b: Uint8Array): number {
+  for (let index = 0; index < Math.min(a.length, b.length); index++) {
+    if (a[index] !== b[index]) return a[index] - b[index];
+  }
+  return a.length - b.length;
 }
 
 export function cborDecode(bytes: Uint8Array): CborValue {

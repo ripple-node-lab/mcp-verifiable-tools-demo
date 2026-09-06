@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   CallToolResult, ClientCapabilities, EXTENSION_ID, HPKE_INFO_REPLY, JsonValue, META_CLIENT_CAPABILITIES,
-  PROTOCOL_VERSION, RequestMeta, TASKS_EXTENSION_ID, ToolDescriptorMeta,
+  PINNED_CIRCUITS, PROTOCOL_VERSION, RequestMeta, TASKS_EXTENSION_ID, ToolDescriptorMeta,
   VerifiableToolsCapability, b64u, clientCapabilities, expectedCircuitHash, freshNonce, hpkeOpen,
   isRecord, jcs, unb64u, verifiableCapability
 } from "@demo/protocol";
@@ -63,7 +63,7 @@ export class VerifiableClient {
       const descriptor = extensionMeta as unknown as ToolDescriptorMeta;
       const expected = expectedCircuitHash(name);
       const formats = isRecord(descriptor.formats) ? Object.entries(descriptor.formats) : [];
-      if (descriptor.circuitHash !== expected || formats.some(([format, value]) => isRecord(value) && typeof value.circuitHash === "string" && value.circuitHash !== expectedCircuitHash(name, format))) throw new Error(`tool descriptor circuitHash mismatch for ${name}`);
+      if (descriptor.circuitHash !== expected || formats.some(([format, value]) => isRecord(value) && typeof value.circuitHash === "string" && PINNED_CIRCUITS[name]?.formats?.[format] !== undefined && value.circuitHash !== expectedCircuitHash(name, format))) throw new Error(`tool descriptor circuitHash mismatch for ${name}`);
       descriptors.set(name, descriptor);
     }
     this.descriptors = descriptors;
@@ -97,7 +97,8 @@ export class VerifiableClient {
     const verificationKeyUri = format === undefined || descriptor === undefined
       ? undefined
       : descriptor.formats?.[format]?.verificationKeyUri ?? descriptor.verificationKeyUri;
-    return verifyResult(meta, { arguments: args, content: result.content, nonce: options.nonce, salt: options.salt, expectedCircuitHash: expectedCircuitHash(tool, format), verificationKeyUri }, verifiers);
+    const formatHash = format === undefined ? undefined : descriptor?.formats?.[format]?.circuitHash;
+    return verifyResult(meta, { arguments: args, content: result.content, nonce: options.nonce, salt: options.salt, expectedCircuitHash: formatHash ?? expectedCircuitHash(tool, format), verificationKeyUri }, verifiers);
   }
   async callAndVerify(name: string, args: JsonValue, proofFormat?: string): Promise<CallToolResult> {
     const value = await this.callTool(name, args, { proofFormat });

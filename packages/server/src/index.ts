@@ -51,7 +51,10 @@ export class DemoServer {
       const tee = options.teeNitro ? new TeeNitroProver({ userData, ...options.teeNitro }) : TeeNitroProver.fromMockFixtures(mockNitroFixturesDir(), { userData });
       this.provers.set(tee.format, tee);
     }
-    for (const prover of options.provers ?? []) this.provers.set(prover.format, prover);
+    for (const prover of options.provers ?? []) {
+      if (this.provers.has(prover.format)) throw new Error(`duplicate prover format: ${prover.format}`);
+      this.provers.set(prover.format, prover);
+    }
     this.signingPublicKey = String(this.signingProver.publicKey.export({ type: "spki", format: "pem" }));
     this.blindPublicKey = b64u(rawX25519Public(this.blindKeys.publicKey));
     this.httpServer = createServer((request, response) => {
@@ -141,8 +144,9 @@ export class DemoServer {
     if (!prover) throw new JsonRpcProtocolError(-32602, "unsupported proof format");
     const hash = circuitHash(tool);
     const descriptor = this.formatDescriptors[format]?.(hash) ?? {};
-    const verificationKeyUri = format === "demo-sig-v1" ? `${this.url}/vk/${hash}` : descriptor.verificationKeyUri;
-    const meta = await prover.prove({ circuitHash: hash, inputCommitment: input, outputCommitment: outputHash, nonce, output, verificationKeyUri }, { signal });
+    const effectiveHash = descriptor.circuitHash ?? hash;
+    const verificationKeyUri = format === "demo-sig-v1" ? `${this.url}/vk/${effectiveHash}` : descriptor.verificationKeyUri;
+    const meta = await prover.prove({ circuitHash: effectiveHash, inputCommitment: input, outputCommitment: outputHash, nonce, output, verificationKeyUri }, { signal });
     return { resultType: "complete", content: originalContent, isError: false, _meta: { [META_SERVER_INFO]: { name: "verifiable-tools-demo", version: "1.0.0" }, [EXTENSION_ID]: meta as unknown as RequestMeta[typeof EXTENSION_ID] } };
   }
   private getTask(request: JsonRpcRequest): JsonRpcResponse {
