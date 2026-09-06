@@ -1,6 +1,6 @@
 # Phase 2-b benchmarks
 
-Generated: 2026-09-06T07:27:42.665Z
+Generated: 2026-09-06T07:53:51.885Z
 Machine: devin-box (linux 5.15.200, x64, 2 CPUs)
 Node: v20.18.1
 Packages: snarkjs 0.7.6; noir_js 1.0.0-beta.26; bb.js 5.2.0
@@ -9,10 +9,10 @@ Ten sequential `{a:20,b:22}` calls per format. Prove time includes the in-proces
 
 | Format | Median prove ms | P90 prove ms | Median verify ms | Proof bytes | VK document bytes | Prover artifact bytes | RSS delta bytes |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| snarkjs-v2 | 135.97 | 143.24 | 9.82 | 722 | 3297 | 75646 | 35614720 |
-| noir-v1 | 137.05 | 139.18 | 5.67 | 14656 | 4935 | 1260 | 107524096 |
-| demo-sig-v1 | 0.93 | 0.95 | 0.31 | 64 | 113 | 0 | 0 |
-| demo-commit-v1 | 0.82 | 1.01 | 0.05 | 32 | 113 | 0 | 126976 |
+| snarkjs-v2 | 143.03 | 150.84 | 9.17 | 725 | 3297 | 75646 | 73170944 |
+| noir-v1 | 137.62 | 139.01 | 5.68 | 14656 | 4935 | 1260 | 139612160 |
+| demo-sig-v1 | 0.95 | 1.04 | 0.31 | 64 | 113 | 0 | 2310144 |
+| demo-commit-v1 | 0.86 | 1.04 | 0.05 | 32 | 113 | 0 | 2146304 |
 
 ## Reproduction
 

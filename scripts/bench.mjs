@@ -4,6 +4,8 @@ import process from "node:process";
 import { startServer } from "@demo/server";
 import { VerifiableClient } from "@demo/client";
 import { EXTENSION_ID } from "@demo/protocol";
+import { closeProverWorker as closeNoirWorker } from "@demo/prover-noir";
+import { closeProverWorker as closeSnarkjsWorker } from "@demo/prover-snarkjs";
 
 const root = new URL("../", import.meta.url);
 const formats = ["snarkjs-v2", "noir-v1", "demo-sig-v1", "demo-commit-v1"];
@@ -81,4 +83,6 @@ try {
   console.log(text);
 } finally {
   await server.close();
+  closeSnarkjsWorker();
+  closeNoirWorker();
 }

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { EXTENSION_ID, expectedCircuitHash } from "@demo/protocol";
+import { EXTENSION_ID, META_CLIENT_CAPABILITIES, clientCapabilities, expectedCircuitHash } from "@demo/protocol";
 import { VerifiableClient } from "@demo/client";
-import { withServer, withServerOptions, expectComplete, expectTask, rpc } from "./helpers.js";
+import { waitForControllersGone, waitForTaskWorking, withServer, withServerOptions, expectComplete, expectTask, rpc } from "./helpers.js";
 
 test("noir-v1 proves and verifies add results", async () => {
   await withServer(async (server) => {
@@ -67,6 +67,12 @@ test("noir-v1 rejects out-of-range and non-integer arguments", async () => {
     client.setCapabilities({ proofFormats: discovery.proofFormats });
     await assert.rejects(() => client.callTool("add", { a: 0x100000000, b: 22 }, { proofFormat: "noir-v1" }));
     await assert.rejects(() => client.callTool("add", { a: 1.5, b: 22 }, { proofFormat: "noir-v1" }));
+    const overflow = await rpc(server, "tools/call", {
+      name: "add",
+      arguments: { a: 0xffffffff, b: 1 },
+      _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["noir-v1"]) }
+    }, { "Mcp-Name": "add" });
+    assert.equal(overflow.error?.code, -32602);
   });
 });
 
@@ -77,7 +83,10 @@ test("noir-v1 task proving can be cancelled", async () => {
     client.setCapabilities({ proofFormats: discovery.proofFormats }, true);
     const call = await client.callTool("add", { a: 20, b: 22 }, { proofFormat: "noir-v1" });
     const task = expectTask(call.result);
+    await waitForTaskWorking(server, task.taskId);
     const cancelled = await rpc(server, "tasks/cancel", { taskId: task.taskId });
     assert.equal(cancelled.result?.status, "cancelled");
+    await waitForControllersGone(server);
+    assert.equal(server.tasks.controllerCount, 0);
   });
 });

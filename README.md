@@ -80,6 +80,10 @@ The `add` tool also advertises two real in-process proof profiles:
 - `noir-v1`: UltraHonk over the committed Noir `u32` addition circuit. It is a
   real proof and requires no trusted setup.
 
+Both ZK profiles require `a`, `b`, and the checked `u32` sum `a + b` to be in
+`[0, 2^32 - 1]`; overflowing or otherwise invalid arguments are rejected with
+`-32602`.
+
 `circuitHash` is `0x` plus SHA-256 of the exact verification-key document bytes
 served at `verificationKeyUri`. The committed source and generated artifacts
 are under `packages/prover-snarkjs/circuits` and
@@ -124,6 +128,9 @@ binding は実装していません。
 Powers of Tau による**安全でないデモ専用**の trusted setup を使います。
 後者は trusted setup 不要です。`circuitHash` は `verificationKeyUri` で
 配信される検証鍵文書の正確なバイト列の SHA-256（`0x` 付き）です。
+両形式とも `a`、`b`、および checked `u32` の和 `a + b` は
+`[0, 2^32 - 1]` に収まらなければならず、オーバーフローや不正な引数は
+`-32602` で拒否されます。
 
 Circom / Nargo が利用できる環境では `./scripts/build-circuits.sh` で再構築
 できます。ローカル Powers of Tau の `.ptau` と中間 zkey はコミットせず、

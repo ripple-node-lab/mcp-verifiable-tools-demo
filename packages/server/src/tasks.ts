@@ -6,6 +6,7 @@ export class TaskStore {
   private readonly controllers = new Map<string, AbortController>();
   private readonly ttlMs: number;
   constructor(options: TaskStoreOptions = {}) { this.ttlMs = options.ttlMs ?? 60000; }
+  get controllerCount(): number { return this.controllers.size; }
   create(produce: (signal: AbortSignal) => Promise<CallToolResult>): TaskResult {
     this.sweep();
     const taskId = `task-${randomUUID()}`;

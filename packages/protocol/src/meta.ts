@@ -38,7 +38,8 @@ export function isRecord(value: unknown): value is { [key: string]: JsonValue } 
 export function parseAddArguments(value: JsonValue): { a: number; b: number } | undefined {
   if (!isRecord(value) ||
       typeof value.a !== "number" || !Number.isInteger(value.a) || value.a < 0 || value.a > 0xffffffff ||
-      typeof value.b !== "number" || !Number.isInteger(value.b) || value.b < 0 || value.b > 0xffffffff) return undefined;
+      typeof value.b !== "number" || !Number.isInteger(value.b) || value.b < 0 || value.b > 0xffffffff ||
+      value.a + value.b > 0xffffffff) return undefined;
   return { a: value.a, b: value.b };
 }
 function circuitHash(tool: string): string {

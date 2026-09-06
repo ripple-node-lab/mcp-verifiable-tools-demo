@@ -1,4 +1,6 @@
 import { startServer } from "@demo/server";
+import { closeProverWorker as closeNoirWorker, destroy as destroyNoir } from "@demo/prover-noir";
+import { closeProverWorker as closeSnarkjsWorker } from "@demo/prover-snarkjs";
 import { VerifiableClient } from "./client.js";
 import { EXTENSION_ID } from "@demo/protocol";
 const server = await startServer({ port: 0 });
@@ -41,4 +43,7 @@ try {
   process.exitCode = 1;
 } finally {
   await server.close();
+  closeSnarkjsWorker();
+  closeNoirWorker();
+  await destroyNoir();
 }

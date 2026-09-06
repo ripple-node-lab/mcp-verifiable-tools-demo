@@ -8,7 +8,7 @@ import {
   outputCommitment, rawX25519Public, tasksDeclared, verifiableCapability
 } from "@demo/protocol";
 import { DemoCommitProver, DemoSigProver, Prover } from "@demo/prover";
-import { prover as noirProver, artifacts as noirArtifacts, FORMAT as NOIR_FORMAT, destroy as destroyNoir } from "@demo/prover-noir";
+import { prover as noirProver, artifacts as noirArtifacts, FORMAT as NOIR_FORMAT } from "@demo/prover-noir";
 import { prover as snarkProver, artifacts as snarkArtifacts, FORMAT as SNARK_FORMAT } from "@demo/prover-snarkjs";
 import { discoverResponse } from "./discover.js";
 import { errorResponse, handleMcpPost, paramsRecord } from "./http.js";
@@ -70,7 +70,6 @@ export class DemoServer {
   }
   async close(): Promise<void> {
     this.results.close();
-    await destroyNoir();
     await new Promise<void>((resolve, reject) => this.httpServer.close((error) => error ? reject(error) : resolve()));
   }
   get url(): string { return `http://${this.host}:${this.port}`; }

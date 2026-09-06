@@ -28,16 +28,7 @@ export async function verifySnarkjs(meta: VerifiableToolsMeta, context: VerifyCo
   const vk = JSON.parse(new TextDecoder().decode(bytes)) as JsonValue;
   const proof = JSON.parse(Buffer.from(meta.proof, "base64url").toString("utf8")) as JsonValue;
   const groth16 = await groth16Promise;
-  const processState = process as unknown as { browser?: boolean };
-  const previousBrowser = processState.browser;
-  // snarkjs verify lacks a single-thread option; browser mode avoids leaked ffjavascript workers.
-  processState.browser = true;
-  let valid: boolean;
-  try {
-    valid = await groth16.verify(vk, expectedTail, proof);
-  } finally {
-    processState.browser = previousBrowser;
-  }
+  const valid = await groth16.verify(vk, expectedTail, proof);
   checkAbort(signal);
   return valid;
 }

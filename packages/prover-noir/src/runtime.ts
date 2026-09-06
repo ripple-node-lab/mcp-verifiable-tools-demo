@@ -5,7 +5,10 @@ export const circuitHash = "0x70d3e40690fb97fbcace5ce1d3114282e7dfff1387b125767b
 let apiPromise: Promise<Barretenberg> | undefined;
 
 export async function getApi(): Promise<Barretenberg> {
-  apiPromise ??= Barretenberg.new({ threads: 1 });
+  apiPromise ??= Barretenberg.new({ threads: 1 }).catch((error) => {
+    apiPromise = undefined;
+    throw error;
+  });
   return await apiPromise;
 }
 export async function destroy(): Promise<void> {

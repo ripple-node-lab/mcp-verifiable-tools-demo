@@ -663,6 +663,10 @@ The reference demo implements these concrete profiles for `add`. Both bind
   verification-key document is JCS JSON
   `{"format":"noir-v1","vk":"<base64url raw vk bytes>"}`.
 
+Both profiles require `a`, `b`, and the checked `u32` sum `a + b` to fit in
+`[0, 2^32 - 1]`; overflowing or otherwise invalid arguments MUST be rejected
+with `-32602`.
+
 For both profiles, `circuitHash` is `0x` plus SHA-256 of the exact bytes served
 at `verificationKeyUri`, including JSON serialization and whitespace.
 
