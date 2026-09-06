@@ -1,1 +1,0 @@
-/home/ubuntu/repos/mcp-verifiable-tools-demo/sidecars/risc0/wasm-verify/target/wasm32-unknown-unknown/release/risc0_wasm_verify.wasm: /home/ubuntu/repos/mcp-verifiable-tools-demo/sidecars/risc0/wasm-verify/src/lib.rs
