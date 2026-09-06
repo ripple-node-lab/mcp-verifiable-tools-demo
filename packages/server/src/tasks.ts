@@ -14,7 +14,7 @@ export class TaskStore {
     this.tasks.set(taskId, task);
     const controller = new AbortController();
     this.controllers.set(taskId, controller);
-    void Promise.resolve().then(() => produce(controller.signal))
+    void Promise.resolve().then(() => { controller.signal.throwIfAborted(); return produce(controller.signal); })
       .then((result) => this.update(taskId, "completed", result))
       .catch((error: unknown) => this.fail(taskId, error))
       .finally(() => this.controllers.delete(taskId));

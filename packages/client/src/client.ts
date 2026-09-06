@@ -19,7 +19,7 @@ export class VerifiableClient {
   private descriptors = new Map<string, ToolDescriptorMeta>();
   constructor(private readonly endpoint: string) { this.registry = new VerificationKeyRegistry([new URL(endpoint).origin]); this.sigVerifier = new DemoSigVerifier(this.registry); }
   async discover(): Promise<DiscoverResult> {
-    this.descriptors.clear();
+    const descriptors = new Map<string, ToolDescriptorMeta>();
     const response = await this.request("server/discover", {});
     const result = asRecord(response.result);
     const extension = asRecord(asRecord(asRecord(result.capabilities).extensions)[EXTENSION_ID]);
@@ -41,8 +41,9 @@ export class VerifiableClient {
       const expected = expectedCircuitHash(name);
       const formats = isRecord(descriptor.formats) ? Object.entries(descriptor.formats) : [];
       if (descriptor.circuitHash !== expected || formats.some(([format, value]) => isRecord(value) && typeof value.circuitHash === "string" && value.circuitHash !== expectedCircuitHash(name, format))) throw new Error(`tool descriptor circuitHash mismatch for ${name}`);
-      this.descriptors.set(name, descriptor);
+      descriptors.set(name, descriptor);
     }
+    this.descriptors = descriptors;
     this.discovered = { proofFormats, serverProofFormats: formats, blindPublicKeys, blindEncryptionSchemes, blindExecution, resultTtlMs };
     return this.discovered;
   }
