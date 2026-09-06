@@ -7,10 +7,12 @@ produced vk is sha256-compared against the committed file to catch drift).
 """
 
 import asyncio
+import atexit
 import base64
 import hashlib
 import json
 import os
+import signal
 import sys
 import tempfile
 import threading
@@ -63,15 +65,20 @@ def prove_job(a: int, b: int) -> tuple[bytes, list]:
 
 def read_json_body(handler) -> dict:
     length = handler.headers.get("content-length")
-    if length is not None and int(length) > MAX_BODY:
-        raise ValueError("body too large")
-    data = handler.rfile.read(min(int(length or 0), MAX_BODY + 1))
-    if len(data) > MAX_BODY:
-        raise ValueError("body too large")
     try:
-        return json.loads(data)
+        limit = int(length) if length is not None else 0
+    except (TypeError, ValueError):
+        raise ValueError("invalid content-length")
+    if limit > MAX_BODY:
+        raise ValueError("body too large")
+    data = handler.rfile.read(limit)
+    try:
+        value = json.loads(data)
     except Exception:
         raise ValueError("invalid JSON")
+    if not isinstance(value, dict):
+        raise ValueError("JSON body must be an object")
+    return value
 
 
 def _parse_u32(value) -> int | None:
@@ -216,24 +223,26 @@ def main():
         _max_proofs = 1
     _proof_slots = threading.Semaphore(_max_proofs)
 
+    # pk.json lives in a process-lifetime temp dir, cleaned up on any exit
+    # path (SIGTERM/SIGINT run through atexit via sys.exit).
+    pk_dir = tempfile.TemporaryDirectory()
+    atexit.register(pk_dir.cleanup)
+    PK_PATH = os.path.join(pk_dir.name, "pk.json")
+    vk_regen = os.path.join(pk_dir.name, "vk.json")
+
     # Regenerate the proving key; the vk must be byte-identical to the
     # committed artifact — drift means the artifact set is inconsistent.
-    with tempfile.TemporaryDirectory() as tmp:
-        pk_path = os.path.join(tmp, "pk.json")
-        vk_regen = os.path.join(tmp, "vk.json")
-        ezkl.setup(MODEL, vk_regen, pk_path, SRS)
-        with open(vk_regen, "rb") as f:
-            if hashlib.sha256(f.read()).hexdigest() != circuit_hash()[2:]:
-                print("ezkl vk drifted from committed artifacts", file=sys.stderr)
-                sys.exit(1)
-        # pk must persist for the process lifetime — move to a stable temp file
-        fd, PK_PATH = tempfile.mkstemp(suffix="-pk.json")
-        os.close(fd)
-        os.replace(pk_path, PK_PATH)
+    ezkl.setup(MODEL, vk_regen, PK_PATH, SRS)
+    with open(vk_regen, "rb") as f:
+        if hashlib.sha256(f.read()).hexdigest() != circuit_hash()[2:]:
+            print("ezkl vk drifted from committed artifacts", file=sys.stderr)
+            sys.exit(1)
 
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "4300"))
     server = ThreadingHTTPServer((host, port), Handler)
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, lambda _s, _f: sys.exit(0))
     print(
         f"ezkl sidecar listening on {host}:{port} circuitHash={circuit_hash()} "
         f"maxConcurrentProofs={_max_proofs}",
