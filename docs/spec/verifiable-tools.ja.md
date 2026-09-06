@@ -139,7 +139,10 @@ io.modelcontextprotocol/verifiable-tools
       "extensions": {
         "io.modelcontextprotocol/verifiable-tools": {
           "proofFormats": ["ezkl-v1", "tee-sgx-v1"],
-          "blindExecution": true
+          "blindExecution": true,
+          "blindEncryptionSchemes": ["hpke-v1"],
+          "blindPublicKey": "<base64url X25519 public key>",
+          "resultTtlMs": 86400000
         },
         "io.modelcontextprotocol/tasks": {}
       }
@@ -191,7 +194,7 @@ io.modelcontextprotocol/verifiable-tools
 |---|---|---|
 | `requestedProofFormat` | `string` | ネゴシエートされた共通集合から選ぶ優先形式 |
 | `nonce` | `string` | `0x` プレフィックス付きの小文字 hex で、16〜64 バイトをエンコードするもの（`^0x[0-9a-f]{32,128}$`）。サーバーは証明に束縛して返さなければならない。§7.2 結果の束縛を参照 |
-| `replyPublicKey` | `string` | ブラインド呼び出し用。ツール出力も機密にする必要がある場合に、サーバーが `content` を暗号化する先のクライアント鍵 |
+| `replyPublicKey` | `string` | ブラインド呼び出し用：ツール出力も機密にする必要がある場合に、サーバーが `hpke-v1` で `content` を暗号化する先の base64url 形式の生 X25519 公開鍵。§暗号化された応答を参照 |
 
 HTTP トランスポート使用時は以下のヘッダーが必要：
 
@@ -247,13 +250,15 @@ Mcp-Name: calculateRisk
 | `verificationKeyUri` | `string` (URI) | 任意 | 検証鍵（VK）の取得先 |
 | `publicInputs` | `array` | 条件付き | 証明検証に必要な公開入力。順序は `[outputCommitment, inputCommitment, nonce, ...形式固有]`。純粋な TEE Attestation の場合は省略 |
 | `teeAttestation` | `string` | 任意 | TEE 内で実行されたことを示す Attestation |
-| `inputCommitment` | `string` | 推奨 | 使用した入力へのコミットメント。クライアントが同一入力で証明されたことを確認するために使用。コミットメントの構成は §7.2 結果の束縛を参照 |
-| `outputCommitment` | `string` | 推奨 | `content` の正規エンコーディングに対する `SHA-256`。証明された出力と返された出力が一致することを確認するために使用。§7.2 結果の束縛を参照 |
+| `inputCommitment` | `string` | 必須 | `proof` または `teeAttestation` が存在する場合は必須。使用した入力へのコミットメント。クライアントが同一入力で証明されたことを確認するために使用。コミットメントの構成は §7.2 結果の束縛を参照 |
+| `outputCommitment` | `string` | 必須 | `proof` または `teeAttestation` が存在する場合は必須。`content` の正規エンコーディングに対する `SHA-256`。証明された出力と返された出力が一致することを確認するために使用。§7.2 結果の束縛を参照 |
 | `nonce` | `string` | 条件付き | リクエストメタデータからクライアントが指定した `nonce` のエコー。クライアントが指定した場合は必須 |
 | `inputAttestations` | `object[]` | 任意 | ツールが消費した外部入力の provenance 証拠（例：zkTLS トランスクリプト証明、オラクル署名）。§7.4 入力 provenance を参照 |
 | `resultId` | `string` | 任意 | クライアントが後から `verifiable-tools/prove` に渡し、この結果の証明を取得できる不透明な識別子。§8.1 遅延証明を参照 |
+| `encryptedContent` | `boolean` | 任意 | §暗号化された応答に従って `content` が暗号化されたかどうか |
 
 サーバーは capability で宣言した `proofFormat` のみを返す。クライアントも宣言した形式のみを検証する。
+`proof` または `teeAttestation` を含む結果がいずれかのコミットメントを欠いている場合、検証者はそれを未検証（証明がない場合と同等）として扱わなければならない。
 
 ### 7.2 結果の束縛
 
@@ -386,7 +391,7 @@ verifiable-tools/prove
 
 `verifiable-tools/prove` は、`tools/call` と同じ MCP セッションおよびトランスポート上の通常の JSON-RPC リクエストである。これは双方が拡張をネゴシエートした後にのみ利用できる。`resultTtlMs` を広告していないサーバーは `-32601` で応答しなければならない。`resultId` は推測不能でなければならず（暗号学的に安全な乱数源から得た少なくとも 128 ビット）、プリンシパル（認可主体）および、トランスポートに存在する場合は元の呼び出しを行ったセッションに束縛されなければならない。サーバーは他の呼び出し元に対して、未知の識別子か認可されていない識別子かを区別せず、`data.reason: "resultNotFound"` を伴う `-32602` で応答しなければならない。`replyPublicKey` に暗号化して `content` を返したブラインド呼び出しの結果では、遅延応答も同じ方法で `content` を暗号化しなければならない。リクエストオプション（`proofFormat`、`nonce`）は `_meta` の下ではなく、`params` に直接置く。
 
-応答は、元の `content` とバイト単位で一致し、`_meta` に証明が追加された `CallToolResult` か、後者に解決されるタスクのいずれかである。サーバーは、広告した `resultTtlMs` の期間以上（`resultId` を返す場合は必須）、元の計算を証明できる十分な状態（入力またはそのコミットメント、出力、nonce）を保持しなければならない。その期間を過ぎた場合は、`data.reason: "resultExpired"` を伴う `-32602` を返してもよい。
+応答は、元の `content` とバイト単位で一致し、`_meta` に証明が追加された `CallToolResult` か、後者に解決されるタスクのいずれかである。サーバーは、選択した証明形式に必要なプライベート witness（ZK 形式では平文引数、TEE 形式では封印された実行記録を含む）を含む十分な状態を、出力および nonce とともに保持し、広告した `resultTtlMs` の期間以上（`resultId` を返す場合は必須）、元の計算を証明できなければならない。その期間を過ぎた場合は、`data.reason: "resultExpired"` を伴う `-32602` を返してもよい。
 
 どのモードが適切かは、`proofPolicy` で表すツール単位の判断である。`always` は低頻度・高価値の呼び出し（シナリオ C）に適し、`onDemand` と `sampled` は、監査される可能性自体が抑止力となる高頻度呼び出し（シナリオ B）に適する。`sampled` のもとで、証明不能な結果を返していたことが発覚したサーバーは、同じ期間の過去の結果についてもクライアントから信頼されないものとして扱うべきである。
 
@@ -428,7 +433,11 @@ Mcp-Method: verifiable-tools/call
 
 サーバーは TEE または ZK 回路内で復号・計算し、結果と証明を返す。平文引数は実行環境外にログやメモリとして残してはならない。サーバーは復号した `salt` と `arguments` から `inputCommitment` を再計算し、不一致の場合は `-32602` で呼び出しを拒否しなければならない。
 
-ブラインド実行は*入力*を隠すが、それだけでは*出力*に関する情報を隠さない。少数の秘密ビット（`approved`／`declined` など）の関数である出力を持つツールは、そのビットを運営者に漏らす。この形のツールは、クライアントがリクエストメタデータの `replyPublicKey` フィールドで指定した鍵に `hpke-v1` で `content` を暗号化して返すか、運営者が出力を読めない TEE 内で実行すべきである。
+ブラインド実行は*入力*を隠すが、それだけでは*出力*に関する情報を隠さない。少数の秘密ビット（`approved`／`declined` など）の関数である出力を持つツールは、そのビットを運営者に漏らす。この形のツールは、（§暗号化された応答を参照）出力をクライアントに暗号化して返すか、運営者が出力を読めない TEE 内で実行すべきである。
+
+#### 暗号化された応答
+
+`replyPublicKey` が存在する場合、サーバーは `content` を単一の `{ "type": "text", "text": "<base64url(enc || ciphertext)>" }` 要素として返さなければならず、結果の `_meta["io.modelcontextprotocol/verifiable-tools"].encryptedContent` は `true` でなければならない。暗号化はブラインド引数と同じスイートによる `hpke-v1` base mode とし、平文は `JCS(originalContent)`、AAD は `JCS({tool, inputCommitment, nonce})` とする（nonce がない場合はオブジェクトから省略する）。`outputCommitment` は*平文*の `originalContent` に対して計算しなければならないため、クライアントは先に復号してから通常の検証手順を実行する。`replyPublicKey` は非ブラインドの `tools/call` では無視する。
 
 ### 9.2 例
 
@@ -449,10 +458,12 @@ Mcp-Method: verifiable-tools/call
         "extensions": {
           "io.modelcontextprotocol/verifiable-tools": {
             "proofFormats": ["tee-sgx-v1"],
-            "blindExecution": true,
-            "nonce": "0x5f1c..."
+            "blindExecution": true
           }
         }
+      },
+      "io.modelcontextprotocol/verifiable-tools": {
+        "nonce": "0x5f1c..."
       }
     }
   }

@@ -142,7 +142,10 @@ Example `server/discover` response:
       "extensions": {
         "io.modelcontextprotocol/verifiable-tools": {
           "proofFormats": ["ezkl-v1", "tee-sgx-v1"],
-          "blindExecution": true
+          "blindExecution": true,
+          "blindEncryptionSchemes": ["hpke-v1"],
+          "blindPublicKey": "<base64url X25519 public key>",
+          "resultTtlMs": 86400000
         },
         "io.modelcontextprotocol/tasks": {}
       }
@@ -194,7 +197,7 @@ A client requesting verifiable output includes the extension under `extensions` 
 |---|---|---|
 | `requestedProofFormat` | `string` | Preferred format among the negotiated intersection. |
 | `nonce` | `string` | Lower-case hex with `0x` prefix encoding 16–64 bytes (`^0x[0-9a-f]{32,128}$`). The server MUST bind it into the proof and echo it back. See §Result binding. |
-| `replyPublicKey` | `string` | For blind calls: client key to which the server encrypts `content` when the tool's output must also stay confidential. |
+| `replyPublicKey` | `string` | For blind calls: base64url raw X25519 public key to which the server encrypts `content` under `hpke-v1` when the tool's output must also stay confidential. See §Encrypted replies. |
 
 On HTTP transports the request MUST also include:
 
@@ -250,13 +253,15 @@ Field definitions:
 | `verificationKeyUri` | `string` (URI) | Optional | Location of the verification key needed to check the proof. |
 | `publicInputs` | `array` | Conditional | Public inputs required to verify the proof, in the order `[outputCommitment, inputCommitment, nonce, ...format-specific]`. Omitted for pure TEE attestations. |
 | `teeAttestation` | `string` | Optional | A TEE attestation document, for cases where the computation ran inside a trusted execution environment. |
-| `inputCommitment` | `string` | Recommended | Commitment to the inputs used, so the client can verify that the proof was generated against the same arguments it supplied. See §Result binding for the commitment construction. |
-| `outputCommitment` | `string` | Recommended | `SHA-256` of the canonical encoding of `content`, so the client can verify that the proven output is the returned output. See §Result binding. |
+| `inputCommitment` | `string` | Required | REQUIRED whenever `proof` or `teeAttestation` is present. Commitment to the inputs used, so the client can verify that the proof was generated against the same arguments it supplied. See §Result binding for the commitment construction. |
+| `outputCommitment` | `string` | Required | REQUIRED whenever `proof` or `teeAttestation` is present. `SHA-256` of the canonical encoding of `content`, so the client can verify that the proven output is the returned output. See §Result binding. |
 | `nonce` | `string` | Conditional | Echo of the client-supplied `nonce` from the request metadata. REQUIRED when the client supplied one. |
 | `inputAttestations` | `object[]` | Optional | Provenance evidence for external inputs consumed by the tool (e.g. a zkTLS transcript proof, an oracle signature). See §Input provenance. |
 | `resultId` | `string` | Optional | Opaque identifier the client can later pass to `verifiable-tools/prove` to obtain a proof for this result. See §Deferred proofs. |
+| `encryptedContent` | `boolean` | Optional | Whether `content` was encrypted under §Encrypted replies. |
 
 The server MUST only emit `proofFormat` values it advertised in its capability object. The client MUST only attempt to verify formats it advertised.
+A result that carries `proof` or `teeAttestation` but lacks either commitment MUST be treated by the verifier as unverified (equivalent to no proof).
 
 ### Result binding
 
@@ -389,7 +394,7 @@ verifiable-tools/prove
 
 `verifiable-tools/prove` is an ordinary JSON-RPC request on the same MCP session and transport as `tools/call`. It is available only after the extension has been negotiated by both parties; servers that have not advertised `resultTtlMs` MUST answer `-32601`. `resultId` MUST be unguessable (at least 128 bits from a cryptographically secure random source) and MUST be bound to the principal (authorization identity) and, where the transport has one, the session that made the original call; the server MUST answer `-32602` with `data.reason: "resultNotFound"` for any other caller, without distinguishing unknown from unauthorized identifiers. For results of blind calls whose `content` was returned encrypted to `replyPublicKey`, the deferred response MUST encrypt `content` the same way. Request options (`proofFormat`, `nonce`) live in `params` directly, not under `_meta`.
 
-The response is either a `CallToolResult` whose `content` is byte-identical to the original and whose `_meta` now contains the proof, or a task (`resultType: "task"`) that resolves to one. The server MUST retain enough state (inputs or their commitment, output, nonce) to prove the original computation for at least the `resultTtlMs` it advertises (REQUIRED when emitting `resultId`); after that it MAY return `-32602` with `data.reason: "resultExpired"`.
+The response is either a `CallToolResult` whose `content` is byte-identical to the original and whose `_meta` now contains the proof, or a task (`resultType: "task"`) that resolves to one. The server MUST retain enough state, including any private witness required by the selected proof format (the plaintext arguments for ZK formats; the sealed execution record for TEE formats), together with the output and nonce, to prove the original computation for at least the `resultTtlMs` it advertises (REQUIRED when emitting `resultId`); after that it MAY return `-32602` with `data.reason: "resultExpired"`.
 
 Which mode is appropriate is a per-tool decision expressed by `proofPolicy`. `always` suits low-volume, high-value calls (Scenario C); `onDemand` and `sampled` suit high-volume calls where the *possibility* of being audited is the deterrent (Scenario B). A server that is caught returning an unprovable result under `sampled` should be treated by the client as untrusted for all past results in the same period.
 
@@ -431,7 +436,11 @@ Mcp-Method: verifiable-tools/call
 
 The server decrypts and evaluates the arguments inside a TEE or ZK circuit, computes the tool result, and returns the result with verifiable metadata. The plaintext arguments MUST NOT be logged or retained outside the execution environment. The server MUST recompute `inputCommitment` from the decrypted `salt` and `arguments` and reject the call with `-32602` on mismatch.
 
-Blind execution hides *inputs*; it does not, by itself, hide anything about the *output*. A tool whose output is a function of a few private bits (e.g. `approved`/`declined`) leaks those bits to the operator. Tools with this shape SHOULD either return the output encrypted to the client (an `hpke-v1` reply encrypted to a client-supplied key in the request metadata, field `replyPublicKey`) or run inside a TEE whose operator cannot read outputs.
+Blind execution hides *inputs*; it does not, by itself, hide anything about the *output*. A tool whose output is a function of a few private bits (e.g. `approved`/`declined`) leaks those bits to the operator. Tools with this shape SHOULD either return the output encrypted to the client (see §Encrypted replies) or run inside a TEE whose operator cannot read outputs.
+
+#### Encrypted replies
+
+When `replyPublicKey` is present the server MUST return `content` as a single `{ "type": "text", "text": "<base64url(enc || ciphertext)>" }` element, and the result `_meta["io.modelcontextprotocol/verifiable-tools"].encryptedContent` MUST be `true`. Encryption is `hpke-v1` base mode with the same suite as blind arguments, plaintext = `JCS(originalContent)`, AAD = `JCS({tool, inputCommitment, nonce})` (nonce omitted from the object when absent). `outputCommitment` MUST be computed over the *plaintext* `originalContent`, so the client decrypts first and then runs the normal verification steps. `replyPublicKey` is ignored for non-blind `tools/call`.
 
 Example request:
 
@@ -452,10 +461,12 @@ Example request:
         "extensions": {
           "io.modelcontextprotocol/verifiable-tools": {
             "proofFormats": ["tee-sgx-v1"],
-            "blindExecution": true,
-            "nonce": "0x5f1c..."
+            "blindExecution": true
           }
         }
+      },
+      "io.modelcontextprotocol/verifiable-tools": {
+        "nonce": "0x5f1c..."
       }
     }
   }
