@@ -1,3 +1,5 @@
 node_modules
 dist
 tests/dist
+packages/prover-snarkjs/circuits/add/pot*.ptau
+packages/prover-snarkjs/circuits/add/add_0000.zkey

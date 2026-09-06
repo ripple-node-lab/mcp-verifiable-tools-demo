@@ -1,0 +1,14 @@
+{
+  "name": "@demo/prover-snarkjs",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": { ".": { "types": "./dist/src/index.d.ts", "import": "./dist/src/index.js" } },
+  "dependencies": {
+    "@demo/protocol": "1.0.0",
+    "@demo/prover": "1.0.0",
+    "snarkjs": "0.7.6"
+  },
+  "devDependencies": {
+    "circomlib": "2.0.5"
+  }
+}
