@@ -5,3 +5,5 @@ export * from "./errors.js";
 export * from "./jcs.js";
 export * from "./binding.js";
 export * from "./hpke.js";
+export * from "./cbor.js";
+export * from "./cose.js";

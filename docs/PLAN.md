@@ -70,12 +70,15 @@ mcp-verifiable-tools-demo/
 │   │       ├── constants.ts      # EXTENSION_ID, TASKS_EXTENSION_ID, PROTOCOL_VERSION, META キー
 │   │       ├── types.ts          # VerifiableToolsCapability, VerifiableToolsMeta, VerifiableCallParams ...
 │   │       ├── meta.ts           # clientCapabilities 生成 / 抽出、ネゴシエーション判定（proofFormats の交差）
+│   │       ├── cbor.ts           # CBOR（RFC 8949）エンコード / デコード（Phase 3-a）
+│   │       ├── cose.ts           # COSE_Sign1（RFC 9052）エンコード / デコード（Phase 3-a）
 │   │       └── index.ts
 │   ├── prover/                   # 証明バックエンド（サーバー側）
 │   │   └── src/
 │   │       ├── prover.ts         # interface Prover { format; prove(input) }
 │   │       ├── demo-sig.ts       # demo-sig-v1（Ed25519）
 │   │       ├── demo-commit.ts    # demo-commit-v1（SHA-256）
+│   │       ├── tee-nitro.ts      # tee-nitro-v1（COSE_Sign1 attestation を生成、モック fixtures。Phase 3-a）
 │   │       └── index.ts
 │   ├── verifier/                 # 証明検証（クライアント側）
 │   │   └── src/
@@ -83,6 +86,7 @@ mcp-verifiable-tools-demo/
 │   │       ├── demo-sig.ts
 │   │       ├── demo-commit.ts
 │   │       ├── registry.ts       # verificationKeyUri → 公開鍵の取得と circuitHash ごとのピン留め
+│   │       ├── tee-nitro.ts      # tee-nitro-v1 検証（chain / PCR / user_data / nonce / freshness。Phase 3-a）
 │   │       └── index.ts
 │   ├── server/                   # MCP 2026-07-28 Streamable HTTP サーバー
 │   │   └── src/
@@ -96,12 +100,21 @@ mcp-verifiable-tools-demo/
 │   │       │   ├── riskScore.ts  # riskScore(symbol): 遅延付き非同期証明（tasks）
 │   │       │   └── creditCheck.ts# privateCreditCheck: ブラインド専用
 │   │       └── main.ts           # `npm run server`
+│   ├── prover-snarkjs/           # snarkjs-v2（Circom/Groth16。Phase 2-b）
+│   ├── prover-noir/              # noir-v1（Noir/UltraHonk。Phase 2-b）
+│   ├── prover-sidecar/           # sidecar HTTP 契約アダプタ（Phase 3-a）
+│   │   └── src/
+│   │       ├── contract.ts       # GET /healthz, POST /prove, POST /verify, GET /vk/{circuitHash}
+│   │       ├── prover.ts         # SidecarProver（binding フィールドの echo を強制検査）
+│   │       ├── verifier.ts       # SidecarVerifier
+│   │       └── health.ts
+│   ├── sidecar-mock/             # 契約のリファレンス実装（demo-sig-sidecar-v1, node:http。Phase 3-a）
 │   └── client/                   # 検証クライアント
 │       └── src/
 │           ├── client.ts         # discover → capability 交差 → tools/call → verify
 │           ├── tasks.ts          # pollIntervalMs に従う tasks/get ポーリング
 │           ├── blind.ts          # 引数暗号化 + inputCommitment 生成 → verifiable-tools/call
-│           └── main.ts           # `npm run demo` で 3 シナリオを順に実行
+│           └── main.ts           # `npm run demo` で 7 シナリオを順に実行
 ├── examples/                     # 仕様書と同じ JSON メッセージのサンプル（fixture としてテストでも使用）
 │   ├── discover.json
 │   ├── tools-call.request.json
@@ -109,13 +122,21 @@ mcp-verifiable-tools-demo/
 │   ├── tools-call.task.json
 │   ├── tasks-get.request.json
 │   └── verifiable-tools-call.request.json
+├── sidecars/                     # sidecar 群（Phase 3-a）
+│   ├── README.md                 # HTTP 契約と起動手順
+│   ├── mock/Dockerfile           # sidecar-mock のコンテナ
+│   └── nitro/                    # gen-mock-fixtures.sh + mock-fixtures/（モック root CA / PCR / 鍵）
+├── docker-compose.yml            # `docker compose --profile sidecar`（opt-in）
 ├── tests/                        # node:test（統合テスト）
 │   ├── negotiation.test.ts
 │   ├── sync-proof.test.ts
 │   ├── async-tasks.test.ts
 │   ├── blind-call.test.ts
-│   └── negative.test.ts
-└── .github/workflows/ci.yml      # npm ci && npm run build && npm test
+│   ├── negative.test.ts
+│   ├── cbor.test.ts              # Phase 3-a
+│   ├── tee-nitro.test.ts         # Phase 3-a
+│   └── sidecar.test.ts           # Phase 3-a（SIDECAR_URL 指定時は外部 sidecar も検査）
+└── .github/workflows/ci.yml      # npm ci && npm run build && npm test + sidecar opt-in ジョブ
 ```
 
 ## 4. 各コンポーネントの仕様
@@ -157,6 +178,9 @@ mcp-verifiable-tools-demo/
 | `deferred-proof.test.ts`（Phase 2-a） | `proofPolicy: onDemand` の tool → `resultId` のみ返る → `verifiable-tools/prove` で `content` がバイト一致し証明が検証成功 / `resultTtlMs` 経過後は `resultExpired` |
 | `provenance.test.ts`（Phase 3） | `requireInputProvenance: true` で `inputAttestations` 欠落・不正 → 主証明が有効でも拒否 |
 | `randomness.test.ts`（Phase 2-b） | snarkjs / Noir の同一入力でも異なる証明が生成され、双方が検証できること |
+| `cbor.test.ts`（Phase 3-a） | RFC 8949 Appendix A ベクトルの decode / canonical encode、indefinite-length・trailing・truncated 入力の拒否 |
+| `tee-nitro.test.ts`（Phase 3-a） | `tee-nitro-v1` 正常系（attestation 検証・`verificationKeyUri` 非出力・tools/list 記述子）+ `verifyDetailed` の否定系（measurement / chain / user_data / nonce / freshness / 証明署名 / malformed）+ `teeNitro: false` で非広告・requireProof エラー |
+| `sidecar.test.ts`（Phase 3-a） | mock sidecar（`demo-sig-sidecar-v1`）の prove / verify 往復、sidecar が binding フィールドを改変・停止している場合は JSON-RPC エラーで結果を返さない、AbortSignal、`sidecarHealth`、`SIDECAR_URL` 指定時の外部 sidecar 疎通 |
 
 ## 5. 実装フェーズ
 
@@ -165,7 +189,10 @@ mcp-verifiable-tools-demo/
 | 1（完了） | 上記構成の雛形 + `demo-sig-v1` / `demo-commit-v1` + 3 シナリオ + テスト + CI | `npm run demo` / `npm test` が通る |
 | 2-a（完了） | `outputCommitment` / `nonce` / salted JCS commitments / `tools/list` descriptors / `formats` overrides / `priceQuote` on-demand proofs + `verifiable-tools/prove` / `resultTtlMs` / abortable `tasks/cancel` / `replyPublicKey` / RFC 9180 base-mode `hpke-v1` を protocol・server・client に実装し、binding / deferred / descriptor / HPKE 否定テストを追加。 | 既存 2 形式のまま、改訂仕様の Phase 2-a フィールドが `npm test` で検証される |
 | 2-b 実 ZK（完了） | `snarkjs-v2`（Groth16、circom `add` 回路を事前コンパイルして `wasm` / `zkey` / `vk.json` を同梱。ローカル単一参加者 trusted setup はデモ専用）と Noir（`@noir-lang/noir_js` + `@aztec/bb.js`, UltraHonk, trusted setup 不要）を別 workspace（`packages/prover-snarkjs`, `packages/prover-noir`）で実装し、`npm test` 既定に含めた。 | 実 ZK 証明 2 形式、実測値は [`docs/BENCHMARKS.md`](BENCHMARKS.md) |
-| 3 sidecar 合成 | `packages/prover-sidecar`（TS アダプタ）+ `sidecars/{risc0,ezkl,nitro,tlsn}/Dockerfile`。`risc0-v1`: Rust host を Docker 化し `prove(circuitHash, witness) -> receipt` を HTTP で提供、検証は Rust sidecar `/verify` か `risc0-zkvm` verifier の WASM ビルド（可否を Phase 3 冒頭で PoC）。`ezkl-v1`: 生成は Python `ezkl` sidecar、検証は `@ezkljs/engine`（WASM）で TS 側（「生成は他言語、検証は TS」の非対称性を体現）。`tee-nitro-v1`: COSE_Sign1 attestation の検証（chain / PCR / user-data 鍵束縛 / nonce）を TS で実装し、ローカル CI ではモック attestation でフローを通す。`zktls-tlsn-v1`: `riskScore` の価格取得に TLSNotary sidecar を挟み `inputAttestations` を出す。CI は `npm test`（必須）と `docker compose --profile sidecar`（opt-in ジョブ）に分割 | SEP 本文 Reference Implementation 節の Phase 3 項目を埋める |
+| 3-a（完了）sidecar 基盤 + `tee-nitro-v1` | sidecar HTTP 契約（`/healthz` / `/prove` / `/verify` / `/vk/{circuitHash}`）+ `packages/prover-sidecar` アダプタ（binding フィールドの echo 検査）+ `packages/sidecar-mock`（`demo-sig-sidecar-v1`）+ `docker compose --profile sidecar` / CI opt-in ジョブ。`tee-nitro-v1` は COSE_Sign1 / CBOR を protocol に実装し、chain / PCR measurement / user_data 鍵束縛 / nonce / freshness の検証を TS で実装。attestation は `sidecars/nitro/mock-fixtures` のモック root CA・モック PCR で発行（AWS Nitro root ではない） | sidecar 形式が opt-in で動き、`teeAttestation` が検証可能な契約になる |
+| 3-b `risc0-v1` | `sidecars/risc0/Dockerfile`（Rust host を Docker 化し `prove(circuitHash, witness) -> receipt` を HTTP で提供）。検証は Rust sidecar `/verify` か `risc0-zkvm` verifier の WASM ビルド（可否を冒頭で PoC） | zkVM receipt 証明が sidecar 経由で動く |
+| 3-c `ezkl-v1` | 生成は Python `ezkl` sidecar、検証は `@ezkljs/engine`（WASM）で TS 側（「生成は他言語、検証は TS」の非対称性を体現） | ZKML 証明が sidecar 経由で動く |
+| 3-d provenance | `zktls-tlsn-v1`: `riskScore` の価格取得に TLSNotary sidecar を挟み `inputAttestations` を出す。`oracle-sig-v1` の代替と併せて `packages/verifier/src/provenance.ts` + `provenance.test.ts` を追加 | `requireInputProvenance` の否定テストが通る |
 | 4 SDK 移植 | `modelcontextprotocol/typescript-sdk` の Extension API へ `packages/protocol` を移植（正典）。Python SDK 版は `ezkl-v1` サーバー側の第 2 参照実装として位置づける（#4 §4-4） | SDK フォーク/ブランチ |
 | 発展（任意） | `fhe-tfhe-v1`（`node-seal` または TFHE-rs WASM でクライアント暗号化 → サーバー準同型評価。正しさは vFHE 待ちのため機密性のみのデモ）、MPC / co-SNARK prover（複数データプロバイダーの入力を秘密分散したまま証明。MP-SPDZ / MPyC / mpz sidecar） | Open Questions の材料 |
 | SEP 提出 | `docs/spec/verifiable-tools.md` の Reference Implementation 節に SDK 実装と計測結果へのリンクを追記し、`modelcontextprotocol/modelcontextprotocol` に SEP PR を提出（事前に MCP org の `experimental-ext-*` で incubation するかを判断） | SEP PR |
@@ -200,8 +227,9 @@ mcp-verifiable-tools-demo/
 | Result binding（`outputCommitment` / `nonce` / 塩付きコミットメント） | Phase 2-a: `packages/protocol/src/types.ts`, `packages/prover/*`, `packages/verifier/*`, `tests/binding.test.ts` |
 | Tool descriptor metadata | Phase 2-a: `packages/server/src/tools.ts`（`tools/list` `_meta`）, `packages/verifier/src/registry.ts` |
 | Deferred proofs（`verifiable-tools/prove`） | Phase 2-a: `packages/server/src/prove.ts`（新規）, `tests/deferred-proof.test.ts` |
-| Input provenance（`inputAttestations`） | Phase 3: `sidecars/tlsn`, `packages/verifier/src/provenance.ts`（新規） |
-| TEE attestation formats | Phase 3: `sidecars/nitro`, `packages/verifier/src/tee-nitro.ts`（新規） |
+| Input provenance（`inputAttestations`） | Phase 3-d: `sidecars/tlsn`, `packages/verifier/src/provenance.ts`（新規） |
+| TEE attestation formats | Phase 3-a: `packages/protocol/src/cose.ts`, `packages/verifier/src/tee-nitro.ts`（モック attestation） |
+| Sidecar 合成 | Phase 3-a: `packages/prover-sidecar`, `packages/sidecar-mock`, `sidecars/`, `docker-compose.yml` |
 | Rationale トレードオフ表 / Performance 計測義務 | Phase 2-b 以降: `docs/BENCHMARKS.md` |
 | Testing Plan | `tests/*` |
 

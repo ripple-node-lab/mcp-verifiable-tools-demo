@@ -3,8 +3,7 @@ import { VerifiableToolsMeta } from "@demo/protocol";
 import { VerificationKeyRegistry } from "./registry.js";
 import { Verifier, VerifyContext } from "./verifier.js";
 export class DemoSigVerifier implements Verifier {
-  readonly format = "demo-sig-v1";
-  constructor(private readonly registry: VerificationKeyRegistry = new VerificationKeyRegistry([])) {}
+  constructor(private readonly registry: VerificationKeyRegistry = new VerificationKeyRegistry([]), readonly format = "demo-sig-v1") {}
   async verify(meta: VerifiableToolsMeta, context: VerifyContext): Promise<boolean> {
     const verificationKeyUri = context.verificationKeyUri ?? meta.verificationKeyUri;
     if (meta.proofFormat !== this.format || !verificationKeyUri || !meta.proof || !meta.circuitHash || !meta.outputCommitment) return false;

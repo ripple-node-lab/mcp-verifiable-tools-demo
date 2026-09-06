@@ -5,13 +5,11 @@ import { riskScore } from "./tools/riskScore.js";
 export type ToolName = "add" | "riskScore" | "privateCreditCheck" | "priceQuote";
 export interface ToolExecution { output: string; arguments: JsonValue; }
 export type DescriptorOverride = (tool: string, descriptor: ToolDescriptorMeta) => ToolDescriptorMeta | undefined;
-export function toolProofFormats(name: ToolName): string[] {
-  return name === "add" ? ["snarkjs-v2", "noir-v1", "demo-sig-v1", "demo-commit-v1"] : ["demo-sig-v1", "demo-commit-v1"];
-}
+export type ToolFormatDescriptor = (circuitHash: string) => { circuitHash?: string; verificationKeyUri?: string };
 export function isZkFormat(format: string): boolean {
   return format === "snarkjs-v2" || format === "noir-v1";
 }
-export function toolList(baseUrl: string, override?: DescriptorOverride): JsonValue {
+export function toolList(baseUrl: string, proofFormats: string[], formatDescriptors: { [format: string]: ToolFormatDescriptor } = {}, override?: DescriptorOverride): JsonValue {
   const definitions: Array<{ name: ToolName; description: string; inputSchema: JsonValue; proofPolicy: ToolDescriptorMeta["proofPolicy"]; blind: boolean }> = [
     { name: "add", description: "Add two numbers", inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } }, required: ["a", "b"] }, proofPolicy: "always", blind: false },
     { name: "riskScore", description: "Calculate a deterministic risk score", inputSchema: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, proofPolicy: "always", blind: false },
@@ -20,20 +18,21 @@ export function toolList(baseUrl: string, override?: DescriptorOverride): JsonVa
   ];
   return definitions.map(({ name, description, inputSchema, proofPolicy, blind }) => {
     const hash = expectedCircuitHash(name);
+    // ZK circuits are compiled for `add` only; other formats apply to every tool.
+    const toolFormats = proofFormats.filter((format) => !isZkFormat(format) || name === "add");
     const descriptor: ToolDescriptorMeta = {
       circuitHash: hash,
-      proofFormats: toolProofFormats(name),
+      proofFormats: toolFormats,
       proofPolicy,
       verificationKeyUri: `${baseUrl}/vk/${hash}`,
       blind,
-      formats: name === "add"
-        ? {
-            "snarkjs-v2": { circuitHash: expectedCircuitHash(name, "snarkjs-v2"), verificationKeyUri: `${baseUrl}/vk/${expectedCircuitHash(name, "snarkjs-v2")}` },
-            "noir-v1": { circuitHash: expectedCircuitHash(name, "noir-v1"), verificationKeyUri: `${baseUrl}/vk/${expectedCircuitHash(name, "noir-v1")}` },
-            "demo-sig-v1": { circuitHash: hash, verificationKeyUri: `${baseUrl}/vk/${hash}` },
-            "demo-commit-v1": { circuitHash: hash }
-          }
-        : { "demo-sig-v1": { verificationKeyUri: `${baseUrl}/vk/${hash}` }, "demo-commit-v1": {} }
+      formats: Object.fromEntries(toolFormats.map((format) => [format, format === "demo-sig-v1"
+        ? { circuitHash: hash, verificationKeyUri: `${baseUrl}/vk/${hash}` }
+        : format === "demo-commit-v1"
+          ? { circuitHash: hash }
+          : isZkFormat(format)
+            ? { circuitHash: expectedCircuitHash(name, format), verificationKeyUri: `${baseUrl}/vk/${expectedCircuitHash(name, format)}` }
+            : (formatDescriptors[format]?.(hash) ?? {})]))
     };
     const overridden = override ? override(name, descriptor) : descriptor;
     return { name, description, inputSchema, ...(overridden ? { _meta: { [EXTENSION_ID]: overridden as unknown as JsonValue } } : {}) };

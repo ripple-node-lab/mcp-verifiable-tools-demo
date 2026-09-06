@@ -48,10 +48,22 @@ declare module "node:crypto" {
   export function createHash(algorithm: string): { update(data: string | Uint8Array): { digest(encoding: "hex"): string; digest(): Buffer } };
   export function createHmac(algorithm: string, key: Uint8Array): { update(data: string | Uint8Array): { digest(): Buffer } };
   export function generateKeyPairSync(type: string): { publicKey: KeyObject; privateKey: KeyObject };
-  export function createPublicKey(options: { key: JsonWebKey; format: "jwk" } | { key: string; format: "pem" }): KeyObject;
-  export function createPrivateKey(options: { key: JsonWebKey; format: "jwk" }): KeyObject;
-  export function sign(algorithm: null, data: Uint8Array, key: KeyObject): Buffer;
-  export function verify(algorithm: null, data: Uint8Array, key: KeyObject, signature: Uint8Array): boolean;
+  export function createPublicKey(options: { key: JsonWebKey; format: "jwk" } | { key: string; format: "pem" } | { key: Uint8Array; format: "der"; type: "spki" } | KeyObject): KeyObject;
+  export function createPrivateKey(options: { key: JsonWebKey; format: "jwk" } | { key: string; format: "pem" }): KeyObject;
+  export type SignKey = KeyObject | { key: KeyObject; dsaEncoding?: string };
+  export function sign(algorithm: string | null, data: Uint8Array, key: SignKey): Buffer;
+  export function verify(algorithm: string | null, data: Uint8Array, key: SignKey, signature: Uint8Array): boolean;
+  export class X509Certificate {
+    constructor(cert: string | Uint8Array);
+    readonly subject: string;
+    readonly issuer: string;
+    readonly validFrom: string;
+    readonly validTo: string;
+    readonly raw: Uint8Array;
+    readonly publicKey: KeyObject;
+    verify(key: KeyObject): boolean;
+    checkIssued(issuer: X509Certificate): boolean;
+  }
   export function diffieHellman(options: { privateKey: KeyObject; publicKey: KeyObject }): Buffer;
   export function createCipheriv(algorithm: string, key: Uint8Array, iv: Uint8Array): {
     setAAD(data: Uint8Array): void;
@@ -66,6 +78,15 @@ declare module "node:crypto" {
     final(): Buffer;
   };
   export function hkdfSync(digest: string, key: Uint8Array, salt: Uint8Array, info: Uint8Array, length: number): ArrayBuffer;
+}
+declare module "node:fs" {
+  export function readFileSync(path: string, encoding: string): string;
+  export function readFileSync(path: string): Uint8Array;
+  export function existsSync(path: string): boolean;
+}
+declare module "node:path" {
+  export function dirname(path: string): string;
+  export function join(...parts: string[]): string;
 }
 declare module "node:events" { export class EventEmitter { on(event: string, listener: (...args: never[]) => void): this; once(event: string, listener: (...args: never[]) => void): this; removeListener(event: string, listener: (...args: never[]) => void): this; emit(event: string, ...args: never[]): boolean; } }
 declare module "node:worker_threads" {
@@ -85,5 +106,5 @@ declare module "node:fs/promises" {
   export function readFile(path: string | URL, options: { encoding: "utf8" }): Promise<string>;
   export function readFile(path: string | URL, options?: { encoding?: string }): Promise<Uint8Array>;
 }
-declare module "node:assert/strict" { const assert: { equal(actual: unknown, expected: unknown, message?: string): void; notEqual(actual: unknown, expected: unknown, message?: string): void; deepEqual(actual: unknown, expected: unknown, message?: string): void; ok(value: unknown, message?: string): void; rejects(fn: () => Promise<unknown>, message?: string): Promise<void>; throws(fn: () => unknown, message?: string): void }; export default assert; }
+declare module "node:assert/strict" { const assert: { equal(actual: unknown, expected: unknown, message?: string): void; notEqual(actual: unknown, expected: unknown, message?: string): void; deepEqual(actual: unknown, expected: unknown, message?: string): void; ok(value: unknown, message?: string): void; rejects(fn: () => Promise<unknown>, message?: string): Promise<void>; throws(fn: () => unknown, expected?: string | RegExp): void }; export default assert; }
 declare module "node:test" { type TestFn = (name: string, fn: () => void | Promise<void>) => void | Promise<void>; const test: TestFn; export function after(fn: () => void | Promise<void>): void; export default test; }

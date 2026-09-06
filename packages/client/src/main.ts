@@ -24,8 +24,10 @@ try {
   const verified = await client.verify(proved.result, { symbol: "AAPL" }, "priceQuote", { nonce: proved.nonce });
   if (!verified.ok) throw new Error(`deferred verification failed: ${verified.reason}`);
   console.log(`4. deferred priceQuote: ${proved.result.content[0].text} (verified ${proved.result._meta?.[EXTENSION_ID]?.proofFormat})`);
+  const tee = await client.callAndVerify("add", { a: 1, b: 2 }, "tee-nitro-v1");
+  console.log(`5. tee add: ${tee.content[0].text} (verified tee-nitro-v1)`);
   client.setCapabilities({ proofFormats: discovery.proofFormats });
-  for (const [number, format, label] of [[5, "snarkjs-v2", "snarkjs-v2 Groth16"], [6, "noir-v1", "noir-v1 UltraHonk"]] as const) {
+  for (const [number, format, label] of [[6, "snarkjs-v2", "snarkjs-v2 Groth16"], [7, "noir-v1", "noir-v1 UltraHonk"]] as const) {
     const proveStart = performance.now();
     const call = await client.callTool("add", { a: 20, b: 22 }, { proofFormat: format });
     if (call.result.resultType !== "complete") throw new Error("unexpected ZK task");

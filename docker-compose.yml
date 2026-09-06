@@ -1,0 +1,13 @@
+services:
+  sidecar-mock:
+    profiles: ["sidecar"]
+    build:
+      context: .
+      dockerfile: sidecars/mock/Dockerfile
+    ports:
+      - "4100:4100"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4100/healthz"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
