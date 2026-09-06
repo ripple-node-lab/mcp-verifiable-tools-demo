@@ -3,7 +3,11 @@ import { closeProverWorker as closeNoirWorker, destroy as destroyNoir } from "@d
 import { closeProverWorker as closeSnarkjsWorker } from "@demo/prover-snarkjs";
 import { VerifiableClient } from "./client.js";
 import { EXTENSION_ID } from "@demo/protocol";
-const server = await startServer({ port: 0, risc0SidecarUrl: process.env.RISC0_SIDECAR_URL });
+const server = await startServer({
+  port: 0,
+  risc0SidecarUrl: process.env.RISC0_SIDECAR_URL,
+  risc0TimeoutMs: process.env.RISC0_SIDECAR_TIMEOUT_MS ? Number(process.env.RISC0_SIDECAR_TIMEOUT_MS) : undefined,
+});
 try {
   const client = new VerifiableClient(server.mcpUrl);
   const discovery = await client.discover();

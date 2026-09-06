@@ -26,6 +26,7 @@ export interface DemoServerOptions {
   verificationKeyOverrides?: { [hash: string]: Uint8Array | string };
   provers?: Prover[];
   risc0SidecarUrl?: string;
+  risc0TimeoutMs?: number;
   teeNitro?: false | TeeNitroProverOptions;
   formatDescriptors?: { [format: string]: ToolFormatDescriptor };
 }
@@ -56,7 +57,7 @@ export class DemoServer {
     this.provers.set("demo-commit-v1", new DemoCommitProver());
     this.provers.set(SNARK_FORMAT, snarkProver);
     this.provers.set(NOIR_FORMAT, noirProver);
-    if (options.risc0SidecarUrl) this.provers.set("risc0-v1", new SidecarProver({ baseUrl: options.risc0SidecarUrl, format: "risc0-v1" }));
+    if (options.risc0SidecarUrl) this.provers.set("risc0-v1", new SidecarProver({ baseUrl: options.risc0SidecarUrl, format: "risc0-v1", timeoutMs: options.risc0TimeoutMs ?? 180_000 }));
     if (options.teeNitro !== false) {
       const userData = new Uint8Array(createHash("sha256").update(rawX25519Public(this.blindKeys.publicKey)).digest());
       const tee = options.teeNitro ? new TeeNitroProver({ userData, ...options.teeNitro }) : TeeNitroProver.fromMockFixtures(mockNitroFixturesDir(), { userData });
