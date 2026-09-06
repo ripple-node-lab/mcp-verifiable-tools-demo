@@ -10,8 +10,9 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { z } from "zod/v4";
 import { VerifiableClient, TaskEnvelope } from "@demo/client";
 import { DemoServer, DemoServerOptions } from "@demo/server";
-import { EXTENSION_ID, TASKS_EXTENSION_ID, VerifiableToolsMeta } from "@demo/protocol";
-import { attachVerifiableTools, assertServerSupportsVerifiableTools, createVerifiableClient, createVerifiableServer, sdkRpc, verifiableClientCapabilities } from "@demo/sdk-extension";
+import { McpError } from "@modelcontextprotocol/sdk/types.js";
+import { EXTENSION_ID, META_CLIENT_CAPABILITIES, TASKS_EXTENSION_ID, VerifiableToolsMeta } from "@demo/protocol";
+import { attachVerifiableTools, assertServerSupportsVerifiableTools, createVerifiableClient, createVerifiableServer, sdkRpc, verifiableClientCapabilities, VerifiableExtensionCapability } from "@demo/sdk-extension";
 import { expectComplete } from "./helpers.js";
 
 type Mode = "memory" | "http";
@@ -24,13 +25,13 @@ interface Rig {
   close(): Promise<void>;
 }
 
-async function startRig(mode: Mode, options: DemoServerOptions = {}): Promise<Rig> {
+async function startRig(mode: Mode, options: DemoServerOptions = {}, capability: VerifiableExtensionCapability = { proofFormats: ["demo-sig-v1", "demo-commit-v1", "snarkjs-v2"], blindExecution: true, tasks: true, requireInputProvenance: true }): Promise<Rig> {
   const demo = new DemoServer(options);
   await demo.listen(0); // /vk/* and /oracle-keys/* keep serving over demo.url
   const sdkServer = createVerifiableServer(demo);
   const sdkClient = new Client(
     { name: "sdk-test-client", version: "1.0.0" },
-    { capabilities: verifiableClientCapabilities(["demo-sig-v1", "demo-commit-v1", "snarkjs-v2"], { blindExecution: true, tasks: true, requireInputProvenance: true }) }
+    { capabilities: verifiableClientCapabilities(capability) }
   );
   let http: HttpServer | undefined;
   if (mode === "memory") {
@@ -53,7 +54,7 @@ async function startRig(mode: Mode, options: DemoServerOptions = {}): Promise<Ri
     const port = (http as HttpServer).address() as { port: number };
     await sdkClient.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port.port}/mcp`)));
   }
-  const client = createVerifiableClient(sdkClient, demo.url);
+  const client = createVerifiableClient(sdkClient, demo.url, capability);
   return {
     demo, sdkServer, sdkClient, client,
     async close() {
@@ -147,8 +148,26 @@ for (const mode of ["memory", "http"] as Mode[]) {
     await Promise.all([plain.connect(serverSide), sdkClient.connect(clientSide)]);
     try {
       assert.throws(() => assertServerSupportsVerifiableTools(sdkClient), /does not advertise/);
-      assert.throws(() => createVerifiableClient(sdkClient, "http://127.0.0.1"), /does not advertise/);
+      assert.throws(() => createVerifiableClient(sdkClient, "http://127.0.0.1", { proofFormats: ["demo-sig-v1"] }), /does not advertise/);
     } finally { await Promise.allSettled([sdkClient.close(), plain.close()]); }
+  });
+
+  test(`[${mode}] initialize capabilities and per-request _meta share one capability value`, async () => {
+    const capability: VerifiableExtensionCapability = { proofFormats: ["demo-sig-v1"], blindExecution: true, requireProof: true, requireInputProvenance: true, tasks: true };
+    const rig = await startRig(mode, {}, capability);
+    try {
+      let captured: unknown;
+      const dispatch = rig.demo.dispatch.bind(rig.demo);
+      rig.demo.dispatch = async (request) => {
+        if (request.method === "tools/call") captured = (request.params as { _meta?: Record<string, unknown> })._meta;
+        return dispatch(request);
+      };
+      await rig.client.callTool("add", { a: 1, b: 2 }, { proofFormat: "demo-sig-v1" });
+      assert.deepEqual(
+        (captured as Record<string, unknown>)[META_CLIENT_CAPABILITIES],
+        verifiableClientCapabilities(capability)
+      );
+    } finally { await rig.close(); }
   });
 
   test(`[${mode}] tampered _meta proof fails verification`, async () => {
@@ -193,3 +212,37 @@ for (const mode of ["memory", "http"] as Mode[]) {
     }
   });
 }
+
+test("sdkRpc strips only well-formed McpError prefixes (no hang)", async () => {
+  const fake = {
+    request: async () => { throw new McpError(-32000, "MCP error : weird"); }
+  } as unknown as Client;
+  const response = await sdkRpc(fake)("tools/call", {});
+  // The constructor embeds one "MCP error -32000: " prefix; stripping must
+  // remove exactly that and leave the bare "MCP error : weird" untouched.
+  assert.deepEqual(response, { error: { code: -32000, message: "MCP error : weird", data: undefined } });
+});
+
+test("sdkRpc passes a request timeout (default and override)", async () => {
+  let timeout: unknown;
+  const fake = {
+    request: async (_request: unknown, _schema: unknown, options: unknown) => {
+      timeout = (options as { timeout: number }).timeout;
+      return {};
+    }
+  } as unknown as Client;
+  await sdkRpc(fake)("tools/call", {});
+  assert.equal(timeout, 200_000);
+  await sdkRpc(fake, { timeoutMs: 5_000 })("tools/call", {});
+  assert.equal(timeout, 5_000);
+});
+
+test("createVerifiableClient rejects a capability without proofFormats", async () => {
+  const rig = await startRig("memory");
+  try {
+    assert.throws(
+      () => createVerifiableClient(rig.sdkClient, rig.demo.url, { tasks: true }),
+      /proofFormats/
+    );
+  } finally { await rig.close(); }
+});

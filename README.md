@@ -124,12 +124,14 @@ const server = createVerifiableServer(demo);          // Server with registered
                                                       // capabilities.extensions + handlers
 await server.connect(/* any SDK transport */);
 
+const capability = { proofFormats: ["demo-sig-v1"], requireInputProvenance: true, tasks: true };
 const client = new Client({ name: "app", version: "1.0.0" }, {
-  capabilities: verifiableClientCapabilities(["demo-sig-v1"], { requireInputProvenance: true })
+  capabilities: verifiableClientCapabilities(capability)
 });
 await client.connect(/* peer transport */);
-const verifiable = createVerifiableClient(client, demo.url); // throws if the
-                       // server did not advertise io.modelcontextprotocol/verifiable-tools
+const verifiable = createVerifiableClient(client, demo.url, capability); // same
+   // capability value feeds initialize and the per-request _meta; throws if the
+   // server did not advertise io.modelcontextprotocol/verifiable-tools
 await verifiable.callAndVerify("add", { a: 20, b: 22 }, "demo-sig-v1");
 ```
 
