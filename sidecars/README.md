@@ -22,7 +22,24 @@ HTTP sidecar として合成する（`docs/PLAN.md` §2・§5）。MCP サーバ
 - `sidecars/nitro/`: `tee-nitro-v1` 用のモック attestation フィクスチャ
   （モック root CA・モック PCR。生成は今のところ in-process の
   `TeeNitroProver` が行う）。
-- `risc0` / `ezkl` / `tlsn` は Phase 3-b 以降で追加予定。
+- `sidecars/risc0/`（`risc0-v1`）: RISC Zero zkVM の Rust sidecar
+  （`risc0-zkvm` 3.0.6 ピン、`tiny_http` + `serde_json` のみ、tokio 非依存）。
+  `add` ゲストは `(a, b): (u32, u32)` を受け取り `a.checked_add(b)` を計算し、
+  12 バイト LE の journal（`a || b || sum`）をコミットする。
+  `circuitHash` = guest image ID（`sidecars/risc0/image-id.txt` にコミット、
+  `RISC0_EXPECT_IMAGE_ID_FILE` で起動時に突合）。
+  image ID はゲスト ELF のメモリイメージ由来で、ビルドマシンのパス埋め込みに
+  敏感なため、正準値は `sidecars/risc0/Dockerfile`（ピン済み toolchain:
+  rust r0.1.97.0 / r0cpp 2024.01.05 / cargo-risczero 3.0.6 を GitHub release
+  から直接取得、rzup 非依存）でのビルド結果とする。ホスト上の `cargo build`
+  で生成される image ID は一致しない場合がある（compose は
+  `RISC0_EXPECT_IMAGE_ID_FILE` で突合して起動時に検出）。
+  `RISC0_DEV_MODE` 時は Fake receipt を返す（`/verify` は dev mode でない
+  限り Fake を `devModeReceipt` で拒否）。
+  検証は in-process WASM（`sidecars/risc0/wasm-verify` を
+  `build-wasm.sh` で wasm32 ビルド → `packages/prover-risc0/wasm`）が既定;
+  sidecar 側 `/verify` も契約どおり実装済み。
+- `ezkl` / `tlsn` は Phase 3-c 以降で追加予定。
 
 ## 動かし方
 
@@ -34,3 +51,11 @@ docker compose --profile sidecar down
 
 `SIDECAR_URL` を設定した場合、`tests/sidecar.test.ts` の最後で外部 sidecar
 への疎通テストが追加で実行される（CI の opt-in ジョブがこれを使う）。
+
+risc0 sidecar（prove ≈20–50 秒、opt-in）:
+
+```sh
+docker compose --profile risc0 up --build -d --wait
+RISC0_SIDECAR_URL=http://127.0.0.1:4200 node --test tests/dist/risc0-sidecar.test.js
+docker compose --profile risc0 down
+```

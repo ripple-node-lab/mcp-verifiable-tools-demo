@@ -32,3 +32,18 @@ jobs:
       - run: SIDECAR_URL=http://127.0.0.1:4100 node --test tests/dist/sidecar.test.js
       - if: always()
         run: docker compose --profile sidecar down
+  risc0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: docker compose --profile risc0 up --build -d --wait
+      - run: npm ci
+      - run: npm run build
+      - run: RISC0_SIDECAR_URL=http://127.0.0.1:4200 node --test tests/dist/risc0-sidecar.test.js
+      - if: always()
+        run: docker compose --profile risc0 down
