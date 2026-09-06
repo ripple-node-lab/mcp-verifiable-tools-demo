@@ -26,25 +26,15 @@ SRS = os.path.join(ARTIFACTS, "kzg.srs")
 
 MAX_BODY = 1 << 20
 EMPTY_NONCE = "0x"
-FIELD_MODULUS = (
-    21888242871839275222246405745257275088548364400416034343698204186575808495617
-)
 
 # In-flight proof slots; aborting an HTTP request does not cancel the ezkl job.
 _proof_slots: threading.Semaphore
-_proof_lock = threading.Lock()
 _max_proofs = 1
 
 
 def circuit_hash() -> str:
     with open(VK, "rb") as f:
         return "0x" + hashlib.sha256(f.read()).hexdigest()
-
-
-def felt_u32(felt_hex: str):
-    """Decode a 32-byte little-endian field element hex string to int (< u32)."""
-    value = int.from_bytes(bytes.fromhex(felt_hex.removeprefix("0x")), "little")
-    return value if value <= 0xFFFFFFFF else None
 
 
 def felt_hex(value: int) -> str:
@@ -105,6 +95,7 @@ def handle_prove(body: dict) -> tuple[int, dict]:
             proof_bytes, _instances = prove_job(a, b)
         except Exception as e:  # noqa: BLE001
             return 500, {"error": f"prove failed: {e}"}
+        nonce = body.get("nonce")
         meta = {
             "proof": base64.urlsafe_b64encode(proof_bytes).rstrip(b"=").decode(),
             "proofFormat": "ezkl-v1",
@@ -114,14 +105,14 @@ def handle_prove(body: dict) -> tuple[int, dict]:
             "publicInputs": [
                 body.get("outputCommitment"),
                 body.get("inputCommitment"),
-                body.get("nonce") or EMPTY_NONCE,
+                nonce if isinstance(nonce, str) else EMPTY_NONCE,
                 str(total),
                 str(a),
                 str(b),
             ],
         }
-        if body.get("nonce") is not None:
-            meta["nonce"] = body["nonce"]
+        if isinstance(nonce, str):
+            meta["nonce"] = nonce
         if body.get("verificationKeyUri") is not None:
             meta["verificationKeyUri"] = body["verificationKeyUri"]
         return 200, meta
