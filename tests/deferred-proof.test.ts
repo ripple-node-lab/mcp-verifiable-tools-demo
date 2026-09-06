@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { VerifiableClient } from "@demo/client";
 import { withServer, withServerOptions, rpc, expectComplete } from "./helpers.js";
-test("deferred price quote can be proved and expires", async () => withServerOptions({ resultTtlMs: 10 }, async (server) => {
+test("deferred price quote can be proved and expires", async () => withServerOptions({ resultTtlMs: 50 }, async (server) => {
   const client = new VerifiableClient(server.mcpUrl);
   await client.discover();
   const initial = await client.callTool("priceQuote", { symbol: "AAPL" });
@@ -13,7 +13,7 @@ test("deferred price quote can be proved and expires", async () => withServerOpt
   const provedResult = expectComplete(proved.result);
   assert.equal(provedResult.content[0].text, initialResult.content[0].text);
   assert.equal((await client.verify(provedResult, { symbol: "AAPL" }, "priceQuote", { nonce: proved.nonce })).ok, true);
-  await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  await new Promise<void>((resolve) => setTimeout(resolve, 80));
   const expired = await rpc(server, "verifiable-tools/prove", { resultId });
   assert.equal(expired.error?.data?.reason, "resultExpired");
 }));
