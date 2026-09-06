@@ -13,7 +13,7 @@ import { prover as snarkProver, artifacts as snarkArtifacts, FORMAT as SNARK_FOR
 import { artifacts as ezklArtifacts } from "@demo/prover-ezkl";
 import { SidecarProver } from "@demo/prover-sidecar";
 import { ToolFormatDescriptor } from "./tools.js";
-import { discoverResponse } from "./discover.js";
+import { discoverResponse, discoveryExtensions } from "./discover.js";
 import { errorResponse, handleMcpPost, paramsRecord } from "./http.js";
 import { ResultStore } from "./prove.js";
 import { TaskStore } from "./tasks.js";
@@ -110,6 +110,9 @@ export class DemoServer {
   get url(): string { return `http://${this.host}:${this.port}`; }
   get mcpUrl(): string { return `${this.url}/mcp`; }
   get blindPublicKeyBase64(): string { return this.blindPublicKey; }
+  // Extension capabilities identical to what server/discover advertises
+  // (used by the SDK adapter to seed initialize's capabilities.extensions).
+  get discoveryExtensions(): Record<string, unknown> { return discoveryExtensions(this.formats, this.blindPublicKey, this.results.retentionMs); }
   get formats(): string[] { return [...this.provers.keys()]; }
   private toolFormats(tool: ToolName): string[] {
     return this.formats.filter((format) => !isZkFormat(format) || tool === "add");

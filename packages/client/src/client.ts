@@ -16,11 +16,15 @@ import { pollTask, RpcRequest } from "./tasks.js";
 
 export interface DiscoverResult { proofFormats: string[]; serverProofFormats: string[]; blindPublicKeys: { [scheme: string]: string }; blindEncryptionSchemes: string[]; blindExecution: boolean; resultTtlMs?: number; }
 export interface CallResponse { result: CallToolResult | TaskEnvelope; nonce: string; }
+export type RpcTransport = (method: string, params: unknown) => Promise<{ result?: unknown; error?: { code: number; message: string; data?: unknown } }>;
 export interface VerifiableClientOptions {
   verifiers?: Verifier[];
   provenanceVerifiers?: ProvenanceVerifier[];
   allowedKeyOrigins?: string[];
   teeNitro?: TeeNitroVerifierOptions | false;
+  // Optional JSON-RPC transport override (e.g. the MCP SDK adapter). When set,
+  // `endpoint` is only used as the verification-key registry origin.
+  rpc?: RpcTransport;
 }
 export class VerifiableClient {
   private capabilities: ClientCapabilities;
@@ -37,7 +41,9 @@ export class VerifiableClient {
   private teeVerifier: TeeNitroVerifier | undefined;
   private discovered: DiscoverResult | undefined;
   private descriptors = new Map<string, ToolDescriptorMeta>();
+  private readonly rpc?: RpcTransport;
   constructor(private readonly endpoint: string, options: VerifiableClientOptions = {}) {
+    this.rpc = options.rpc;
     this.registry = new VerificationKeyRegistry([new URL(endpoint).origin, ...(options.allowedKeyOrigins ?? [])]);
     this.sigVerifier = new DemoSigVerifier(this.registry);
     this.extraVerifiers = options.verifiers ?? [];
@@ -160,6 +166,7 @@ export class VerifiableClient {
     return { "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION, [META_CLIENT_CAPABILITIES]: capabilities, "io.modelcontextprotocol/clientInfo": { name: "demo-client", version: "1.0.0" } };
   }
   private async request(method: string, params: unknown): Promise<{ result?: unknown; error?: { code: number; message: string; data?: unknown } }> {
+    if (this.rpc) return this.rpc(method, params);
     const headers: Record<string, string> = { "content-type": "application/json", "MCP-Protocol-Version": PROTOCOL_VERSION, "Mcp-Method": method };
     if (method === "tools/call") headers["Mcp-Name"] = String(asRecord(params).name);
     const response = await fetch(this.endpoint, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }) });

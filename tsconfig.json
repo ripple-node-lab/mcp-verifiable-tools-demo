@@ -1,6 +1,7 @@
 {
   "files": [],
   "references": [
+    { "path": "./packages/sdk-extension" },
     { "path": "./packages/protocol" },
     { "path": "./packages/prover" },
     { "path": "./packages/verifier" },

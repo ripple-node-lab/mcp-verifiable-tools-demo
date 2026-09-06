@@ -1,6 +1,6 @@
 # MCP Verifiable Tools Demo
 
-This repository is a Phase 1 + Phase 2-a + Phase 2-b + Phase 3 (a–d) reference
+This repository is a Phase 1 + Phase 2-a + Phase 2-b + Phase 3 (a–d) + Phase 4-a (SDK adapter) reference
 demo for the `io.modelcontextprotocol/verifiable-tools` extension on MCP
 `2026-07-28`. It demonstrates capability negotiation, locally verified tool
 results, asynchronous proof generation through Tasks, blind committed-input
@@ -106,6 +106,41 @@ origin-allowlisted key registry. Presentation verification runs in the
 sidecar because `tlsn-core` does not build for bare wasm32 (`getrandom`);
 the demo's scenario 10 runs only when `TLSN_SIDECAR_URL` is set.
 
+## SDK adapter (Phase 4-a)
+
+`packages/sdk-extension` bridges the extension onto the published
+`@modelcontextprotocol/sdk@1.30.0` (`zod` pinned to `4.5.4`): the SDK owns
+the transport and `initialize` handshake while `DemoServer.dispatch` keeps
+all extension semantics. A `DemoServer` still `listen()`s for the `/vk/*`
+and `/oracle-keys/*` HTTP endpoints; only JSON-RPC moves onto the SDK
+transport.
+
+```ts
+import { createVerifiableServer, createVerifiableClient, verifiableClientCapabilities } from "@demo/sdk-extension";
+
+const demo = new DemoServer();
+await demo.listen(3000);
+const server = createVerifiableServer(demo);          // Server with registered
+                                                      // capabilities.extensions + handlers
+await server.connect(/* any SDK transport */);
+
+const client = new Client({ name: "app", version: "1.0.0" }, {
+  capabilities: verifiableClientCapabilities(["demo-sig-v1"], { requireInputProvenance: true })
+});
+await client.connect(/* peer transport */);
+const verifiable = createVerifiableClient(client, demo.url); // throws if the
+                       // server did not advertise io.modelcontextprotocol/verifiable-tools
+await verifiable.callAndVerify("add", { a: 20, b: 22 }, "demo-sig-v1");
+```
+
+Known gaps against the 2026-07-28 wire: SDK 1.x negotiates `2025-11-25` at
+`initialize` (the 2026-07-28 revision is only in the unpublished v2 alpha),
+`Mcp-Method`/`Mcp-Name` header enforcement is SDK-transport specific and not
+applied on this path, `tasks/*` are carried as extension custom methods
+rather than the SDK's experimental tasks surface, and SDK 1.30.0's stateless
+Streamable HTTP mode rejects the post-initialize notification (tests use
+stateful sessions).
+
 ## Repository layout
 
 - `packages/protocol`: extension constants, types, metadata, negotiation, and
@@ -127,6 +162,9 @@ the demo's scenario 10 runs only when `TLSN_SIDECAR_URL` is set.
 - `packages/prover-sidecar`: HTTP sidecar contract adapter (`SidecarProver`,
   `SidecarVerifier`, `sidecarHealth`) plus `TlsnProvenanceVerifier` for
   `zktls-tlsn-v1` attestations.
+- `packages/sdk-extension`: adapter onto `@modelcontextprotocol/sdk@1.30.0`
+  (`attachVerifiableTools`/`createVerifiableServer`, `sdkRpc`/`createVerifiableClient`,
+  `verifiableClientCapabilities`, `assertServerSupportsVerifiableTools`).
 - `packages/sidecar-mock`: reference sidecar implementing `demo-sig-sidecar-v1`.
 - `sidecars`: sidecar README, mock + risc0 + ezkl + tlsn Dockerfiles, Nitro mock
   fixtures, risc0 Rust workspace, wasm verifier source, ezkl sidecar + proof
@@ -140,7 +178,7 @@ Further reading: [English specification](docs/spec/verifiable-tools.md),
 [issue #94](https://github.com/zk-tokyo/advanced-cryptography-2026/issues/94).
 The specification now includes use-case narrative and result-binding fields
 (`outputCommitment` / `nonce` / `tools/list` descriptors / `inputAttestations` /
-deferred proofs), implemented here through Phase 3-d of [docs/PLAN.md](docs/PLAN.md).
+deferred proofs), implemented here through Phase 4-a of [docs/PLAN.md](docs/PLAN.md).
 The demo proof formats are not zero-knowledge; `hpke-v1` is real RFC 9180 base mode
 implemented with `node:crypto` and self-tested against the RFC vector. Expired
 `resultId` values return `resultExpired` for 2×TTL after expiry because of the
@@ -227,9 +265,21 @@ Phase 3-d は入力プルーベナンスを追加します: `externalInputs` ツ
 bare wasm32 では `getrandom` のためビルドできないため、Presentation 検証は
 Rust sidecar に委譲し、notary 鍵は registry でピン留めします。
 
+Phase 4-a は `packages/sdk-extension` で公開版 `@modelcontextprotocol/sdk`
+1.30.0（zod 4.5.4 ピン）へのアダプタを提供します: SDK が transport と
+`initialize` ハンドシェイクを担い、拡張の意味論は `DemoServer.dispatch` が
+保持します。サーバー側は `createVerifiableServer`（initialize の
+`capabilities.extensions` に拡張を広告 + 各メソッドを dispatch へ委譲）、
+クライアント側は `createVerifiableClient`（拡張を広告しないサーバーでは
+初期化時に失敗）。既知の差分: SDK 1.x の initialize は 2025-11-25 を
+ネゴシエートし（2026-07-28 は v1.x 未公開）、`Mcp-Method`/`Mcp-Name`
+ヘッダ検査は SDK transport では行われず、tasks は拡張の custom method
+として動かします（stateless Streamable HTTP は SDK 1.30.0 の既知問題で
+post-initialize 通知を 500 で落とすため stateful session を使用）。
+
 仕様にはユースケースの説明と結果束縛フィールド（`outputCommitment` / `nonce` /
 `tools/list` 記述子 / `inputAttestations` / 遅延証明）も含まれており、
-docs/PLAN.md の Phase 3-d までに実装済みです。なお、デモは `resultId` の principal
+docs/PLAN.md の Phase 4-a までに実装済みです。なお、デモは `resultId` の principal
 binding（認可主体への束縛）を実装していません。期限切れの `resultId` は、
 保持された tombstone により期限切れ後 2×TTL の間は `resultExpired` を返し、
 その後は `resultNotFound` を返します。デモには認証がないため、principal/session
