@@ -157,3 +157,14 @@ mcp-verifiable-tools-demo/
 - 公式化前の拡張識別子: 現状は `io.modelcontextprotocol/verifiable-tools` を使用しているが、SEP 受諾前の第三者実装は vendor prefix（例 `com.ripple-node-lab/verifiable-tools`）を使うべき。受諾されなかった場合は識別子を切り替える。
 - クライアント側の tool→circuitHash の信頼できる配布方法（現状はデモ用に protocol パッケージへ固定）。
 - `tasks/cancel` は状態のみ変更し producer を停止しない（実バックエンドでは cancellation token が必要、Phase 2 で対応）。
+- SEP 受諾前に MCP org 内の experimental extension（`experimental-ext-*`、WG/IG 紐付け必須）として incubation を行うか。
+
+## 8. 拡張プラン提出手順
+
+拡張プランの提出は [issue #2](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/issues/2) の手順に従い、`.github/ISSUE_TEMPLATE/extension-proposal.md` のテンプレートを使用する。
+
+- Step 0: §2 設計方針との整合チェックを行い、逸脱する場合は理由を記載する。
+- Step 1: `proposal` ラベルでテンプレートを使い、Discussion issue（1 提案 = 1 issue）を作成する。
+- Step 2: 合意形成後、`accepted` / `needs-revision` / `rejected` ラベルで状態を更新する。
+- Step 3: PR に `Closes #<proposal issue>` を含め、`docs/PLAN.md` と仕様（英日）を同期する。
+- Step 4: Phase 完了時に成果物を確認し、SEP-2133 対応（公式 SDK 参照実装・SEP 提出）へ進む。
