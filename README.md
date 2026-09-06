@@ -58,6 +58,9 @@ Further reading: [English specification](docs/spec/verifiable-tools.md),
 [Japanese specification](docs/spec/verifiable-tools.ja.md), and
 [the implementation plan](docs/PLAN.md). Discussion and tracking live in
 [issue #94](https://github.com/zk-tokyo/advanced-cryptography-2026/issues/94).
+The specification now includes use-case narrative and result-binding fields
+(`outputCommitment` / `nonce` / `tools/list` descriptors / `inputAttestations` /
+deferred proofs) that Phase 2-a of [docs/PLAN.md](docs/PLAN.md) will implement.
 
 ## 日本語
 
@@ -66,6 +69,9 @@ Further reading: [English specification](docs/spec/verifiable-tools.md),
 MCP `2026-07-28` 上で `io.modelcontextprotocol/verifiable-tools` 拡張の
 ネゴシエーション、証明メタデータのローカル検証、Tasks による非同期処理、
 暗号化した引数によるブラインド実行を示す依存ゼロのデモです。
+仕様にはユースケースの説明と結果束縛フィールド（`outputCommitment` / `nonce` /
+`tools/list` 記述子 / `inputAttestations` / 遅延証明）も含まれており、
+docs/PLAN.md の Phase 2-a で実装予定です。
 
 ### クイックスタート
 

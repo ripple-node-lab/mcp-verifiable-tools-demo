@@ -44,6 +44,53 @@ As AI agents increasingly operate over financial, healthcare, infrastructure, an
 
 Zero-knowledge proving systems (ezkl, risc0, snarkjs, etc.) and TEE attestations (Intel SGX, AMD SEV, AWS Nitro) have matured to the point where such verification can be performed in milliseconds to seconds on commodity hardware. Standardizing how these artifacts are carried in MCP lets clients and servers interoperate without baking any single cryptographic library into the core protocol.
 
+### Why authorization is not enough: the trust gap
+
+MCP `2026-07-28` answers the question *"is this client allowed to call this tool on this server?"*. It says nothing about *"is the value that came back the value the tool was supposed to compute?"*. Today a client has exactly one option: trust the server operator. That was acceptable while MCP servers were local processes started by the same person who runs the client. It stops being acceptable when:
+
+- **The server is a third party.** Agents increasingly call tools operated by someone else: a market-data vendor, a credit bureau, a compliance-screening service, another organization's agent. Authorization proves the client's identity to the server, not the server's correctness to the client.
+- **The server can be compromised without its identity changing.** A supply-chain attack on a server's dependencies, a malicious insider, or a mis-deployed model version all keep OAuth tokens, TLS certificates, and `server/discover` output exactly the same while silently changing what the tool returns. Authorization cannot detect this; a pinned `circuitHash` can.
+- **The result triggers an irreversible action.** Agents act on tool results: they place orders, approve loans, dispense medication, open firewall ports. There is no human review step between "value returned" and "value acted upon", so the value itself must carry its own evidence.
+- **Accountability is required after the fact.** Regulators, auditors, and counterparties ask "which program produced this decision, on which inputs?". A signed log entry proves who *said* something happened; a proof shows that it *did*.
+
+The following scenarios describe where this gap becomes concrete. They are the workloads the reference implementation targets (§Reference Implementation).
+
+#### Scenario A: Agent-to-agent tool markets
+
+An orchestrating agent buys results from specialist MCP servers it has never audited (a pricing engine, a legal-clause classifier, a geospatial routing tool) and pays per call. Without verifiability the buyer cannot distinguish a correct result from a cheaper approximation, a cached stale answer, or a fabricated one. With `circuitHash` pinned to the advertised program and a proof attached to every paid result, the market can settle on *"pay for verified results"*: the buyer verifies locally and only then releases payment. This is the pattern under which tool servers can be commoditized without a central rating authority.
+
+#### Scenario B: Trading and treasury agents
+
+A trading agent calls `riskScore(symbol)` on a vendor's server and sizes a position from the answer. A compromised vendor (or a man-in-the-middle after TLS termination in a corporate proxy) that returns a manipulated score is indistinguishable from an honest one. A proof that `riskScore` was evaluated by the pinned model on committed inputs, combined with an input-provenance attestation (§Input provenance) that the price feed came from the named exchange, gives the agent grounds to act. Deferred/sampled proofs (§Deferred proofs) let a high-frequency caller verify a random subset rather than paying for a proof on every call.
+
+#### Scenario C: Regulated decisions on private data
+
+A bank's agent calls `privateCreditCheck` on a scoring service. Two obligations conflict: the applicant's data must not be revealed to the service operator beyond what the computation needs, and the regulator must later be able to confirm that the *approved* scoring model, not a discriminatory variant, was applied. Blind execution (§Blind / committed-input tool calls) handles the first; a proof bound to the model's `circuitHash` handles the second. The proof, not a log entry, becomes the audit artifact.
+
+#### Scenario D: Certified model inference in healthcare and safety systems
+
+A clinical-decision or industrial-control agent calls a tool that runs a certified ML model (`ezkl`-style proofs of inference, or TEE attestation of the model container). The question "was the certified version used?" cannot be answered by authorization. `circuitHash` identifies the exact model artifact; the proof shows the returned inference came from it.
+
+#### Scenario E: Multi-hop agent chains and delegated tool use
+
+Agent A asks agent B for a result; B obtains it from server C. A only ever sees B. Because proofs are self-contained artifacts in `_meta`, B can forward C's proof unchanged, and A verifies it against C's `circuitHash` and verification key without trusting B. Verifiability composes along the chain; authorization does not.
+
+#### Scenario F: Autonomous security responses
+
+An agent monitoring a system decides to trigger an expensive or destructive action (halt a contract, isolate a host) based on a tool that determines "this state is exploitable". A proof that the exploitability predicate was evaluated by an audited program on the observed state (a *proof-of-exploit*, with the exploit input kept private) lets the receiving system act automatically while leaving nothing for an attacker to replay or spoof.
+
+### What this extension does and does not guarantee
+
+| Property | Guaranteed by | Notes |
+|---|---|---|
+| `Y = f(X)` for the pinned `f` (`circuitHash`) and committed `X` (`inputCommitment`) | ZK proof or TEE attestation | The core guarantee. |
+| The returned `content` is the `Y` that was proven | `outputCommitment` in `publicInputs` | See §Result binding. |
+| The proof answers *this* request and is not a replay | `nonce` in `publicInputs` | See §Result binding. |
+| The plaintext of `X` is hidden from the server | Blind execution | Only with `verifiable-tools/call`; the server's proving environment still sees `X` unless FHE is used. |
+| `X` itself is *true* (a real price, a real record) | **Not guaranteed** by this extension alone | Requires input provenance (§Input provenance): zkTLS / oracle attestations / signed data. |
+| `f` is the *right* function (a good model, a correct algorithm) | **Not guaranteed** | Out of scope; `circuitHash` identifies `f`, it does not judge it. |
+| The server will answer at all (liveness) | **Not guaranteed** | `requireProof` may cause refusals. |
+
 ## Specification
 
 ### Extension identifier
@@ -76,6 +123,10 @@ Both client and server advertise the extension under the `extensions` capability
 | `proofFormats` | `string[]` | Proof / attestation formats the party supports, identified as `"{engine}-{majorVersion}"` (e.g. `"ezkl-v1"`, `"risc0-v1"`, `"snarkjs-v2"`, `"tee-sgx-v1"`). |
 | `blindExecution` | `boolean` | Whether the party supports blind / committed-input tool calls. |
 | `requireProof` | `boolean` | For clients: if true, the server SHOULD return a proof when it can; servers MAY omit results for calls they cannot prove. |
+| `requireInputProvenance` | `boolean` | For clients: if true, results that consume external data MUST carry `inputAttestations` (see §Input provenance). |
+| `blindEncryptionSchemes` | `string[]` | For servers: `encryptionScheme` values accepted by `verifiable-tools/call`, e.g. `["hpke-v1"]`. |
+| `blindPublicKey` | `string` | For servers: base64url public key for the first listed scheme. See §Blind / committed-input tool calls for how it must be attested or pinned. |
+| `resultTtlMs` | `number` | For servers: how long a `resultId` stays provable via `verifiable-tools/prove` (see §Deferred proofs). |
 
 Example `server/discover` response:
 
@@ -131,12 +182,19 @@ A client requesting verifiable output includes the extension under `extensions` 
         }
       },
       "io.modelcontextprotocol/verifiable-tools": {
-        "requestedProofFormat": "ezkl-v1"
+        "requestedProofFormat": "ezkl-v1",
+        "nonce": "0x5f1c..."
       }
     }
   }
 }
 ```
+
+| Request option | Type | Description |
+|---|---|---|
+| `requestedProofFormat` | `string` | Preferred format among the negotiated intersection. |
+| `nonce` | `string` | Fresh client randomness (≥ 16 bytes, hex) that the server MUST bind into the proof and echo back. See §Result binding. |
+| `replyPublicKey` | `string` | For blind calls: client key to which the server encrypts `content` when the tool's output must also stay confidential. |
 
 On HTTP transports the request MUST also include:
 
@@ -170,7 +228,10 @@ When the extension is negotiated and the server can produce a proof, the `tools/
         "proofFormat": "ezkl-v1",
         "circuitHash": "0x12ab...",
         "verificationKeyUri": "https://example.com/vk/0x12ab...",
-        "publicInputs": ["42", "0xdeadbeef..."],
+        "publicInputs": ["0x3b7e...", "0xdeadbeef...", "0x5f1c..."],
+        "outputCommitment": "0x3b7e...",
+        "inputCommitment": "0xdeadbeef...",
+        "nonce": "0x5f1c...",
         "teeAttestation": "0x9c2f..."
       }
     }
@@ -187,11 +248,84 @@ Field definitions:
 | `proofFormat` | `string` | Recommended | The engine and major version used to produce the proof, e.g. `"ezkl-v1"`, `"risc0-v1"`, `"tee-sgx-v1"`. |
 | `circuitHash` | `string` | Recommended | A cryptographic hash identifying the circuit, program, or Docker artifact that was executed. |
 | `verificationKeyUri` | `string` (URI) | Optional | Location of the verification key needed to check the proof. |
-| `publicInputs` | `array` | Conditional | Public inputs required to verify the proof. Omitted for pure TEE attestations. |
+| `publicInputs` | `array` | Conditional | Public inputs required to verify the proof, in the order `[outputCommitment, inputCommitment, nonce, ...format-specific]`. Omitted for pure TEE attestations. |
 | `teeAttestation` | `string` | Optional | A TEE attestation document, for cases where the computation ran inside a trusted execution environment. |
-| `inputCommitment` | `string` | Optional | Commitment to the inputs used, so the client can verify that the proof was generated against the same arguments it supplied. |
+| `inputCommitment` | `string` | Recommended | Commitment to the inputs used, so the client can verify that the proof was generated against the same arguments it supplied. See §Result binding for the commitment construction. |
+| `outputCommitment` | `string` | Recommended | `SHA-256` of the canonical encoding of `content`, so the client can verify that the proven output is the returned output. See §Result binding. |
+| `nonce` | `string` | Conditional | Echo of the client-supplied `nonce` from the request metadata. REQUIRED when the client supplied one. |
+| `inputAttestations` | `object[]` | Optional | Provenance evidence for external inputs consumed by the tool (e.g. a zkTLS transcript proof, an oracle signature). See §Input provenance. |
+| `resultId` | `string` | Optional | Opaque identifier the client can later pass to `verifiable-tools/prove` to obtain a proof for this result. See §Deferred proofs. |
 
 The server MUST only emit `proofFormat` values it advertised in its capability object. The client MUST only attempt to verify formats it advertised.
+
+### Result binding
+
+A proof is only useful if the client can tie it to the exact request it made and the exact result it received. Three bindings are defined.
+
+**Input binding.** `inputCommitment = "0x" || hex(SHA-256(salt || JCS(arguments)))` where `JCS` is the JSON Canonicalization Scheme ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)) and `salt` is 32 random bytes chosen by the client. For plain `tools/call` the client MAY use an empty salt (the arguments are already visible to the server); for `verifiable-tools/call` the salt MUST be non-empty and MUST be carried inside `encryptedArguments`, so that the commitment is *hiding* and a network observer cannot brute-force low-entropy arguments from the commitment.
+
+**Output binding.** `outputCommitment = "0x" || hex(SHA-256(JCS(content)))` over the `content` array of the `CallToolResult`. When `publicInputs` is present, the first element MUST be `outputCommitment` (or the output value itself when the format's public inputs are the raw output; the format definition says which).
+
+**Request binding.** A client MAY include a fresh random `nonce` in `params._meta["io.modelcontextprotocol/verifiable-tools"].nonce`. If present, the server MUST bind it into the proof (as a public input, or in the signed/attested payload) and echo it in the result metadata. Clients that need freshness (any tool whose correct answer changes over time, e.g. prices, balances, health checks) SHOULD always send a nonce; otherwise a server can replay a proof that was valid for an earlier call.
+
+A verifier therefore checks, in order: (1) `proofFormat` was negotiated; (2) `circuitHash` matches the pinned hash for the tool (§Tool descriptor metadata); (3) `inputCommitment` equals its own recomputation; (4) `outputCommitment` equals `SHA-256(JCS(content))`; (5) `nonce` matches what it sent; (6) the proof / attestation verifies under the pinned verification key.
+
+### Tool descriptor metadata
+
+The client needs a trustworthy mapping *tool name → circuitHash* before it can reject a result whose `circuitHash` does not match. Servers that support this extension SHOULD publish that mapping in `tools/list` under each tool's `_meta`:
+
+```json
+{
+  "name": "riskScore",
+  "description": "...",
+  "inputSchema": { "type": "object" },
+  "_meta": {
+    "io.modelcontextprotocol/verifiable-tools": {
+      "circuitHash": "0x12ab...",
+      "proofFormats": ["snarkjs-v2"],
+      "proofPolicy": "onDemand",
+      "verificationKeyUri": "https://example.com/vk/0x12ab...",
+      "blind": false
+    }
+  }
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `circuitHash` | `string` | The hash the server will use for this tool. |
+| `proofFormats` | `string[]` | Formats available for this tool (subset of the capability-level list). |
+| `proofPolicy` | `"always" \| "onDemand" \| "sampled"` | Whether every call carries a proof, whether proofs are produced only on request (§Deferred proofs), or whether the server proves a fraction of calls. |
+| `verificationKeyUri` | `string` | Where to fetch the verification key for `circuitHash`. |
+| `blind` | `boolean` | Whether the tool accepts `verifiable-tools/call`. |
+
+The descriptor is a *hint*, not a root of trust: a malicious server controls `tools/list`. Clients MUST pin `circuitHash` and verification keys on first use (TOFU) or, preferably, obtain them from an out-of-band registry (a signed manifest, a package registry, a transparency log). A change in `circuitHash` for a known tool MUST be surfaced to the user or policy layer rather than silently accepted.
+
+### Input provenance
+
+A proof that `Y = f(X)` says nothing about whether `X` is true. Many tools fetch `X` from somewhere else: a market-data API, a public registry, another MCP server. `inputAttestations` lets the server attach evidence about the origin of such inputs:
+
+```json
+"inputAttestations": [
+  {
+    "type": "zktls-tlsn-v1",
+    "source": "https://api.exchange.example/v1/price/AAPL",
+    "commitment": "0x77aa...",
+    "proof": "0x...",
+    "notaryKeyUri": "https://notary.example/keys/1"
+  }
+]
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `type` | `string` | Provenance mechanism, `"{mechanism}-{majorVersion}"`, e.g. `"zktls-tlsn-v1"` (TLSNotary-style transcript proof), `"oracle-sig-v1"` (signed data feed), `"mcp-verifiable-v1"` (a nested verifiable result from an upstream MCP server, Scenario E). |
+| `source` | `string` | Identifier of the data source (URL, feed id, upstream server). |
+| `commitment` | `string` | Commitment to the fetched data, which MUST also appear as a public input of the main proof so that the two artifacts are linked. |
+| `proof` / `proofUri` | `string` | The provenance artifact. |
+| `notaryKeyUri` / `verificationKeyUri` | `string` | Key material for verifying the artifact. |
+
+Clients that require provenance SHOULD declare it (`requireInputProvenance: true` in their capability object) and MUST NOT treat a result as verified if a required attestation is missing or fails.
 
 If the server cannot produce a proof for a specific call but the call otherwise succeeds, it MUST return a normal `resultType: "complete"` response and MAY omit the `io.modelcontextprotocol/verifiable-tools` metadata. It MUST NOT fail the call solely because it cannot prove it, unless the client set `requireProof: true` and the server accepted that requirement.
 
@@ -217,7 +351,7 @@ Example `tools/call` response that creates a task:
 }
 ```
 
-The client polls `tasks/get` with the `taskId`. When the task reaches `completed`, the `result` field contains the same `CallToolResult` shape shown above, including the `io.modelcontextprotocol/verifiable-tools` metadata.
+The client polls `tasks/get` with the `taskId`. When the task reaches `completed`, the `result` field contains the same `CallToolResult` shape shown above, including the `io.modelcontextprotocol/verifiable-tools` metadata. `tasks/cancel` MUST abort proof generation, not merely mark the task cancelled.
 
 ```json
 {
@@ -239,6 +373,24 @@ The client polls `tasks/get` with the `taskId`. When the task reaches `completed
 }
 ```
 
+### Deferred proofs
+
+Proving is expensive relative to executing, and many callers do not need a proof on every call: an auditor samples, a market settles disputes, a high-frequency agent spot-checks. To support these, a server MAY return a result *without* a proof but *with* a `resultId`, and prove it later on request.
+
+```text
+verifiable-tools/prove
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `resultId` | `string` | Yes | The `resultId` from an earlier result. |
+| `proofFormat` | `string` | No | Preferred proof format. |
+| `nonce` | `string` | No | Fresh nonce to bind into the deferred proof. |
+
+The response is either a `CallToolResult` whose `content` is byte-identical to the original and whose `_meta` now contains the proof, or a task (`resultType: "task"`) that resolves to one. The server MUST retain enough state (inputs or their commitment, output, nonce) to prove the original computation for at least the `resultTtlMs` it advertises in its capability object; after that it MAY return `-32602` with `data.reason: "resultExpired"`.
+
+Which mode is appropriate is a per-tool decision expressed by `proofPolicy`. `always` suits low-volume, high-value calls (Scenario C); `onDemand` and `sampled` suit high-volume calls where the *possibility* of being audited is the deterrent (Scenario B). A server that is caught returning an unprovable result under `sampled` should be treated by the client as untrusted for all past results in the same period.
+
 ### Blind / committed-input tool calls
 
 Clients can request a tool call without revealing plaintext arguments to the server. The extension defines a new method:
@@ -253,9 +405,18 @@ Parameters:
 |---|---|---|---|
 | `tool` | `string` | Yes | The name of the tool to invoke. |
 | `inputCommitment` | `string` | Yes | Cryptographic commitment (hash) of the plaintext inputs. |
-| `encryptionScheme` | `string` | Yes | Identifier for the encryption/key-agreement scheme, e.g. `"hpke-v1"`. |
-| `encryptedArguments` | `string` | Yes | Encrypted tool arguments. |
+| `encryptionScheme` | `string` | Yes | Identifier for the encryption/key-agreement scheme. See the table below. |
+| `encryptedArguments` | `string` | Yes | Encrypted payload `{ "salt": "0x...", "arguments": { ... } }` (JCS-encoded before encryption). |
 | `proofFormat` | `string` | No | Preferred proof format. |
+
+Defined `encryptionScheme` values:
+
+| Value | Meaning | Who sees plaintext |
+|---|---|---|
+| `hpke-v1` | [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180) HPKE, base mode, `DHKEM(X25519, HKDF-SHA256)` / `HKDF-SHA256` / `AES-128-GCM`. `encryptedArguments` = `enc \|\| ciphertext`. AAD = `JCS({tool, inputCommitment, encryptionScheme})`. | The proving environment (TEE or the machine running the prover). The MCP server process outside it MUST NOT. |
+| `fhe-tfhe-v1` | Arguments encrypted under a client-held TFHE key; the tool is evaluated homomorphically and `content` is returned encrypted. Reserved: requires verifiable FHE to also obtain a correctness proof, which is not yet practical (§Open Questions). | Nobody but the client. |
+
+The server's public key for `hpke-v1` is advertised in its capability object as `blindPublicKey` (base64url raw X25519 key) together with `blindEncryptionSchemes`. Because `server/discover` is the delivery channel, the key is only as trustworthy as that channel: on a TEE-backed server the key MUST be bound into the attestation's user-data field so the client can check that the key it encrypts to lives inside the attested enclave; otherwise it MUST be pinned like a verification key.
 
 HTTP headers:
 
@@ -266,7 +427,9 @@ Mcp-Method: verifiable-tools/call
 
 `Mcp-Name` is only required by SEP-2243 for `tools/call`, `resources/read`, and `prompts/get`; it is not used for this custom method.
 
-The server decrypts and evaluates the arguments inside a TEE or ZK circuit, computes the tool result, and returns the result with verifiable metadata. The plaintext arguments MUST NOT be logged or retained outside the execution environment.
+The server decrypts and evaluates the arguments inside a TEE or ZK circuit, computes the tool result, and returns the result with verifiable metadata. The plaintext arguments MUST NOT be logged or retained outside the execution environment. The server MUST recompute `inputCommitment` from the decrypted `salt` and `arguments` and reject the call with `-32602` on mismatch.
+
+Blind execution hides *inputs*; it does not, by itself, hide anything about the *output*. A tool whose output is a function of a few private bits (e.g. `approved`/`declined`) leaks those bits to the operator. Tools with this shape SHOULD either return the output encrypted to the client (an `hpke-v1` reply encrypted to a client-supplied key in the request metadata, field `replyPublicKey`) or run inside a TEE whose operator cannot read outputs.
 
 Example request:
 
@@ -373,6 +536,17 @@ sequenceDiagram
 
 A client MUST NOT act on a tool result whose proof fails verification unless it has an explicit out-of-band trust relationship with the server.
 
+### TEE attestation formats
+
+For `proofFormat` values of the form `tee-{platform}-v{N}` the `proof` is a signature over `circuitHash || inputCommitment || outputCommitment || nonce` by a key that lives inside the attested environment, and `teeAttestation` is the platform's attestation document. The verifier MUST check all of:
+
+1. The attestation document's certificate chain terminates at the platform vendor's root (AWS Nitro: COSE_Sign1 with the Nitro root; Intel SGX: DCAP quote with Intel PCS collateral; AMD SEV-SNP: VCEK chain).
+2. The measurement in the document (Nitro PCRs, SGX `MRENCLAVE`, SNP launch digest) equals the measurement the client has pinned for `circuitHash`. `circuitHash` for TEE formats SHOULD be defined as a hash over the measurement plus the reproducible-build recipe that produces it.
+3. The document's user-data / report-data field contains the signing public key used for `proof` (and `blindPublicKey` if blind execution is offered), so the key is provably enclave-resident.
+4. The document is fresh: it either embeds the request `nonce` or was issued within a client-defined window.
+
+Defined values: `tee-nitro-v1`, `tee-sgx-dcap-v1`, `tee-sevsnp-v1`.
+
 ## Rationale
 
 ### Why an extension rather than a core protocol change?
@@ -391,6 +565,24 @@ Tool `content` is intended for human or model-readable output. Cryptographic pro
 
 Different workloads suit different technologies. ZKPs give cryptographic guarantees without trusting hardware vendors but can be expensive to generate. TEEs are often faster and easier to deploy but introduce hardware-rooted trust assumptions. Supporting both lets the ecosystem converge on a common transport without mandating a single proof technology.
 
+Indicative trade-offs (orders of magnitude; the reference implementation publishes measured figures per format in Phase 2/3):
+
+| Family | Example formats | Prove cost vs. native execution | Proof size | Verify cost | Trust assumption | Best fit |
+|---|---|---|---|---|---|---|
+| Pairing SNARK (Groth16 / PLONK) | `snarkjs-v2`, Noir/UltraHonk | 10^3–10^6× | ~0.1–1 KB | ms | Trusted setup (Groth16: per-circuit; PLONK: universal) | Small fixed circuits, on-chain verification |
+| zkVM (STARK, optionally wrapped in Groth16) | `risc0-v1`, SP1 | 10^4–10^6× | 100 KB–MB (STARK), ~0.2 KB wrapped | ms–s | None beyond hash / field assumptions | Arbitrary programs, existing code |
+| ZKML | `ezkl-v1` | very high, model-size dependent | KB–MB | ms–s | As underlying SNARK | Certified model inference (Scenario D) |
+| TEE attestation | `tee-nitro-v1`, `tee-sgx-dcap-v1`, `tee-sevsnp-v1` | ~1× | ~1–10 KB (document + chain) | ms | Hardware vendor, firmware, side-channel resistance | Latency-sensitive, large or I/O-heavy tools; blind execution |
+| FHE (reserved) | `fhe-tfhe-v1` | 10^3–10^6×, and no correctness proof without vFHE | n/a | n/a | None for confidentiality; correctness unproven | Output confidentiality (future) |
+
+### Why not just sign results?
+
+A plain server signature over `(inputs, output)` proves *origin* ("this server said Y") and gives non-repudiation, but not *correctness* ("Y = f(X)"): a compromised or dishonest server signs wrong answers just as happily. Signatures are still useful as a cheap first step and are what `demo-sig-v1` in the reference implementation models; the extension is designed so that upgrading from a signature to an attestation-backed signature to a ZK proof changes only `proofFormat`, not the transport.
+
+### Why include input provenance and deferred proofs?
+
+Early reviewers of this proposal asked two questions repeatedly. (1) *"If the tool reads a price from an API, what does the proof mean?"*: nothing about the price. `inputAttestations` gives the extension a place for zkTLS / oracle evidence so that "correct computation on authentic data" can be expressed end-to-end, and Scenario E shows how nested MCP results reuse the same slot. (2) *"Who pays for proving on every call?"*: often nobody should. `proofPolicy` and `verifiable-tools/prove` let the economic pattern (prove-always, prove-on-audit, prove-a-sample) be chosen per tool rather than baked into the protocol.
+
 ## Backward Compatibility
 
 This extension is **fully backward compatible**.
@@ -408,23 +600,31 @@ This extension is **fully backward compatible**.
 - **Blind execution**: Encrypted arguments must be decrypted only inside the proving environment. Servers MUST NOT persist plaintext inputs or forward them to untrusted downstream systems.
 - **Side channels**: Proof generation time can leak information about inputs. Implementations SHOULD use constant-time or padded proving schedules where side-channel resistance is required.
 - **Availability**: If `requireProof: true` is set and the server cannot generate a proof, the server may refuse the call. Clients SHOULD handle this gracefully.
+- **Replay**: Without a `nonce`, a valid proof for an earlier call is also a valid proof for the current one. Clients MUST send a nonce for any tool whose correct output is time-dependent, and MUST reject results whose echoed nonce differs.
+- **Output substitution**: Without `outputCommitment` bound into the proof, a server can pair a genuine proof with a different `content`. Verifiers MUST recompute `outputCommitment` from `content`.
+- **Hiding commitments**: An unsalted hash of low-entropy arguments (an account number, a yes/no flag) is trivially inverted by anyone who sees the commitment. Blind calls MUST use a salted commitment.
+- **Input provenance**: A verified proof over fabricated inputs is worthless. Clients acting on externally sourced data SHOULD require `inputAttestations` and verify them independently of the main proof.
+- **Descriptor trust**: `tools/list` metadata is server-controlled. Pin `circuitHash` / keys out of band or on first use; treat changes as security events.
+- **Randomness reuse**: Ed25519 is deterministic, but Schnorr/ECDSA-style signing in custom TEE code, and Beaver-triple or mask reuse in MPC-based provers, leak keys or inputs when randomness is reused. Implementations MUST use fresh randomness per proof and SHOULD include a negative test for reuse.
+- **Key revocation**: Verification keys, TEE signing keys, and notary keys can be compromised. Clients SHOULD check a revocation source (a transparency log or a signed revocation list at a well-known URI relative to `verificationKeyUri`) before trusting a key they have not used recently.
 
 ## Reference Implementation
 
-A reference implementation is required before this SEP can reach "Final" status. A suitable prototype would include:
+A reference implementation is required before this SEP can reach "Final" status. The prototype lives at <https://github.com/ripple-node-lab/mcp-verifiable-tools-demo> (TypeScript, MCP `2026-07-28` Streamable HTTP, `npm install && npm test`). Its plan (`docs/PLAN.md`) is staged so that reviewers can run each stage without heavy toolchains:
 
-- A minimal MCP `2026-07-28` server that returns ezkl or risc0 proofs for a small arithmetic tool.
-- A client verifier that fetches `verificationKeyUri`, checks `circuitHash`, and validates the proof.
-- Integration with `io.modelcontextprotocol/tasks` for asynchronous proof generation.
-- A blind `verifiable-tools/call` example using HPKE-encrypted arguments evaluated inside a TEE.
+- Phase 1 (done): transport, negotiation, Tasks integration, and blind calls with dependency-free stand-in formats (`demo-sig-v1`, `demo-commit-v1`). These are *not* cryptographic proofs and are labelled as such.
+- Phase 2: a real ZK format that runs in-process from npm (`snarkjs-v2` Groth16 over a circom circuit; Noir/UltraHonk as a second candidate), plus the result-binding fields of this revision (`outputCommitment`, `nonce`, `tools/list` descriptors) and measured proving/verification figures.
+- Phase 3: sidecar-based formats where the prover is not TypeScript: `risc0-v1` (Rust zkVM), `ezkl-v1` (Python/CLI prover, WASM verifier), `tee-nitro-v1` (attestation verification in TypeScript, enclave build opt-in), and a `zktls-tlsn-v1` input attestation for the price-feed scenario.
+- Phase 4: port of the protocol layer to `modelcontextprotocol/typescript-sdk`.
 
-Links to prototype code and CI results will be added here as the prototype matures.
+CI results and per-format benchmarks will be linked here as each phase lands.
 
 ## Performance Implications
 
-- Proof generation can be orders of magnitude slower than the underlying computation. This is why async generation via Tasks is the default pattern.
+- Proof generation can be orders of magnitude slower than the underlying computation. This is why async generation via Tasks is the default pattern, and why `proofPolicy: "onDemand" | "sampled"` exists for high-volume tools.
 - Verification is typically fast (milliseconds to seconds) and should run on the client.
 - Large proofs SHOULD be served via `proofUri` or `verificationKeyUri` rather than inlined in `_meta`.
+- Every format definition MUST report: proving time and memory for the reference circuit, proof size, verification time, and verifier dependency footprint (npm/WASM vs. native). The reference implementation records these per format so that `proofFormats` negotiation can be cost-aware.
 
 ## Testing Plan
 
@@ -432,12 +632,19 @@ Links to prototype code and CI results will be added here as the prototype matur
 - Tests proving that clients ignore `io.modelcontextprotocol/verifiable-tools` metadata when the extension is not negotiated.
 - Tests for the async path: a `tools/call` that returns a task, and a `tasks/get` that resolves to a verifiable result.
 - Negative tests: invalid proofs, mismatched `circuitHash`, unknown `proofFormat`, and malformed blind inputs.
+- Binding tests: a genuine proof paired with altered `content` is rejected (`outputCommitment`); a proof replayed from a previous call is rejected (`nonce`); an unsalted or wrongly salted blind commitment is rejected.
+- Provenance tests: a result with a valid main proof but a missing or invalid required `inputAttestations` entry is rejected.
+- Deferred-proof tests: `verifiable-tools/prove` returns byte-identical `content` and a verifying proof; an expired `resultId` is rejected.
+- Descriptor tests: a `tools/list` entry whose `circuitHash` differs from the pinned value is surfaced, not silently accepted.
 
 ## Alternatives Considered
 
 - **Embedding proof data inside tool `content` as a new content type**: Rejected because it mixes machine-verifiable artifacts with user-facing content and complicates client rendering.
 - **Adding a new synchronous `resultType` for "proof pending"**: Rejected in favor of reusing the official `io.modelcontextprotocol/tasks` extension.
 - **Requiring every MCP server to verify proofs**: Rejected; verification is a client-side concern, and the extension only standardizes the transport of proof data.
+- **Plain signed results (no proof)**: Insufficient alone (see Rationale) but supported as the lowest rung of `proofFormat`, so adopters can start there.
+- **zkTLS-only (prove the data source, not the computation)**: Complementary, not alternative; adopted as `inputAttestations`.
+- **Mandating a single proof system (e.g. Groth16) for interoperability**: Rejected; the field moves too fast, and TEE deployments would be excluded. Interoperability is addressed by per-format definitions and the binding rules, which are engine-independent.
 
 ## Open Questions
 
@@ -445,4 +652,9 @@ Links to prototype code and CI results will be added here as the prototype matur
 - Should `circuitHash` include a reproducible build recipe (e.g. Dockerfile digest, Nix flake hash) in addition to the circuit artifact?
 - How should clients handle revocation of verification keys or TEE signing keys?
 - Should this extension also apply to `resources/read` and `prompts/get`, or remain scoped to `tools/call`?
-- What is the canonical encoding for `publicInputs` to maximize interoperability across ZKP libraries?
+- What is the canonical encoding for `publicInputs` to maximize interoperability across ZKP libraries? (This revision fixes `publicInputs[0]` and the commitment construction; field-element encoding for the remaining entries is still per-format.)
+- Should `blindPublicKey` / `blindEncryptionSchemes` be normative capability fields or remain implementation-defined?
+- Verifiable FHE: `fhe-tfhe-v1` is reserved, but FHE alone gives confidentiality without correctness. What is the minimum viable vFHE construction (proof over the homomorphic evaluation, or TEE-hosted FHE evaluation) worth standardizing?
+- MPC / co-SNARK provers: when inputs come from several parties (Scenario A with multiple data providers), should the extension describe a multi-prover `inputCommitment` (one commitment per party) or leave that to the format?
+- Economics: should the capability object carry a price or cost hint per `proofFormat` so that agents in a tool market (Scenario A) can choose between `always`, `onDemand`, and `sampled` automatically?
+- Which working group / interest group should incubate this as an `experimental-ext-*` extension before an SEP is filed?
