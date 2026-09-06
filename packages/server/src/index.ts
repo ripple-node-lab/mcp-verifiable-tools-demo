@@ -31,6 +31,7 @@ export interface DemoServerOptions {
   teeNitro?: false | TeeNitroProverOptions;
   formatDescriptors?: { [format: string]: ToolFormatDescriptor };
 }
+const TASK_TTL_HEADROOM_MS = 30_000;
 const toolNames: ToolName[] = ["add", "riskScore", "privateCreditCheck", "priceQuote"];
 
 export class DemoServer {
@@ -50,7 +51,7 @@ export class DemoServer {
   constructor(options: DemoServerOptions = {}) {
     this.host = options.host ?? "127.0.0.1";
     const risc0TimeoutMs = options.risc0TimeoutMs ?? 180_000;
-    this.tasks = new TaskStore({ ttlMs: options.taskTtlMs ?? (options.risc0SidecarUrl ? Math.max(60_000, risc0TimeoutMs) : 60_000) });
+    this.tasks = new TaskStore({ ttlMs: options.taskTtlMs ?? (options.risc0SidecarUrl ? Math.max(60_000, risc0TimeoutMs + TASK_TTL_HEADROOM_MS) : 60_000) });
     this.results = new ResultStore(options.resultTtlMs ?? RESULT_TTL_MS);
     this.descriptorOverride = options.descriptorOverride;
     this.verificationKeyOverrides = options.verificationKeyOverrides ?? {};

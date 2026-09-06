@@ -76,7 +76,7 @@ test("task TTL covers the risc0 proving timeout when the sidecar is configured",
     await client.discover();
     client.setCapabilities({ proofFormats: ["demo-sig-v1"] }, true);
     const task = expectTask((await client.callTool("riskScore", { symbol: "AAPL" }, { proofFormat: "demo-sig-v1" })).result);
-    assert.equal(task.ttlMs, 120_000);
+    assert.equal(task.ttlMs, 150_000);
     await rpc(server, "tasks/cancel", { taskId: task.taskId });
   });
   await withServer(async (server) => {
