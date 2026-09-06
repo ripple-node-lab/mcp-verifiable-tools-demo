@@ -51,6 +51,31 @@ test("risc0-v1 rejects a publicInputs tail mismatch", async () => {
   assert.deepEqual(outcome, { ok: false, reason: "proofInvalid" });
 });
 
+for (const [label, index] of [["outputCommitment entry", 0], ["inputCommitment entry", 1], ["nonce entry", 2]] as const) {
+  test(`risc0-v1 rejects an altered ${label}`, async () => {
+    const meta = await fixtureMeta();
+    meta.publicInputs![index] = "0xdeadbeef";
+    const outcome = await verifyResult(meta, context(), [new Risc0Verifier()]);
+    assert.deepEqual(outcome, { ok: false, reason: "proofInvalid" });
+  });
+}
+
+for (const [label, length] of [["short", 5], ["long", 7]] as const) {
+  test(`risc0-v1 rejects a ${label} publicInputs array`, async () => {
+    const meta = await fixtureMeta();
+    meta.publicInputs = length === 5 ? meta.publicInputs!.slice(0, 5) : [...meta.publicInputs!, "extra"];
+    const outcome = await verifyResult(meta, context(), [new Risc0Verifier()]);
+    assert.deepEqual(outcome, { ok: false, reason: "proofInvalid" });
+  });
+}
+
+test("risc0-v1 rejects a numeric entry in the publicInputs tail", async () => {
+  const meta = await fixtureMeta();
+  meta.publicInputs![5] = 40;
+  const outcome = await verifyResult(meta, context(), [new Risc0Verifier()]);
+  assert.deepEqual(outcome, { ok: false, reason: "proofInvalid" });
+});
+
 test("risc0-v1 rejects changed content", async () => {
   const meta = await fixtureMeta();
   const outcome = await verifyResult(meta, context([{ type: "text", text: "43" }]), [new Risc0Verifier()]);

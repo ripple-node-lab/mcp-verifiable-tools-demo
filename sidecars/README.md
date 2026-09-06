@@ -35,7 +35,10 @@ HTTP sidecar として合成する（`docs/PLAN.md` §2・§5）。MCP サーバ
   で生成される image ID は一致しない場合がある（compose は
   `RISC0_EXPECT_IMAGE_ID_FILE` で突合して起動時に検出）。
   `RISC0_DEV_MODE` 時は Fake receipt を返す（`/verify` は dev mode でない
-  限り Fake を `devModeReceipt` で拒否）。
+  限り Fake を `devModeReceipt` で拒否）。同時 prove 数は
+  `MAX_CONCURRENT_PROOFS`（既定 1）で制限し、超過分は 503 `{"error":"busy"}`。
+  インフライトの prove のキャンセルは非対応（`SidecarProver` の abort は
+  HTTP リクエストを閉じるだけで、r0vm ジョブは完了まで走る）。
   検証は in-process WASM（`sidecars/risc0/wasm-verify` を
   `build-wasm.sh` で wasm32 ビルド → `packages/prover-risc0/wasm`）が既定;
   sidecar 側 `/verify` も契約どおり実装済み。

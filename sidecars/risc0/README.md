@@ -1,111 +1,85 @@
-# RISC Zero Rust Starter Template
+# risc0 sidecar (`risc0-v1`)
 
-Welcome to the RISC Zero Rust Starter Template! This template is intended to
-give you a starting point for building a project using the RISC Zero zkVM.
-Throughout the template (including in this README), you'll find comments
-labelled `TODO` in places where you'll need to make changes. To better
-understand the concepts behind this template, check out the [zkVM
-Overview][zkvm-overview].
+RISC Zero zkVM proving sidecar for the verifiable-tools demo. The `add` guest
+reads `(a, b): (u32, u32)` via `env::read`, computes `a.checked_add(b)` (panic
+on overflow) and commits a 12-byte little-endian journal `a || b || sum`.
+The receipt is a RISC Zero composite receipt (bincode-serialized). Input /
+output / nonce binding follows the `snarkjs-v2` / `noir-v1` pattern — it lives
+in `publicInputs` (`[outputCommitment, inputCommitment, nonce ?? "0x", sum, a, b]`),
+not inside the guest. `circuitHash` is the guest image ID (32-byte hex).
 
-## Quick Start
+## Layout
 
-First, make sure [rustup] is installed. The
-[`rust-toolchain.toml`][rust-toolchain] file will be used by `cargo` to
-automatically install the correct version.
+- `methods/guest/` — zkVM guest (`add_guest`), own cargo workspace + `Cargo.lock`
+- `methods/` — `embed_methods` glue; generates `ADD_GUEST_ELF` / `ADD_GUEST_ID`
+- `host/` — HTTP sidecar binary (`tiny_http`, one thread per request)
+- `wasm-verify/` — verify-only `risc0-zkvm` crate compiled to
+  `wasm32-unknown-unknown`; `build-wasm.sh` copies the artifact to
+  `packages/prover-risc0/wasm/risc0_verify.wasm` (committed)
+- `fixtures/` — `add-receipt.b64` / `add-receipt-dev.b64` receipts used by
+  `tests/risc0.test.ts`
+- `image-id.txt` — canonical guest image ID, pinned in
+  `packages/protocol/src/meta.ts` (`PINNED_CIRCUITS.add.formats["risc0-v1"]`)
 
-To build all methods and execute the method within the zkVM, run the following
-command:
+## Build & run
 
-```bash
-cargo run
+Local (needs the rzup toolchain layout under `~/.risc0`: rust 1.97.0 +
+r0cpp 2024.1.5 + cargo-risczero 3.0.6, or `rzup install`):
+
+```sh
+cargo build --release
+./target/release/host
 ```
 
-This is an empty template, and so there is no expected output (until you modify
-the code).
+Docker (canonical — see "Image ID" below):
 
-### Executing the Project Locally in Development Mode
-
-During development, faster iteration upon code changes can be achieved by leveraging [dev-mode], we strongly suggest activating it during your early development phase. Furthermore, you might want to get insights into the execution statistics of your project, and this can be achieved by specifying the environment variable `RUST_LOG="[executor]=info"` before running your project.
-
-Put together, the command to run your project in development mode while getting execution statistics is:
-
-```bash
-RUST_LOG="[executor]=info" RISC0_DEV_MODE=1 cargo run
+```sh
+docker compose --profile risc0 up --build -d --wait   # repo root
+docker compose --profile risc0 down
 ```
 
-### Running Proofs Remotely on Bonsai
+Env: `HOST`/`PORT` (default `0.0.0.0:4200`), `RISC0_DEV_MODE` (return
+Fake receipts; `/verify` rejects them unless this is set),
+`RISC0_EXPECT_IMAGE_ID_FILE` (assert image ID at startup, set by compose),
+`MAX_CONCURRENT_PROOFS` (default `1`; excess `/prove` → 503 `{"error":"busy"}`).
+Aborting an in-flight proof is not supported: the `SidecarProver` abort only
+closes the HTTP request; the proving job runs to completion.
 
-_Note: The Bonsai proving service is still in early Alpha; an API key is
-required for access. [Click here to request access][bonsai access]._
+## HTTP contract (same shape as the mock sidecar)
 
-If you have access to the URL and API key to Bonsai you can run your proofs
-remotely. To prove in Bonsai mode, invoke `cargo run` with two additional
-environment variables:
+- `GET /healthz` → `{"status","formats":["risc0-v1"],"imageId","devMode","maxConcurrentProofs"}`
+- `POST /prove` — body `ProveInput`; validates `circuitHash == imageId` → 400
+  `circuitHashMismatch`, args must be u32 with `a+b` ≤ u32::MAX → 400
+  `invalidArguments`, `output == sum` → 400 `outputMismatch`. Response is the
+  `VerifiableToolsMeta` (proof = base64url bincode receipt, ≈222 KB).
+- `POST /verify` — `{meta, expectedCircuitHash}` → `{ok}` or
+  `{ok:false, reason}` where reason ∈ `malformed | circuitHashMismatch |
+  receiptInvalid | devModeReceipt | publicInputsMismatch | journalMismatch`.
+- `GET /vk/{imageId}` → `{"format":"risc0-v1","imageId"}` or 404.
+- Body limit 2 MiB.
 
-```bash
-BONSAI_API_KEY="YOUR_API_KEY" BONSAI_API_URL="BONSAI_URL" cargo run
+## Image ID and fixtures
+
+The image ID derives from the guest ELF memory image, which embeds build-path
+strings — so host builds are **not** reproducible across checkouts. The
+canonical value is produced by `sidecars/risc0/Dockerfile` (pinned toolchain
+tarballs from GitHub releases, no rzup). To bump it:
+
+```sh
+docker compose --profile risc0 up --build -d --wait
+docker compose logs sidecar-risc0   # imageId=0x… on the startup line
+echo <id> > sidecars/risc0/image-id.txt
+node scripts/update-pins.mjs        # repo root; updates PINNED_CIRCUITS
 ```
 
-## How to Create a Project Based on This Template
+Regenerate fixtures by POSTing `/prove` to a running container (and a
+`RISC0_DEV_MODE=1` container for the dev fixture), then rebuild the committed
+wasm verifier with `wasm-verify/build-wasm.sh` when `risc0-zkvm` changes.
 
-Search this template for the string `TODO`, and make the necessary changes to
-implement the required feature described by the `TODO` comment. Some of these
-changes will be complex, and so we have a number of instructional resources to
-assist you in learning how to write your own code for the RISC Zero zkVM:
+## Tests
 
-- The [RISC Zero Developer Docs][dev-docs] is a great place to get started.
-- Example projects are available in the [examples folder][examples] of
-  [`risc0`][risc0-repo] repository.
-- Reference documentation is available at [https://docs.rs][docs.rs], including
-  [`risc0-zkvm`][risc0-zkvm], [`cargo-risczero`][cargo-risczero],
-  [`risc0-build`][risc0-build], and [others][crates].
-
-## Directory Structure
-
-It is possible to organize the files for these components in various ways.
-However, in this starter template we use a standard directory structure for zkVM
-applications, which we think is a good starting point for your applications.
-
-```text
-project_name
-├── Cargo.toml
-├── host
-│   ├── Cargo.toml
-│   └── src
-│       └── main.rs                    <-- [Host code goes here]
-└── methods
-    ├── Cargo.toml
-    ├── build.rs
-    ├── guest
-    │   ├── Cargo.toml
-    │   └── src
-    │       └── method_name.rs         <-- [Guest code goes here]
-    └── src
-        └── lib.rs
+```sh
+npm test                                                  # fixtures, in-process WASM verify
+RISC0_SIDECAR_URL=http://127.0.0.1:4200 \
+  node --test tests/dist/risc0-sidecar.test.js            # real prove, ~20–60 s
 ```
-
-## Video Tutorial
-
-For a walk-through of how to build with this template, check out this [excerpt
-from our workshop at ZK HACK III][zkhack-iii].
-
-## Questions, Feedback, and Collaborations
-
-We'd love to hear from you on [Discord][discord] or [Twitter][twitter].
-
-[bonsai access]: https://bonsai.xyz/apply
-[cargo-risczero]: https://docs.rs/cargo-risczero
-[crates]: https://github.com/risc0/risc0/blob/main/README.md#rust-binaries
-[dev-docs]: https://dev.risczero.com
-[dev-mode]: https://dev.risczero.com/api/generating-proofs/dev-mode
-[discord]: https://discord.gg/risczero
-[docs.rs]: https://docs.rs/releases/search?query=risc0
-[examples]: https://github.com/risc0/risc0/tree/main/examples
-[risc0-build]: https://docs.rs/risc0-build
-[risc0-repo]: https://www.github.com/risc0/risc0
-[risc0-zkvm]: https://docs.rs/risc0-zkvm
-[rust-toolchain]: rust-toolchain.toml
-[rustup]: https://rustup.rs
-[twitter]: https://twitter.com/risczero
-[zkhack-iii]: https://www.youtube.com/watch?v=Yg_BGqj_6lg&list=PLcPzhUaCxlCgig7ofeARMPwQ8vbuD6hC5&index=5
-[zkvm-overview]: https://dev.risczero.com/zkvm

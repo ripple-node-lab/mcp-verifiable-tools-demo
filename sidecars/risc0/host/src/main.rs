@@ -4,11 +4,46 @@ use risc0_zkvm::{default_prover, Digest, ExecutorEnv, InnerReceipt, ProverOpts, 
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::io::Read;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tiny_http::{Header, Method, Response, Server};
 
 // 2 MiB: a composite receipt is ~222 KB serialized (~300 KB base64url in meta.proof).
 const MAX_BODY: u64 = 2 * 1024 * 1024;
 const EMPTY_NONCE: &str = "0x";
+static IN_FLIGHT_PROOFS: AtomicUsize = AtomicUsize::new(0);
+
+fn max_concurrent_proofs() -> usize {
+    std::env::var("MAX_CONCURRENT_PROOFS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(1)
+}
+
+// Decrements the in-flight proof counter on drop. Cancellation of an
+// in-flight proof is not supported: aborting the request still runs the
+// r0vm job to completion and only then frees the slot.
+struct ProofSlot;
+impl Drop for ProofSlot {
+    fn drop(&mut self) {
+        IN_FLIGHT_PROOFS.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+fn try_acquire_proof_slot() -> Option<ProofSlot> {
+    let limit = max_concurrent_proofs();
+    loop {
+        let current = IN_FLIGHT_PROOFS.load(Ordering::SeqCst);
+        if current >= limit {
+            return None;
+        }
+        if IN_FLIGHT_PROOFS
+            .compare_exchange(current, current + 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            return Some(ProofSlot);
+        }
+    }
+}
 
 fn image_id_bytes() -> [u8; 32] {
     bytemuck::cast::<[u32; 8], [u8; 32]>(ADD_GUEST_ID)
@@ -77,6 +112,9 @@ fn make_receipt(a: u32, b: u32) -> Result<Receipt, String> {
 }
 
 fn prove(request: &mut tiny_http::Request) -> (u16, Value) {
+    let Some(_slot) = try_acquire_proof_slot() else {
+        return (503, json!({ "error": "busy" }));
+    };
     let image_id = image_id_hex();
     let body = match read_body(request) {
         Ok(v) => v,
@@ -183,15 +221,30 @@ fn verify(request: &mut tiny_http::Request) -> (u16, Value) {
         return (200, json!({ "ok": false, "reason": "journalMismatch" }));
     }
     let inputs = meta.get("publicInputs").and_then(Value::as_array);
-    let tail: Vec<String> = inputs
-        .map(|v| {
-            v.iter()
-                .skip(3)
-                .filter_map(|x| x.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    if tail != [sum.to_string(), a.to_string(), b.to_string()] {
+    let Some(inputs) = inputs else {
+        return (200, json!({ "ok": false, "reason": "malformed" }));
+    };
+    let str_entry = |i: usize| inputs.get(i).and_then(Value::as_str);
+    let nonce = meta
+        .get("nonce")
+        .and_then(Value::as_str)
+        .unwrap_or(EMPTY_NONCE);
+    let binding = [
+        meta.get("outputCommitment").and_then(Value::as_str),
+        meta.get("inputCommitment").and_then(Value::as_str),
+        Some(nonce),
+    ];
+    if inputs.len() != 6 || binding != [str_entry(0), str_entry(1), str_entry(2)] {
+        return (
+            200,
+            json!({ "ok": false, "reason": "publicInputsMismatch" }),
+        );
+    }
+    let tail = [sum.to_string(), a.to_string(), b.to_string()];
+    if str_entry(3) != Some(tail[0].as_str())
+        || str_entry(4) != Some(tail[1].as_str())
+        || str_entry(5) != Some(tail[2].as_str())
+    {
         return (200, json!({ "ok": false, "reason": "journalMismatch" }));
     }
     (200, json!({ "ok": true }))
@@ -208,6 +261,7 @@ fn handle(mut request: tiny_http::Request) {
                 "formats": ["risc0-v1"],
                 "imageId": image_id_hex(),
                 "devMode": dev_mode(),
+                "maxConcurrentProofs": max_concurrent_proofs(),
             }),
         ),
         (&Method::Post, "/prove") => {

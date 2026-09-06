@@ -6,7 +6,7 @@
 // publicInputs[0..3]; the circuit's public inputs are [sum, a, b].
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { VerifiableToolsMeta, parseAddArguments } from "@demo/protocol";
+import { EMPTY_NONCE, VerifiableToolsMeta, parseAddArguments } from "@demo/protocol";
 import { Verifier, VerifyContext } from "@demo/verifier";
 import { SidecarVerifier } from "@demo/prover-sidecar";
 
@@ -68,8 +68,10 @@ export async function verifyRisc0(meta: VerifiableToolsMeta, context: VerifyCont
   const args = parseAddArguments(context.arguments);
   if (!args || args.a !== a || args.b !== b) return false;
   if (context.content[0]?.text !== String(sum)) return false;
-  const tail = Array.isArray(meta.publicInputs) ? meta.publicInputs.slice(3) : [];
-  return JSON.stringify(tail) === JSON.stringify([String(sum), String(a), String(b)]);
+  const expected = [meta.outputCommitment, meta.inputCommitment, meta.nonce ?? EMPTY_NONCE, String(sum), String(a), String(b)];
+  const inputs = meta.publicInputs;
+  return Array.isArray(inputs) && inputs.length === expected.length &&
+    inputs.every((value, i) => typeof value === "string" && value === expected[i]);
 }
 
 export class Risc0Verifier implements Verifier {
