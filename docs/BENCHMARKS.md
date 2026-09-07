@@ -29,7 +29,9 @@ The Circom trusted setup is a local, single-party, insecure demo ceremony; it is
 These numbers were recorded while landing each phase and are copied here from
 the Phase 3-b/3-c/3-d rows of [PLAN.md](PLAN.md); they were not re-measured
 for this document. Provers run in docker sidecars; verification runs
-in-process (WASM) unless noted.
+in-process (WASM) unless noted. Prover memory was not recorded for the sidecar
+formats (`npm run bench` measures RSS only for in-process provers), so the
+Phase 3 rows are incomplete against the spec's reporting requirement.
 
 | Format / artifact | Prove time | Proof size | VK / artifact size | Verify time | Notes |
 |---|---|---|---|---|---|

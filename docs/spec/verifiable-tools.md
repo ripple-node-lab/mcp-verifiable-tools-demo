@@ -735,7 +735,7 @@ only attaches attestations to appending formats (`riskScore` proves with
 - Proof generation can be orders of magnitude slower than the underlying computation. This is why async generation via Tasks is the default pattern, and why `proofPolicy: "onDemand" | "sampled"` exists for high-volume tools.
 - Verification is typically fast (milliseconds to seconds) and should run on the client.
 - Large proofs SHOULD be served via `proofUri` or `verificationKeyUri` rather than inlined in `_meta`.
-- Every format definition MUST report: proving time and memory for the reference circuit, proof size, verification time, and verifier dependency footprint (npm/WASM vs. native). The reference implementation records these per format (see [`docs/BENCHMARKS.md`](../BENCHMARKS.md) and the Phase 3 rows of [`docs/PLAN.md`](../PLAN.md)) so that `proofFormats` negotiation can be cost-aware.
+- Every format definition MUST report: proving time and memory for the reference circuit, proof size, verification time, and verifier dependency footprint (npm/WASM vs. native). The reference implementation records these for the in-process formats (see [`docs/BENCHMARKS.md`](../BENCHMARKS.md)); for the sidecar formats it records time and sizes but not yet prover memory (Phase 3 rows of [`docs/PLAN.md`](../PLAN.md)), so that `proofFormats` negotiation can be cost-aware.
 
 ## Testing Plan
 
