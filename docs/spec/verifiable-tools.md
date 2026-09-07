@@ -641,18 +641,25 @@ This extension is **fully backward compatible**.
 
 ## Reference Implementation
 
-A reference implementation is required before this SEP can reach "Final" status. The prototype lives at <https://github.com/ripple-node-lab/mcp-verifiable-tools-demo> (TypeScript, MCP `2026-07-28` Streamable HTTP, `npm install && npm test`). Its plan (`docs/PLAN.md`) is staged so that reviewers can run each stage without heavy toolchains:
+A reference implementation is required before this SEP can reach "Final" status. The prototype lives at <https://github.com/ripple-node-lab/mcp-verifiable-tools-demo> (TypeScript, MCP `2026-07-28` Streamable HTTP, `npm install && npm test`). Its staged plan and per-phase measurements are recorded in [`docs/PLAN.md`](../PLAN.md), per-format benchmark figures in [`docs/BENCHMARKS.md`](../BENCHMARKS.md), and CI runs the full suite plus opt-in sidecar jobs on every change ([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), [Actions](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/actions)). Implemented phases:
 
 - Phase 1 (done): transport, negotiation, Tasks integration, and blind calls with dependency-free stand-in formats (`demo-sig-v1`, `demo-commit-v1`). These are *not* cryptographic proofs and are labelled as such.
-- Phase 2-b: two real ZK formats that run in-process from npm (`snarkjs-v2` Groth16 over a Circom circuit and `noir-v1` UltraHonk), plus the result-binding fields of this revision and measured proving/verification figures.
-- Phase 3: sidecar-based formats where the prover is not TypeScript: `risc0-v1` (Rust zkVM), `ezkl-v1` (Python/CLI prover, WASM verifier), `tee-nitro-v1` (attestation verification in TypeScript, enclave build opt-in), and a `zktls-tlsn-v1` input attestation for the price-feed scenario.
-- Phase 4: port of the protocol layer to `modelcontextprotocol/typescript-sdk`.
+- Phase 2-a (done): the result-binding fields of this revision — `outputCommitment`, `nonce`, salted JCS input commitments, `tools/list` descriptors, deferred proofs (`verifiable-tools/prove`, `resultTtlMs`), abortable `tasks/cancel`, and RFC 9180 `hpke-v1` reply encryption.
+- Phase 2-b (done): two real ZK formats that run in-process from npm — `snarkjs-v2` (Groth16 over a Circom circuit) and `noir-v1` (UltraHonk) — with measured figures in `docs/BENCHMARKS.md`.
+- Phase 3-a (done): the sidecar HTTP contract and adapter (`packages/prover-sidecar`, reference sidecar `demo-sig-sidecar-v1` in `packages/sidecar-mock`), and `tee-nitro-v1` — a COSE_Sign1/CBOR attestation verified entirely in TypeScript, issued against *mock* AWS-Nitro-style fixtures (`sidecars/nitro/mock-fixtures`).
+- Phase 3-b (done): `risc0-v1` — Rust zkVM prover sidecar ([`sidecars/risc0`](../../sidecars/risc0/), `docker compose --profile risc0`), verified in-process by a wasm32 build of `risc0-zkvm` (`packages/prover-risc0`).
+- Phase 3-c (done): `ezkl-v1` — Python `ezkl==22.0.1` prover sidecar ([`sidecars/ezkl`](../../sidecars/ezkl/), `docker compose --profile ezkl`), verified in-process by `@ezkljs/engine`'s wasm build (`packages/prover-ezkl`); `add` inputs are restricted to `a, b ∈ [0, 2^24]`.
+- Phase 3-d (done): input provenance — `oracle-sig-v1` attestations verified in-process (Ed25519 over the attested payload, key pinned via the origin-allowlisted key registry) and `zktls-tlsn-v1` TLSNotary presentations verified by the Rust sidecar ([`sidecars/tlsn`](../../sidecars/tlsn/); `tlsn-core` does not build for bare wasm32).
+- Phase 4-a (done): [`packages/sdk-extension`](../../packages/sdk-extension/) adapts the extension onto the published `@modelcontextprotocol/sdk@1.30.0` — the SDK owns the transport and the `initialize` handshake (advertising `capabilities.extensions`), and the extension methods dispatch to the reference server. Exercised over both `InMemoryTransport` and Streamable HTTP ([`tests/sdk-extension.test.ts`](../../tests/sdk-extension.test.ts)).
+- Phase 4-b (pending): rebasing the SDK adapter on the unpublished v2's `server/discover` awaits publication of an SDK release that speaks the `2026-07-28` revision.
 
-CI results and per-format benchmarks will be linked here as each phase lands.
+Verification surface: `demo-sig-v1`, `demo-commit-v1`, `snarkjs-v2`, `noir-v1`, `risc0-v1` (WASM), `ezkl-v1` (WASM), and `tee-nitro-v1` verify in-process in TypeScript/WASM on the client; `zktls-tlsn-v1` attestation verification runs in the sidecar's `/verify` endpoint (the notary key is pinned through the key registry), and the sidecar contract also exposes `/verify` for `risc0-v1` and `ezkl-v1`. The `demo-*` formats, `demo-sig-sidecar-v1`, `oracle-sig-v1`, and the `tee-nitro-v1` mock certificate chain are demonstration artefacts, not production-grade evidence.
+
+The Testing Plan bullets map to `tests/` as follows: conformance to advertised `proofFormats` and extension-absent behaviour → [`negotiation.test.ts`](../../tests/negotiation.test.ts); the async path → [`async-tasks.test.ts`](../../tests/async-tasks.test.ts); negative tests → [`negative.test.ts`](../../tests/negative.test.ts), [`zk-snarkjs.test.ts`](../../tests/zk-snarkjs.test.ts), [`zk-noir.test.ts`](../../tests/zk-noir.test.ts), [`risc0.test.ts`](../../tests/risc0.test.ts), [`ezkl.test.ts`](../../tests/ezkl.test.ts); result binding → [`binding.test.ts`](../../tests/binding.test.ts), [`hpke.test.ts`](../../tests/hpke.test.ts); provenance → [`provenance.test.ts`](../../tests/provenance.test.ts) plus opt-in [`tlsn-sidecar.test.ts`](../../tests/tlsn-sidecar.test.ts); deferred proofs → [`deferred-proof.test.ts`](../../tests/deferred-proof.test.ts); descriptor mismatch → [`descriptor.test.ts`](../../tests/descriptor.test.ts); SDK-transport behaviour → [`sdk-extension.test.ts`](../../tests/sdk-extension.test.ts).
 
 ### Non-normative appendix: format profiles implemented by the reference demo
 
-The reference demo implements these concrete profiles for `add`. Both bind
+The reference demo implements these concrete profiles for `add`. Each binds
 `publicInputs = [outputCommitment, inputCommitment, nonce ?? "0x", ...nativeTail]`.
 
 - `snarkjs-v2`: `proof` is unpadded base64url of JCS-serialized snarkjs
@@ -662,20 +669,73 @@ The reference demo implements these concrete profiles for `add`. Both bind
   tail is padded lowercase hexadecimal field strings `[a, b, c]`. The
   verification-key document is JCS JSON
   `{"format":"noir-v1","vk":"<base64url raw vk bytes>"}`.
+- `risc0-v1`: `proof` is unpadded base64url of a bincode-serialized RISC Zero
+  composite receipt; the guest computes `a.checked_add(b)` over `u32` and
+  commits a 12-byte little-endian journal `a ‖ b ‖ sum`. The native tail is
+  the journal decoded as decimal `[sum, a, b]`. `circuitHash` is `0x` plus the
+  guest's 32-byte image ID in hex — the image ID itself is the circuit pin —
+  and `verificationKeyUri` serves `{"format":"risc0-v1","imageId":…}` from the
+  sidecar. Verification runs in-process against a wasm32 build of
+  `risc0-zkvm` (`sidecars/risc0/wasm-verify`); the prover is the Rust sidecar.
+- `ezkl-v1`: `proof` is unpadded base64url of the ezkl/Halo2-KZG proof JSON;
+  the JSON's `instances[0]` holds the circuit's three public instances
+  `[a, b, sum]` as `0x`-prefixed 32-byte little-endian field elements, while
+  the meta `publicInputs` tail is decimal `[sum, a, b]`. The input domain is
+  restricted to `a, b ∈ [0, 2^24]`: ONNX FLOAT ingestion is only exact below
+  `2^24`, and the circuit's range-check decomposition (base 16384, n = 2)
+  caps at `2^28`. Verification runs in-process via `@ezkljs/engine`'s wasm
+  build, which must match the prover's ezkl version exactly (22.0.1); the
+  proving key is regenerated by `ezkl.setup` at sidecar startup and checked
+  against the committed `vk` SHA-256.
+- `tee-nitro-v1`: `proof` is `0x` plus lowercase hexadecimal of an Ed25519
+  signature — by the enclave key carried in the attestation's `public_key`
+  field — over the concatenated binding fields `circuitHash + inputCommitment
+  + outputCommitment + nonce + commitments`; `teeAttestation` is `0x` plus hex
+  of a COSE_Sign1 structure wrapping a CBOR Nitro-style attestation document
+  (`module_id`, `timestamp`, `digest` = `SHA384`, `pcrs`, `certificate`,
+  `cabundle`, `public_key`, `user_data`, `nonce`). The `publicInputs` tail is
+  empty: the attestation document is the native evidence, bound by pinned PCR
+  measurements selected via `circuitHash`, the request `nonce` echoed into the
+  document, a certificate chain resolving to a configured root, and a
+  freshness bound (300 s in the reference demo). The demo chain and PCRs are
+  mock fixtures (`sidecars/nitro/mock-fixtures`), not the AWS Nitro root.
 
-Both profiles require `a`, `b`, and the checked `u32` sum `a + b` to fit in
-`[0, 2^32 - 1]`; overflowing or otherwise invalid arguments MUST be rejected
-with `-32602`.
+The ZK profiles bound the argument domain: `snarkjs-v2`, `noir-v1`, and
+`risc0-v1` require `a`, `b`, and the checked `u32` sum `a + b` to fit in
+`[0, 2^32 - 1]`; `ezkl-v1` further restricts `a, b` to `[0, 2^24]`.
+Overflowing or otherwise invalid arguments MUST be rejected with `-32602`.
 
-For both profiles, `circuitHash` is `0x` plus SHA-256 of the exact bytes served
-at `verificationKeyUri`, including JSON serialization and whitespace.
+For `snarkjs-v2`, `noir-v1`, and `ezkl-v1`, `circuitHash` is `0x` plus
+SHA-256 of the exact bytes served at `verificationKeyUri`, including JSON
+serialization and whitespace; for `risc0-v1` it is the image ID as described
+above, and for `tee-nitro-v1` it selects the pinned PCR measurement set.
+
+`inputAttestations` binding: the demo's signature- and attestation-based
+formats (`demo-sig-v1`, `demo-commit-v1`, `tee-nitro-v1`, and the sidecar
+contract) append each attestation's `commitment` to `publicInputs` after the
+native tail and cover the concatenated commitments in the signed payload. The
+ZK profiles keep fixed-length `publicInputs` layouts, so the reference demo
+only attaches attestations to appending formats (`riskScore` proves with
+`demo-sig-v1` / `demo-commit-v1`). Two attestation types are implemented:
+
+- `oracle-sig-v1`: `commitment` is `0x` plus SHA-256 of the UTF-8 `data`;
+  `proof` is unpadded base64url of an Ed25519 signature over
+  `utf8(jcs({type, source, commitment}))`; `verificationKeyUri` resolves to a
+  PEM public key through the origin-allowlisted key registry, pinned by URI.
+- `zktls-tlsn-v1`: `proof` is unpadded base64url of a bincode-serialized tlsn
+  `Presentation` revealing the request line (method + target) and the full
+  response body; `notaryKeyUri` resolves to the notary's secp256k1 SPKI PEM
+  through the same registry. Presentation verification runs in the Rust
+  sidecar's `/verify` endpoint because `tlsn-core` does not build for bare
+  wasm32; the demo attests against a loopback fixture host (`test-server.io`)
+  standing in for a real exchange API.
 
 ## Performance Implications
 
 - Proof generation can be orders of magnitude slower than the underlying computation. This is why async generation via Tasks is the default pattern, and why `proofPolicy: "onDemand" | "sampled"` exists for high-volume tools.
 - Verification is typically fast (milliseconds to seconds) and should run on the client.
 - Large proofs SHOULD be served via `proofUri` or `verificationKeyUri` rather than inlined in `_meta`.
-- Every format definition MUST report: proving time and memory for the reference circuit, proof size, verification time, and verifier dependency footprint (npm/WASM vs. native). The reference implementation records these per format so that `proofFormats` negotiation can be cost-aware.
+- Every format definition MUST report: proving time and memory for the reference circuit, proof size, verification time, and verifier dependency footprint (npm/WASM vs. native). The reference implementation records these for the in-process formats (see [`docs/BENCHMARKS.md`](../BENCHMARKS.md)); for the sidecar formats it records time and sizes but not yet prover memory (Phase 3 rows of [`docs/PLAN.md`](../PLAN.md)), so that `proofFormats` negotiation can be cost-aware.
 
 ## Testing Plan
 

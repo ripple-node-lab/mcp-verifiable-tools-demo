@@ -638,18 +638,25 @@ MCP `2026-07-28` で公式の長時間タスクモデルが確立した。本拡
 
 ## 14. 参考実装
 
-SEP が "Final" 状態になる前に参考実装が必要となる。プロトタイプは <https://github.com/ripple-node-lab/mcp-verifiable-tools-demo> にある（TypeScript、MCP `2026-07-28` Streamable HTTP、`npm install && npm test`）。その計画（`docs/PLAN.md`）は、重いツールチェーンなしにレビュアーが各段階を実行できるよう構成されている。
+SEP が "Final" 状態になる前に参考実装が必要となる。プロトタイプは <https://github.com/ripple-node-lab/mcp-verifiable-tools-demo> にある（TypeScript、MCP `2026-07-28` Streamable HTTP、`npm install && npm test`）。段階的な計画と各 Phase の計測値は [`docs/PLAN.md`](../PLAN.md) に、形式ごとのベンチマークは [`docs/BENCHMARKS.md`](../BENCHMARKS.md) に記録しており、CI は変更ごとに全スイートと opt-in の sidecar ジョブを実行する（[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)、[Actions](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/actions)）。実装済みの Phase は次の通り。
 
 - Phase 1（完了）：トランスポート、ネゴシエーション、Tasks 統合、依存ゼロの代替形式（`demo-sig-v1`、`demo-commit-v1`）によるブラインド呼び出し。これらは*暗号学的証明ではなく*、その旨を明記する。
-- Phase 2-b：npm からプロセス内で動く 2 つの実 ZK 形式（Circom 回路上の `snarkjs-v2` Groth16 と `noir-v1` UltraHonk）に加え、本改訂の結果束縛フィールドと証明生成・検証の実測値。
-- Phase 3：prover が TypeScript ではない sidecar 形式。`risc0-v1`（Rust zkVM）、`ezkl-v1`（Python/CLI prover、WASM verifier）、`tee-nitro-v1`（TypeScript での Attestation 検証、エンクレーブビルドは opt-in）、価格フィードシナリオ向けの `zktls-tlsn-v1` 入力 Attestation。
-- Phase 4：プロトコル層を `modelcontextprotocol/typescript-sdk` へ移植。
+- Phase 2-a（完了）：本改訂の結果束縛フィールド —— `outputCommitment`、`nonce`、salt 付き JCS 入力コミットメント、`tools/list` 記述子、遅延証明（`verifiable-tools/prove`、`resultTtlMs`）、中断可能な `tasks/cancel`、RFC 9180 `hpke-v1` による応答暗号化。
+- Phase 2-b（完了）：npm からプロセス内で動く 2 つの実 ZK 形式（Circom 回路上の `snarkjs-v2` Groth16 と `noir-v1` UltraHonk）。実測値は `docs/BENCHMARKS.md`。
+- Phase 3-a（完了）：sidecar HTTP 契約とアダプタ（`packages/prover-sidecar`、参照 sidecar `demo-sig-sidecar-v1` を `packages/sidecar-mock` に）、および `tee-nitro-v1` —— TypeScript で完全に検証される COSE_Sign1/CBOR Attestation で、*モック* の AWS-Nitro 風 fixture（`sidecars/nitro/mock-fixtures`）から発行される。
+- Phase 3-b（完了）：`risc0-v1` —— Rust zkVM prover sidecar（[`sidecars/risc0`](../../sidecars/risc0/)、`docker compose --profile risc0`）、`risc0-zkvm` の wasm32 ビルドで in-process 検証（`packages/prover-risc0`）。
+- Phase 3-c（完了）：`ezkl-v1` —— Python `ezkl==22.0.1` prover sidecar（[`sidecars/ezkl`](../../sidecars/ezkl/)、`docker compose --profile ezkl`）、`@ezkljs/engine` の wasm ビルドで in-process 検証（`packages/prover-ezkl`）。`add` の入力は `a, b ∈ [0, 2^24]` に制限。
+- Phase 3-d（完了）：入力 provenance —— in-process 検証の `oracle-sig-v1` attestation（attest されたペイロードへの Ed25519 署名、鍵は origin 許可リスト付き鍵 registry でピン留め）と、Rust sidecar が検証する `zktls-tlsn-v1` TLSNotary presentation（[`sidecars/tlsn`](../../sidecars/tlsn/)。`tlsn-core` は bare wasm32 ではビルドできない）。
+- Phase 4-a（完了）：[`packages/sdk-extension`](../../packages/sdk-extension/) が公開版 `@modelcontextprotocol/sdk@1.30.0` 上に拡張を載せる —— SDK が transport と `initialize` ハンドシェイク（`capabilities.extensions` の広告を含む）を担い、拡張メソッドは参照サーバーへディスパッチされる。`InMemoryTransport` と Streamable HTTP の両方で検証済み（[`tests/sdk-extension.test.ts`](../../tests/sdk-extension.test.ts)）。
+- Phase 4-b（未着手）：未公開の v2 `server/discover` への載せ替えは、`2026-07-28` リビジョンを話す SDK リリースの公開待ち。
 
-CI 結果と形式ごとのベンチマークは、各 Phase が実現した時点でここにリンクする。
+検証の位置づけ：`demo-sig-v1`、`demo-commit-v1`、`snarkjs-v2`、`noir-v1`、`risc0-v1`（WASM）、`ezkl-v1`（WASM）、`tee-nitro-v1` はクライアント側の TypeScript/WASM で in-process 検証される。`zktls-tlsn-v1` の attestation 検証は sidecar の `/verify` エンドポイントで行われ（notary 鍵は鍵 registry でピン留め）、sidecar 契約は `risc0-v1` と `ezkl-v1` にも `/verify` を公開する。`demo-*` 形式、`demo-sig-sidecar-v1`、`oracle-sig-v1`、`tee-nitro-v1` のモック証明書チェーンはデモ用の成果物であり、プロダクション級の証拠ではない。
+
+テスト計画の各項目は `tests/` に次のように対応する：宣言した `proofFormats` への適合と拡張非宣言時の振る舞い → [`negotiation.test.ts`](../../tests/negotiation.test.ts)。非同期経路 → [`async-tasks.test.ts`](../../tests/async-tasks.test.ts)。否定的テスト → [`negative.test.ts`](../../tests/negative.test.ts)、[`zk-snarkjs.test.ts`](../../tests/zk-snarkjs.test.ts)、[`zk-noir.test.ts`](../../tests/zk-noir.test.ts)、[`risc0.test.ts`](../../tests/risc0.test.ts)、[`ezkl.test.ts`](../../tests/ezkl.test.ts)。結果束縛 → [`binding.test.ts`](../../tests/binding.test.ts)、[`hpke.test.ts`](../../tests/hpke.test.ts)。provenance → [`provenance.test.ts`](../../tests/provenance.test.ts) と opt-in の [`tlsn-sidecar.test.ts`](../../tests/tlsn-sidecar.test.ts)。遅延証明 → [`deferred-proof.test.ts`](../../tests/deferred-proof.test.ts)。記述子の不一致 → [`descriptor.test.ts`](../../tests/descriptor.test.ts)。SDK transport の振る舞い → [`sdk-extension.test.ts`](../../tests/sdk-extension.test.ts)。
 
 ### 規範外付録：参考デモが実装する形式プロファイル
 
-参考デモは `add` に対して次の具体的な形式を実装する。どちらも
+参考デモは `add` に対して次の具体的な形式を実装する。いずれも
 `publicInputs = [outputCommitment, inputCommitment, nonce ?? "0x", ...nativeTail]`
 を束縛する。
 
@@ -660,20 +667,75 @@ CI 結果と形式ごとのベンチマークは、各 Phase が実現した時�
   tail はパディング済み小文字 16 進フィールド文字列 `[a, b, c]`。
   検証鍵文書は JCS JSON
   `{"format":"noir-v1","vk":"<base64url raw vk bytes>"}` である。
+- `risc0-v1`：`proof` は bincode 直列化した RISC Zero composite receipt
+  のパディングなし base64url。ゲストは `u32` の `a.checked_add(b)` を計算し、
+  12 バイトのリトルエンディアン journal `a ‖ b ‖ sum` をコミットする。
+  native tail は journal を十進文字列 `[sum, a, b]` としてデコードした値。
+  `circuitHash` は `0x` にゲストの 32 バイト image ID の 16 進を付けた値
+  —— image ID 自体が回路のピンであり、`verificationKeyUri` は sidecar から
+  `{"format":"risc0-v1","imageId":…}` を配信する。検証は `risc0-zkvm` の
+  wasm32 ビルドで in-process（`sidecars/risc0/wasm-verify`）、prover は
+  Rust sidecar。
+- `ezkl-v1`：`proof` は ezkl/Halo2-KZG proof JSON のパディングなし
+  base64url。JSON の `instances[0]` は回路の 3 つの公開インスタンス
+  `[a, b, sum]` を `0x` 付き 32 バイトリトルエンディアンのフィールド要素
+  として持ち、meta の `publicInputs` tail は十進文字列 `[sum, a, b]`。
+  入力領域は `a, b ∈ [0, 2^24]` に制限される：ONNX FLOAT 入力の取り込みは
+  `2^24` 未満でのみ厳密であり、回路の range-check 分解（base 16384, n = 2）
+  の上限は `2^28`。検証は `@ezkljs/engine` の wasm ビルドで in-process に
+  行い、prover 側の ezkl バージョンと厳密に一致しなければならない
+  （22.0.1）。proving key は sidecar 起動時に `ezkl.setup` で再生成され、
+  コミット済み `vk` の SHA-256 と突合される。
+- `tee-nitro-v1`：`proof` は `0x` に続く小文字 16 進の Ed25519 署名 ——
+  attestation の `public_key` フィールドが運ぶエンクレーブ鍵による、連結
+  束縛フィールド `circuitHash + inputCommitment + outputCommitment + nonce
+  + commitments` への署名。`teeAttestation` は `0x` に続く 16 進の
+  COSE_Sign1 構造で、CBOR の Nitro 風 attestation 文書（`module_id`、
+  `timestamp`、`digest` = `SHA384`、`pcrs`、`certificate`、`cabundle`、
+  `public_key`、`user_data`、`nonce`）を包む。`publicInputs` の tail は空：
+  attestation 文書自体がネイティブの証拠であり、`circuitHash` で選択される
+  ピン留め PCR 測定値、文書にエコーされるリクエスト `nonce`、設定された
+  root に解決する証明書チェーン、freshness 境界（参考デモでは 300 秒）で
+  束縛される。デモのチェーンと PCR はモック fixture
+  （`sidecars/nitro/mock-fixtures`）であり、AWS Nitro root ではない。
 
-両形式とも `a`、`b`、および checked `u32` の和 `a + b` は
-`[0, 2^32 - 1]` に収まらなければならず、オーバーフローやその他の不正な
-引数は `-32602` で拒否しなければならない。
+上記 ZK プロファイルは引数領域を束縛する：`snarkjs-v2`、`noir-v1`、
+`risc0-v1` は `a`、`b`、および checked `u32` の和 `a + b` が
+`[0, 2^32 - 1]` に収まることを要求し、`ezkl-v1` はさらに `a, b` を
+`[0, 2^24]` に制限する。オーバーフローやその他の不正な引数は `-32602`
+で拒否しなければならない。
 
-両形式とも `circuitHash` は `verificationKeyUri` で配信される正確なバイト列
-（JSON の直列化と空白を含む）の SHA-256 に `0x` を付けた値である。
+`snarkjs-v2`、`noir-v1`、`ezkl-v1` の `circuitHash` は `verificationKeyUri`
+で配信される正確なバイト列（JSON の直列化と空白を含む）の SHA-256 に `0x`
+を付けた値である。`risc0-v1` では上記の通り image ID 自体であり、
+`tee-nitro-v1` ではピン留め PCR 測定値セットを選択する。
+
+`inputAttestations` の束縛：デモの署名系・attestation 系形式
+（`demo-sig-v1`、`demo-commit-v1`、`tee-nitro-v1`、および sidecar 契約）は
+各 attestation の `commitment` を native tail の後の `publicInputs` に追加し、
+連結したコミットメントを署名対象に含める。ZK プロファイルは固定長の
+`publicInputs` を維持するため、参考デモは追加可能な形式にのみ attestation
+を付与する（`riskScore` は `demo-sig-v1` / `demo-commit-v1` で証明）。
+実装されている attestation 型は 2 つ：
+
+- `oracle-sig-v1`：`commitment` は `0x` に UTF-8 `data` の SHA-256 を付けた
+  値。`proof` は `utf8(jcs({type, source, commitment}))` への Ed25519 署名の
+  パディングなし base64url。`verificationKeyUri` は origin 許可リスト付き
+  鍵 registry を通じて PEM 公開鍵に解決され、URI でピン留めされる。
+- `zktls-tlsn-v1`：`proof` は bincode 直列化した tlsn `Presentation` の
+  パディングなし base64url で、リクエスト行（method + target）と応答本文
+  全体を開示する。`notaryKeyUri` は同じ registry を通じて notary の
+  secp256k1 SPKI PEM に解決される。`tlsn-core` は bare wasm32 ではビルド
+  できないため presentation 検証は Rust sidecar の `/verify` エンドポイント
+  で行われ、デモは実取引所 API の代替として loopback fixture ホスト
+  （`test-server.io`）に対して attest する。
 
 ## 15. パフォーマンスへの影響
 
 - 証明生成は元の計算より数桁遅くなることがある。そのため非同期生成がデフォルトのパターンであり、高ボリュームツール向けに `proofPolicy: "onDemand" | "sampled"` が存在する。
 - 検証は通常ミリ秒〜秒単位で、クライアント側で実行可能。
 - 大きな証明は `proofUri` または `verificationKeyUri` で外部取得し、`_meta` 内にインラインしないべき。
-- すべての形式定義は、基準回路の証明時間とメモリ、証明サイズ、検証時間、検証器の依存フットプリント（npm/WASM か native か）を報告しなければならない。参考実装はこれらを形式ごとに記録し、`proofFormats` ネゴシエーションがコストを考慮できるようにする。
+- すべての形式定義は、基準回路の証明時間とメモリ、証明サイズ、検証時間、検証器の依存フットプリント（npm/WASM か native か）を報告しなければならない。参考実装はプロセス内形式についてはこれらを記録し（[`docs/BENCHMARKS.md`](../BENCHMARKS.md)）、sidecar 形式については時間とサイズを記録しているが証明時のメモリは未計測である（[`docs/PLAN.md`](../PLAN.md) の Phase 3 行）。これにより `proofFormats` ネゴシエーションがコストを考慮できるようにする。
 
 ## 16. テスト計画
 
