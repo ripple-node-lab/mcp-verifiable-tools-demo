@@ -36,14 +36,46 @@ surface) is pending publication of an SDK release that speaks `2026-07-28`.
 
 ## Quick start
 
-Requires Node.js 20 or later (CI runs the suite on 20, 22 and 24). Docker is
-only needed for the sidecar scenarios 8–10 (see [docs/DEMOS.md](docs/DEMOS.md)).
+Requires Node.js 20 or later (CI runs the suite on 20, 22 and 24).
+
+### Scenarios 1–7 (no Docker)
+
+Nothing to install beyond `npm install`; the demo spawns its own server.
+Scenarios 8–10 print `skipped` with the command that enables them.
 
 ```sh
 npm install
-npm test     # builds packages and runs the test suite (no docker needed)
+npm test     # builds packages and runs the test suite
 npm run demo # builds (incremental) then runs the self-contained demo
 ```
+
+### Scenarios 8–10 as well (Docker required)
+
+Scenarios 8 (RISC Zero), 9 (ezkl) and 10 (TLSNotary) call Rust/Python prover
+sidecars that run as docker compose profiles. Start them once before the demo
+and point the client at them via env vars:
+
+```sh
+docker compose --profile risc0 --profile ezkl --profile tlsn up --build -d --wait
+export RISC0_SIDECAR_URL=http://localhost:4200
+export EZKL_SIDECAR_URL=http://localhost:4300
+export TLSN_SIDECAR_URL=http://localhost:4400
+npm run demo
+docker compose --profile risc0 --profile ezkl --profile tlsn down   # when finished
+```
+
+Notes:
+
+- Needs Docker Engine/Desktop with the compose plugin. The first `--build`
+  compiles the Rust (risc0, tlsn) and Python (ezkl) images and can take tens
+  of minutes; later starts reuse the cached images.
+- `--wait` blocks until each sidecar's health check passes (ezkl regenerates
+  its proving key at startup, so this can take a minute).
+- Scenario 8 produces a real zkVM receipt on the CPU (≈20 s per proof, several
+  GB of RAM), so the demo pauses noticeably there.
+- Any subset works: start only the profiles you want and set only their env
+  vars; the others stay `skipped`. Ports and gated tests are listed in
+  [docs/DEMOS.md](docs/DEMOS.md#sidecars).
 
 To run the server standalone (default port 3939, override with `PORT`):
 
