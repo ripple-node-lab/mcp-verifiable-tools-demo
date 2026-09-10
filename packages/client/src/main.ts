@@ -180,7 +180,7 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
     } else {
       skippedCount++;
       resultLine(name, `skipped (${envVar} unset)`);
-      enable(`docker compose --profile ${profile} up --build -d --wait && export ${envVar}=http://localhost:${port}`);
+      enable(`docker compose --profile ${profile} up --build -d --wait && export ${envVar}=http://127.0.0.1:${port}`);
       rows.push({ n: number, scenario: `zk add (${label})`, result: "skipped", format, cls: CLS[format] ?? "-", provenance: "-" });
     }
     gap();
