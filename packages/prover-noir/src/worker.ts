@@ -13,7 +13,16 @@ async function prove(input: ProveInput): Promise<VerifiableToolsMeta> {
   if (!args) throw new Error("arguments out of circuit range");
   const witness = await new Noir(circuit as never).execute(args);
   const backend = new UltraHonkBackend(circuit.bytecode, await getApi());
-  const result = await backend.generateProof(witness.witness);
+  // bb.js logs "Generated proof for circuit ..." on every prove; keep it out of
+  // the demo output (worker-local console, restored in finally).
+  const originalLog = console.log;
+  console.log = () => {};
+  let result: Awaited<ReturnType<UltraHonkBackend["generateProof"]>>;
+  try {
+    result = await backend.generateProof(witness.witness);
+  } finally {
+    console.log = originalLog;
+  }
   return {
     proof: `0x${Buffer.from(result.proof).toString("hex")}`,
     proofFormat: FORMAT,

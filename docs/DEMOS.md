@@ -23,21 +23,42 @@ sidecar-backed scenarios are enabled purely by environment variables
 | 10 | zkTLS input provenance | `demo-commit-v1` + `zktls-tlsn-v1` attestation | `TLSN_SIDECAR_URL` (profile `tlsn`) | `10. zktls riskScore: … (verified demo-commit-v1, provenance zktls-tlsn-v1, presentation … bytes)` |
 
 Actual output with no sidecars configured (timings and proof byte counts vary
-slightly between runs; `bb.js` prints one status line per proof):
+slightly between runs):
 
 ```text
 1. sync add: 42 (verified demo-sig-v1)
+   checks: circuitHash=0xe2d677e5… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-sig-v1)
 2. async riskScore: 72 (verified demo-commit-v1, provenance oracle-sig-v1)
+   checks: circuitHash=0xfe9a89b0… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-commit-v1) · provenance=ok (oracle-sig-v1)
 3. blind privateCreditCheck: approved (verified demo-sig-v1)
+   checks: circuitHash=0xf238b7ce… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-sig-v1) · args=HPKE-encrypted (salted inputCommitment)
 4. deferred priceQuote: 604 (verified demo-sig-v1)
+   checks: circuitHash=0xe895ece8… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-sig-v1) · via verifiable-tools/prove
 5. tee add: 3 (verified tee-nitro-v1)
-6. zk add (snarkjs-v2 Groth16): 42 (verified, proof 719 bytes, prove 262.53 ms, verify 147.40 ms)
-Generated proof for circuit with 3 public inputs and 458 fields.
-7. zk add (noir-v1 UltraHonk): 42 (verified, proof 14656 bytes, prove 338.02 ms, verify 67.08 ms)
+   checks: circuitHash=0xe2d677e5… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (tee-nitro-v1)
+6. zk add (snarkjs-v2 Groth16): 42 (verified, proof 724 bytes, prove 272.82 ms, verify 146.96 ms)
+   checks: circuitHash=0xfb5e4566… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (snarkjs-v2)
+7. zk add (noir-v1 UltraHonk): 42 (verified, proof 14656 bytes, prove 262.80 ms, verify 63.83 ms)
+   checks: circuitHash=0x70d3e406… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (noir-v1)
 8. zk add (risc0-v1 sidecar): skipped (RISC0_SIDECAR_URL unset)
 9. zk add (ezkl-v1 sidecar): skipped (EZKL_SIDECAR_URL unset)
 10. zktls riskScore: skipped (TLSN_SIDECAR_URL unset)
+Tamper checks (scenario 1 result mutated client-side, re-verified):
+   output 42 -> 43:      rejected (outputCommitmentMismatch)
+   nonce replaced:       rejected (nonceMismatch)
+   proof byte flipped:   rejected (proofInvalid)
+Summary: 7 verified, 3 skipped, 3/3 tampered results rejected
 ```
+
+Each `checks:` line lists what `verifyResult`
+(`packages/verifier/src/verifier.ts`) confirmed, in order; a failure at any
+step is a `VerifyOutcome.reason` (`circuitHashMismatch`,
+`inputCommitmentMismatch`, `outputCommitmentMismatch`, `nonceMismatch`,
+`proofInvalid`, `provenance*`), aborts the demo, and the "ok" line is never
+printed. The `provenance=ok` segment appears only when the result carries an
+`inputAttestations` entry. The Tamper section takes the verified scenario-1
+result, mutates one field at a time client-side, re-verifies, and asserts the
+expected rejection reason — an unexpected pass exits non-zero.
 
 With sidecars up (see below), scenarios 8–10 print their real lines. Typical
 figures recorded in [BENCHMARKS.md](BENCHMARKS.md): `risc0-v1` proof ≈222 KB,
