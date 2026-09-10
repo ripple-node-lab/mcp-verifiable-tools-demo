@@ -62,7 +62,7 @@ Recorded request/response examples live in `examples/`:
 2. `tools/call` (`add` with a `demo-sig-v1` capability + nonce in `_meta`) →
    request [`examples/tools-call.request.json`](../examples/tools-call.request.json),
    complete result [`examples/tools-call.result.json`](../examples/tools-call.result.json)
-   (`_meta["io.modelcontextprotocol/verifiable-tools"]` carries `proof`,
+   (`_meta["io.github.ripple-node-lab/verifiable-tools"]` carries `proof`,
    `proofFormat`, `circuitHash`, commitments, `nonce`, `publicInputs`,
    `verificationKeyUri`). ZK variants:
    [`tools-call.snarkjs-v2.response.json`](../examples/tools-call.snarkjs-v2.response.json),

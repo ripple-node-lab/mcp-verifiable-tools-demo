@@ -1,6 +1,6 @@
 # MCP Verifiable Tools Demo
 
-Reference implementation of the `io.modelcontextprotocol/verifiable-tools`
+Reference implementation of the `io.github.ripple-node-lab/verifiable-tools`
 extension on MCP `2026-07-28` (TypeScript, Streamable HTTP). It demonstrates
 capability negotiation, locally verified tool results, asynchronous proof
 generation through the `io.modelcontextprotocol/tasks` extension, blind
@@ -74,5 +74,6 @@ caveats and the spec's Security Implications section.
 - [sidecars/README.md](sidecars/README.md) — sidecar contract and per-sidecar details.
 - Tracking: [zk-tokyo/advanced-cryptography-2026 issue #94](https://github.com/zk-tokyo/advanced-cryptography-2026/issues/94).
 
-Extension identifiers: `io.modelcontextprotocol/verifiable-tools` and
-`io.modelcontextprotocol/tasks`.
+Extension identifiers: `io.github.ripple-node-lab/verifiable-tools` and
+`io.modelcontextprotocol/tasks`. The vendor prefix is used because
+`io.modelcontextprotocol/` is reserved for official MCP extensions.

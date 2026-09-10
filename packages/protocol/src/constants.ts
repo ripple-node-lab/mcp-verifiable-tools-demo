@@ -1,4 +1,4 @@
-export const EXTENSION_ID = "io.modelcontextprotocol/verifiable-tools";
+export const EXTENSION_ID = "io.github.ripple-node-lab/verifiable-tools";
 export const TASKS_EXTENSION_ID = "io.modelcontextprotocol/tasks";
 export const PROTOCOL_VERSION = "2026-07-28";
 export const META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion";
@@ -8,8 +8,8 @@ export const META_SERVER_INFO = "io.modelcontextprotocol/serverInfo";
 export const META_VERIFIABLE_TOOLS = EXTENSION_ID;
 export const SUPPORTED_PROOF_FORMATS = ["snarkjs-v2", "noir-v1", "demo-sig-v1", "demo-commit-v1"] as const;
 export const ENCRYPTION_SCHEME = "hpke-v1";
-export const HPKE_INFO_ARGS = "io.modelcontextprotocol/verifiable-tools/hpke-v1/args";
-export const HPKE_INFO_REPLY = "io.modelcontextprotocol/verifiable-tools/hpke-v1/reply";
+export const HPKE_INFO_ARGS = "io.github.ripple-node-lab/verifiable-tools/hpke-v1/args";
+export const HPKE_INFO_REPLY = "io.github.ripple-node-lab/verifiable-tools/hpke-v1/reply";
 export const RESULT_TTL_MS = 60_000;
 export const NONCE_PATTERN = /^0x[0-9a-f]{32,128}$/;
 export const EMPTY_NONCE = "0x";

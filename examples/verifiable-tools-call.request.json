@@ -9,7 +9,7 @@
     "encryptedArguments": "<base64url(enc || ciphertext)>",
     "proofFormat": "demo-sig-v1",
     "_meta": {
-      "io.modelcontextprotocol/verifiable-tools": {
+      "io.github.ripple-node-lab/verifiable-tools": {
         "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"
       }
     }

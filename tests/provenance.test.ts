@@ -9,7 +9,7 @@ import {
 import { OracleSigVerifier, verifyResult } from "@demo/verifier";
 import { withServer, withServerOptions, rpc, expectComplete } from "./helpers.js";
 
-const EXT = "io.modelcontextprotocol/verifiable-tools";
+const EXT = "io.github.ripple-node-lab/verifiable-tools";
 
 function meta(result: CallToolResult): VerifiableToolsMeta {
   const value = result._meta?.[EXT] as VerifiableToolsMeta | undefined;

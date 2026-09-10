@@ -8,12 +8,12 @@
 ## 1. 目的
 
 MCP SEP ガイドラインの「Prototype Requirements」と設計原則「Demonstration over deliberation / Pragmatism over purity」に従い、
-`io.modelcontextprotocol/verifiable-tools` 拡張が **MCP 2026-07-28 上で実際に動くこと** をレビュアーが `npm install && npm test` だけで確認できるようにする。
+`io.github.ripple-node-lab/verifiable-tools` 拡張が **MCP 2026-07-28 上で実際に動くこと** をレビュアーが `npm install && npm test` だけで確認できるようにする。
 
 デモが示すこと:
 
 1. `server/discover` での capability 宣言と、リクエスト単位 `_meta` による拡張ネゴシエーション
-2. `tools/call` 結果の `_meta["io.modelcontextprotocol/verifiable-tools"]` に証明メタデータを載せ、クライアントがローカル検証できること
+2. `tools/call` 結果の `_meta["io.github.ripple-node-lab/verifiable-tools"]` に証明メタデータを載せ、クライアントがローカル検証できること
 3. `io.modelcontextprotocol/tasks` 拡張を使った非同期証明生成（`resultType: "task"` → `tasks/get`）
 4. `verifiable-tools/call` によるブラインド実行（暗号化引数 + `inputCommitment`）
 5. 仕様の Testing Plan に挙げた否定テスト（不正証明、`circuitHash` 不一致、未宣言 `proofFormat`、不正なブラインド入力、拡張未ネゴシエーション時の無視）
@@ -162,7 +162,7 @@ mcp-verifiable-tools-demo/
 - `server/discover` 応答は仕様書 §5 の例と同一形式（`proofFormats: ["demo-sig-v1", "demo-commit-v1"]`, `blindExecution: true`, `io.modelcontextprotocol/tasks: {}`）。
 - `tools/call`:
   - クライアントが本拡張を宣言していなければ **通常の `CallToolResult` のみ**（`_meta` に拡張キーを付けない）。
-  - 宣言していれば `proofFormats` の交差から 1 形式を選ぶ（`_meta["io.modelcontextprotocol/verifiable-tools"].requestedProofFormat` を優先）。交差が空で `requireProof: true` なら `-32602` 相当のエラー、そうでなければ証明なしで返す。
+  - 宣言していれば `proofFormats` の交差から 1 形式を選ぶ（`_meta["io.github.ripple-node-lab/verifiable-tools"].requestedProofFormat` を優先）。交差が空で `requireProof: true` なら `-32602` 相当のエラー、そうでなければ証明なしで返す。
   - `riskScore` はクライアントが `io.modelcontextprotocol/tasks` を宣言している場合のみ `resultType: "task"` を返す（未宣言なら同期で待って返す）。
 - `tasks/get` / `tasks/cancel`: SEP-2663 の `Task` 形状（`taskId`, `status`, `createdAt`, `lastUpdatedAt`, `ttlMs`, `pollIntervalMs`）。完了時は `result` に `CallToolResult` + 拡張 `_meta` を含める。
 - `verifiable-tools/call`: `hpke-v1`、32-byte salt 付き JCS `inputCommitment`、nonce binding、`replyPublicKey` による暗号化応答を実装する。サーバーは `blindPublicKeys["hpke-v1"]` と `resultTtlMs` を discovery で広告する。
@@ -256,7 +256,7 @@ mcp-verifiable-tools-demo/
 ## 7. 未決事項
 
 - `proofFormat` 文字列のレジストリをどう扱うか（仕様書 Open Questions と同じ）。
-- 公式化前の拡張識別子: 現状は `io.modelcontextprotocol/verifiable-tools` を使用しているが、SEP 受諾前の第三者実装は vendor prefix（例 `com.ripple-node-lab/verifiable-tools`）を使うべき。受諾されなかった場合は識別子を切り替える。
+- 公式化前の拡張識別子: 現状は `io.github.ripple-node-lab/verifiable-tools` を使用しているが、SEP 受諾前の第三者実装は vendor prefix（例 `com.ripple-node-lab/verifiable-tools`）を使うべき。受諾されなかった場合は識別子を切り替える。
 - `tools/list` 記述子は hint に留まるため、tool→`circuitHash` の帯域外レジストリ（署名付きマニフェスト / transparency log）の具体形。
 - `verifiable-tools/prove` の `resultTtlMs` 中にサーバーが保持すべき状態（入力そのものか、コミットメントと出力のみか）とブラインド呼び出しとの両立。
 - `risc0-zkvm` verifier の WASM ビルド可否 → Phase 3-b で確認済み（wasm32 ビルド ≈1.5MB、Node で実 composite receipt を検証）。残: `@ezkljs/engine` の対応モデル規模。Nitro attestation 検証の TS 実装コストは Phase 3-a で解消。

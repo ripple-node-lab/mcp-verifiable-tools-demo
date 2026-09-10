@@ -4,7 +4,7 @@
 
 ## 1. 概要
 
-本提案は、MCP においてツール実行結果に暗号学的な証拠（ゼロ知識証明、TEE Attestation など）を添付できるオプショナル拡張 `io.modelcontextprotocol/verifiable-tools` を定義するものです。
+本提案は、MCP においてツール実行結果に暗号学的な証拠（ゼロ知識証明、TEE Attestation など）を添付できるオプショナル拡張 `io.github.ripple-node-lab/verifiable-tools` を定義するものです。
 
 クライアントはサーバーを盲目的に信頼することなく、「指定された関数 `f` が、指定された入力 `X` に対して正しく実行され、結果 `Y` が改ざんされていない」ことをローカルで検証できます。
 
@@ -106,10 +106,10 @@ MCP `2026-07-28` は「このクライアントは、このサーバー上のこ
 ## 4. 拡張識別子
 
 ```text
-io.modelcontextprotocol/verifiable-tools
+io.github.ripple-node-lab/verifiable-tools
 ```
 
-サードパーティー実装の場合、自社が管理するベンダープレフィックスを使用すること。例：`com.example/verifiable-tools`。
+サードパーティー実装の場合、自社が管理するベンダープレフィックスを使用すること。例：`com.example/verifiable-tools`。上記識別子にベンダープレフィックスが付いているのは、`io.modelcontextprotocol/` が公式 MCP 拡張用に予約されているためである。本拡張が MCP に取り込まれた場合、識別子（およびそこから導出される HPKE info ラベル）は `io.modelcontextprotocol/verifiable-tools` へ移行する。この移行を容易にするため、実装は識別子を単一の定数として扱うことが想定される。
 
 ## 5. Capability（能力宣言）
 
@@ -137,7 +137,7 @@ io.modelcontextprotocol/verifiable-tools
     "capabilities": {
       "tools": {},
       "extensions": {
-        "io.modelcontextprotocol/verifiable-tools": {
+        "io.github.ripple-node-lab/verifiable-tools": {
           "proofFormats": ["ezkl-v1", "tee-sgx-dcap-v1"],
           "blindExecution": true,
           "blindEncryptionSchemes": ["hpke-v1"],
@@ -159,7 +159,7 @@ io.modelcontextprotocol/verifiable-tools
 
 ## 6. リクエストメタデータ
 
-クライアントは各リクエストの `_meta` に `io.modelcontextprotocol/clientCapabilities`（その中に `extensions`）を含め、必要に応じて `io.modelcontextprotocol/verifiable-tools` キーでリクエスト固有のオプションを指定できる。
+クライアントは各リクエストの `_meta` に `io.modelcontextprotocol/clientCapabilities`（その中に `extensions`）を含め、必要に応じて `io.github.ripple-node-lab/verifiable-tools` キーでリクエスト固有のオプションを指定できる。
 
 ```json
 {
@@ -174,14 +174,14 @@ io.modelcontextprotocol/verifiable-tools
       "io.modelcontextprotocol/clientInfo": { "name": "trading-agent", "version": "1.0.0" },
       "io.modelcontextprotocol/clientCapabilities": {
         "extensions": {
-          "io.modelcontextprotocol/verifiable-tools": {
+          "io.github.ripple-node-lab/verifiable-tools": {
             "proofFormats": ["ezkl-v1"],
             "requireProof": true
           },
           "io.modelcontextprotocol/tasks": {}
         }
       },
-      "io.modelcontextprotocol/verifiable-tools": {
+      "io.github.ripple-node-lab/verifiable-tools": {
         "requestedProofFormat": "ezkl-v1",
         "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"
       }
@@ -206,7 +206,7 @@ Mcp-Name: calculateRisk
 
 ## 7. 検証可能なツール結果
 
-拡張がネゴシエートされ、サーバーが証明を生成できる場合、`tools/call` の結果の `_meta["io.modelcontextprotocol/verifiable-tools"]` に証明情報を含める。
+拡張がネゴシエートされ、サーバーが証明を生成できる場合、`tools/call` の結果の `_meta["io.github.ripple-node-lab/verifiable-tools"]` に証明情報を含める。
 
 ```json
 {
@@ -223,7 +223,7 @@ Mcp-Name: calculateRisk
         "name": "example-verifiable-server",
         "version": "1.0.0"
       },
-      "io.modelcontextprotocol/verifiable-tools": {
+      "io.github.ripple-node-lab/verifiable-tools": {
         "proof": "0x8f3a...",
         "proofFormat": "ezkl-v1",
         "circuitHash": "0x12ab...",
@@ -268,7 +268,7 @@ Mcp-Name: calculateRisk
 
 **出力束縛。** `outputCommitment = "0x" || hex(SHA-256(JCS(content)))`。`CallToolResult` の `content` 配列を対象とする。`publicInputs` が存在する場合、`publicInputs[0]` は常に `outputCommitment`、`publicInputs[1]` は `inputCommitment` でなければならない。`publicInputs[2]` はリクエストの `nonce` とし、クライアントが nonce を指定しなかった場合は空の hex 文字列 `"0x"` とし、形式固有の tail が常にインデックス 3 から始まるようにする。回路が生の出力を公開シグナルとして公開する形式では、形式固有の tail にそれを追加で含める。
 
-**リクエスト束縛。** クライアントは `params._meta["io.modelcontextprotocol/verifiable-tools"].nonce` に新鮮な乱数 `nonce` を含めてもよい。有効な nonce は `0x` プレフィックス付きの小文字 hex で、16〜64 バイトをエンコードするもの（`^0x[0-9a-f]{32,128}$`）である。含めた場合、サーバーはそれを証明（公開入力、または署名／Attestation 対象ペイロード）に束縛し、結果メタデータにエコーしなければならない。クライアントが nonce を指定しなかった場合、`publicInputs[2]` は空の hex 文字列 `"0x"` でなければならず、形式固有の tail は常にインデックス 3 から始まる。サーバーは、存在する `nonce` がこの文法に一致しないリクエストを `-32602` で拒否しなければならない。一意性はクライアントの責任である。サーバーは nonce を追跡せず、クライアントはリクエストごとに新しい nonce を生成し、そのリクエストで発行していない nonce が結果でエコーされた場合は拒否しなければならない。鮮度が必要なクライアント（価格、残高、ヘルスチェックなど、正しい回答が時間で変わるツール）は常に nonce を送るべきである。そうしなければ、サーバーは以前の呼び出しで有効だった証明を再送できる。
+**リクエスト束縛。** クライアントは `params._meta["io.github.ripple-node-lab/verifiable-tools"].nonce` に新鮮な乱数 `nonce` を含めてもよい。有効な nonce は `0x` プレフィックス付きの小文字 hex で、16〜64 バイトをエンコードするもの（`^0x[0-9a-f]{32,128}$`）である。含めた場合、サーバーはそれを証明（公開入力、または署名／Attestation 対象ペイロード）に束縛し、結果メタデータにエコーしなければならない。クライアントが nonce を指定しなかった場合、`publicInputs[2]` は空の hex 文字列 `"0x"` でなければならず、形式固有の tail は常にインデックス 3 から始まる。サーバーは、存在する `nonce` がこの文法に一致しないリクエストを `-32602` で拒否しなければならない。一意性はクライアントの責任である。サーバーは nonce を追跡せず、クライアントはリクエストごとに新しい nonce を生成し、そのリクエストで発行していない nonce が結果でエコーされた場合は拒否しなければならない。鮮度が必要なクライアント（価格、残高、ヘルスチェックなど、正しい回答が時間で変わるツール）は常に nonce を送るべきである。そうしなければ、サーバーは以前の呼び出しで有効だった証明を再送できる。
 
 したがって検証者は、次の順で確認する。(1) `proofFormat` がネゴシエート済みであること、(2) `circuitHash` がツール*およびネゴシエートされた形式*に対してピン留めされたハッシュと一致すること（§7.3 ツール記述子メタデータ）、(3) `inputCommitment` を自分で再計算した値と一致すること、(4) `outputCommitment` が `SHA-256(JCS(content))` と一致すること、(5) `nonce` が送信値と一致すること、(6) ピン留めされた検証鍵で証明／Attestation が検証できること。
 
@@ -282,7 +282,7 @@ Mcp-Name: calculateRisk
   "description": "...",
   "inputSchema": { "type": "object" },
   "_meta": {
-    "io.modelcontextprotocol/verifiable-tools": {
+    "io.github.ripple-node-lab/verifiable-tools": {
       "circuitHash": "0x12ab...",
       "proofFormats": ["snarkjs-v2", "noir-v1"],
       "proofPolicy": "onDemand",
@@ -340,7 +340,7 @@ Mcp-Name: calculateRisk
 
 provenance を必要とするクライアントは、capability オブジェクトで宣言すべき（`requireInputProvenance: true`）。必須の Attestation が欠落または失敗した場合、結果を検証済みとして扱ってはならない。
 
-証明を生成できないが呼び出し自体は成功した場合、サーバーは通常の `resultType: "complete"` 応答を返し、`io.modelcontextprotocol/verifiable-tools` メタデータを省略してもよい。ただし `requireProof: true` を受け入れていた場合は呼び出しを拒否してもよい。
+証明を生成できないが呼び出し自体は成功した場合、サーバーは通常の `resultType: "complete"` 応答を返し、`io.github.ripple-node-lab/verifiable-tools` メタデータを省略してもよい。ただし `requireProof: true` を受け入れていた場合は呼び出しを拒否してもよい。
 
 ## 8. 非同期証明生成（Tasks 拡張の再利用）
 
@@ -364,7 +364,7 @@ ZKP の証明生成は数秒〜数分かかる。本拡張は独自の非同期�
 }
 ```
 
-クライアントは `tasks/get` でポーリングする。タスクが `completed` になれば、`result` フィールドに通常の `CallToolResult` と `io.modelcontextprotocol/verifiable-tools` メタデータが含まれる。`tasks/cancel` はタスクをキャンセル済みと記録するだけでなく、証明生成を中止しなければならない。
+クライアントは `tasks/get` でポーリングする。タスクが `completed` になれば、`result` フィールドに通常の `CallToolResult` と `io.github.ripple-node-lab/verifiable-tools` メタデータが含まれる。`tasks/cancel` はタスクをキャンセル済みと記録するだけでなく、証明生成を中止しなければならない。
 
 ```json
 {
@@ -377,7 +377,7 @@ ZKP の証明生成は数秒〜数分かかる。本拡張は独自の非同期�
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
       "io.modelcontextprotocol/clientCapabilities": {
         "extensions": {
-          "io.modelcontextprotocol/verifiable-tools": {},
+          "io.github.ripple-node-lab/verifiable-tools": {},
           "io.modelcontextprotocol/tasks": {}
         }
       }
@@ -428,7 +428,7 @@ verifiable-tools/call
 
 | 値 | 意味 | 平文を見る主体 |
 |---|---|---|
-| `hpke-v1` | [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180) の HPKE base mode、`DHKEM(X25519, HKDF-SHA256)` / `HKDF-SHA256` / `AES-128-GCM`。`encryptedArguments` = `base64url(enc \|\| ciphertext)`（パディングなし、RFC 4648 §5）。`enc` は 32 バイトの X25519 カプセル化鍵であり、受信者は復号後の先頭 32 バイトを分割する。AAD = `JCS({tool, inputCommitment, encryptionScheme})`。`info` = UTF-8 `"io.modelcontextprotocol/verifiable-tools/hpke-v1/args"` | 証明環境（TEE または prover を実行するマシン）。その外側の MCP サーバープロセスは見てはならない |
+| `hpke-v1` | [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180) の HPKE base mode、`DHKEM(X25519, HKDF-SHA256)` / `HKDF-SHA256` / `AES-128-GCM`。`encryptedArguments` = `base64url(enc \|\| ciphertext)`（パディングなし、RFC 4648 §5）。`enc` は 32 バイトの X25519 カプセル化鍵であり、受信者は復号後の先頭 32 バイトを分割する。AAD = `JCS({tool, inputCommitment, encryptionScheme})`。`info` = UTF-8 `"io.github.ripple-node-lab/verifiable-tools/hpke-v1/args"` | 証明環境（TEE または prover を実行するマシン）。その外側の MCP サーバープロセスは見てはならない |
 | `fhe-tfhe-v1` | クライアントが保持する TFHE 鍵で引数を暗号化し、ツールを準同型評価して暗号化された `content` を返す。予約値。正しさの証明も得るには検証可能 FHE が必要だが、まだ実用的でない（§18 未解決事項）。サーバー鍵はなく、`blindPublicKeys` にこの方式のエントリはない | クライアント以外には誰も見ない |
 
 `hpke-v1` 用サーバー公開鍵は、`blindEncryptionSchemes` とともに capability オブジェクトの `blindPublicKeys["hpke-v1"]`（base64url 形式の生 X25519 鍵）で広告する。`server/discover` が配送経路なので、鍵の信頼性はその経路と同じだけである。TEE ベースのサーバーでは、クライアントが暗号化先の鍵が Attestation 済みエンクレーブ内に存在することを確認できるよう、鍵を Attestation の user-data フィールドに束縛しなければならない。それ以外では検証鍵と同様にピン留めしなければならない。
@@ -450,7 +450,7 @@ Mcp-Method: verifiable-tools/call
 
 本稿全体を通じて `originalContent` は、暗号化前にツールが生成した平文の `content` 配列を指し、独立したフィールドとして送信されることはない。
 
-`replyPublicKey` が存在する場合、サーバーは `content` を単一の `{ "type": "text", "text": "<base64url(enc || ciphertext)>" }` 要素として返さなければならず、結果の `_meta["io.modelcontextprotocol/verifiable-tools"].encryptedContent` は `true` でなければならない。暗号化はブラインド引数と同じスイートによる `hpke-v1` base mode とし、平文は `JCS(originalContent)`、AAD は `JCS({tool, inputCommitment, nonce})` とする（nonce がない場合はオブジェクトから省略する）。`info` は UTF-8 `"io.modelcontextprotocol/verifiable-tools/hpke-v1/reply"` とする。`outputCommitment` は*平文*の `originalContent` に対して計算しなければならないため、クライアントは先に復号してから通常の検証手順を実行する。`replyPublicKey` は非ブラインドの `tools/call` では無視する。
+`replyPublicKey` が存在する場合、サーバーは `content` を単一の `{ "type": "text", "text": "<base64url(enc || ciphertext)>" }` 要素として返さなければならず、結果の `_meta["io.github.ripple-node-lab/verifiable-tools"].encryptedContent` は `true` でなければならない。暗号化はブラインド引数と同じスイートによる `hpke-v1` base mode とし、平文は `JCS(originalContent)`、AAD は `JCS({tool, inputCommitment, nonce})` とする（nonce がない場合はオブジェクトから省略する）。`info` は UTF-8 `"io.github.ripple-node-lab/verifiable-tools/hpke-v1/reply"` とする。`outputCommitment` は*平文*の `originalContent` に対して計算しなければならないため、クライアントは先に復号してから通常の検証手順を実行する。`replyPublicKey` は非ブラインドの `tools/call` では無視する。
 
 ### 9.2 例
 
@@ -469,13 +469,13 @@ Mcp-Method: verifiable-tools/call
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
       "io.modelcontextprotocol/clientCapabilities": {
         "extensions": {
-          "io.modelcontextprotocol/verifiable-tools": {
+          "io.github.ripple-node-lab/verifiable-tools": {
             "proofFormats": ["tee-sgx-dcap-v1"],
             "blindExecution": true
           }
         }
       },
-      "io.modelcontextprotocol/verifiable-tools": {
+      "io.github.ripple-node-lab/verifiable-tools": {
         "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"
       }
     }
@@ -500,7 +500,7 @@ Mcp-Method: verifiable-tools/call
         "name": "private-credit-server",
         "version": "1.0.0"
       },
-      "io.modelcontextprotocol/verifiable-tools": {
+      "io.github.ripple-node-lab/verifiable-tools": {
         "proof": "0x8f3a...",
         "proofFormat": "tee-sgx-dcap-v1",
         "inputCommitment": "0xdeadbeef...",
@@ -526,13 +526,13 @@ sequenceDiagram
     participant P as Proving Environment（TEE / ZK 回路）
     participant V as ローカル検証器
 
-    Note over C,S: server/discover で io.modelcontextprotocol/verifiable-tools capability を宣言
+    Note over C,S: server/discover で io.github.ripple-node-lab/verifiable-tools capability を宣言
 
     alt 同期証明
         C->>S: tools/call(name, arguments, _meta.clientCapabilities)
         S->>P: 計算 + 証明生成
         P-->>S: result + proof / attestation
-        S-->>C: CallToolResult (resultType: "complete")<br/>_meta["io.modelcontextprotocol/verifiable-tools"]
+        S-->>C: CallToolResult (resultType: "complete")<br/>_meta["io.github.ripple-node-lab/verifiable-tools"]
     else 非同期証明
         C->>S: tools/call(..., _meta.clientCapabilities に tasks も含む)
         S-->>C: CreateTaskResult (resultType: "task", taskId)
@@ -558,7 +558,7 @@ sequenceDiagram
     C->>S: verifiable-tools/call(tool, inputCommitment,<br/>encryptionScheme, encryptedArguments, proofFormat)
     S->>P: TEE / ZK 内で復号・計算
     P-->>S: result + proof / teeAttestation
-    S-->>C: CallToolResult + _meta["io.modelcontextprotocol/verifiable-tools"]
+    S-->>C: CallToolResult + _meta["io.github.ripple-node-lab/verifiable-tools"]
 ```
 
 証明検証に失敗した結果は、サーバーとの帯域外信頼関係がない限り、クライアントが後続処理に使用してはならない。
@@ -615,8 +615,8 @@ MCP `2026-07-28` で公式の長時間タスクモデルが確立した。本拡
 本拡張は **完全に下位互換** である。
 
 - 未対応サーバー・クライアントは従来通りの `tools/call` を使用する。
-- 拡張は双方が `extensions` capability マップに `io.modelcontextprotocol/verifiable-tools` を含めた場合のみ有効となる。
-- `io.modelcontextprotocol/verifiable-tools` プレフィックスの `_meta` キーは、拡張を認識しない実装では無視される。
+- 拡張は双方が `extensions` capability マップに `io.github.ripple-node-lab/verifiable-tools` を含めた場合のみ有効となる。
+- `io.github.ripple-node-lab/verifiable-tools` プレフィックスの `_meta` キーは、拡張を認識しない実装では無視される。
 - 新しい `resultType` は導入しない。同期結果は `"complete"`、非同期は `io.modelcontextprotocol/tasks` 拡張の `"task"` を使用する。
 
 ## 13. セキュリティ考慮事項
@@ -740,7 +740,7 @@ SEP が "Final" 状態になる前に参考実装が必要となる。プロト�
 ## 16. テスト計画
 
 - サーバーが宣言した `proofFormats` のみを出力することを確認する適合テスト。
-- 拡張未ネゴシエート時にクライアントが `io.modelcontextprotocol/verifiable-tools` メタデータを無視することのテスト。
+- 拡張未ネゴシエート時にクライアントが `io.github.ripple-node-lab/verifiable-tools` メタデータを無視することのテスト。
 - 非同期経路：`tools/call` がタスクを返し、`tasks/get` が検証可能な結果を解決するテスト。
 - 否定的テスト：無効な証明、`circuitHash` の不一致、未知の `proofFormat`、不正なブラインド入力。
 - 束縛テスト：本物の証明と改ざんした `content` の組み合わせを拒否（`outputCommitment`）、前回の呼び出しの証明を再送した場合に拒否（`nonce`）、salt なしまたは誤った salt のブラインドコミットメントを拒否。

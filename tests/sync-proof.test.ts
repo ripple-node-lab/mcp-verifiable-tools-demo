@@ -8,6 +8,6 @@ test("add proofs verify in both formats", async () => withServer(async (server) 
   for (const format of ["demo-sig-v1", "demo-commit-v1"]) {
     const result = await client.callAndVerify("add", { a: 10, b: 32 }, format);
     assert.equal(result.content[0].text, "42");
-    assert.equal(result._meta?.["io.modelcontextprotocol/verifiable-tools"]?.outputCommitment !== undefined, true);
+    assert.equal(result._meta?.["io.github.ripple-node-lab/verifiable-tools"]?.outputCommitment !== undefined, true);
   }
 }));
