@@ -42,9 +42,11 @@ A `tools/call` flows through the reference implementation as follows:
 Non-TypeScript provers run as HTTP sidecars exposing `GET /healthz`,
 `POST /prove`, `POST /verify`, and `GET /vk/{circuitHash}`; the adapter
 (`SidecarProver` / `SidecarVerifier` / `sidecarHealth`) enforces that the
-sidecar echoes the binding fields unmodified. The tlsn sidecar additionally
-exposes `POST /attest` (issues `zktls-tlsn-v1` `InputAttestation`s) and
-`GET /notary-key`. See [../sidecars/README.md](../sidecars/README.md) for the
+sidecar echoes the binding fields unmodified. The tlsn sidecar is an
+attestation issuer rather than a prover, so it implements a different
+surface: `GET /healthz`, `POST /attest` (issues `zktls-tlsn-v1`
+`InputAttestation`s), `POST /verify`, and `GET /notary-key` — no `/prove` or
+`/vk/*`. See [../sidecars/README.md](../sidecars/README.md) for the
 contract and per-sidecar details (mock / risc0 / ezkl / tlsn).
 
 ## SDK adapter layering (Phase 4-a)

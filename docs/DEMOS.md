@@ -132,8 +132,12 @@ Run its tests (in the default `npm test`, no docker):
 npm run build && node --test tests/dist/sdk-extension.test.js
 ```
 
-The suite exercises every scenario over both `InMemoryTransport` and
-stateful Streamable HTTP.
+The suite runs the in-process scenarios that need no sidecar — `add`
+(`demo-sig-v1`, `snarkjs-v2`), `riskScore` via `tasks/get` with `oracle-sig-v1`
+provenance, deferred `priceQuote`, the blind call, and tamper/negotiation
+failure cases — over both `InMemoryTransport` and stateful Streamable HTTP.
+`noir-v1`, `tee-nitro-v1`, and the sidecar formats are covered only by the
+raw-HTTP tests.
 
 ## Error codes you may see
 
