@@ -15,7 +15,8 @@ export function capabilitiesFromMeta(meta: RequestMeta | undefined): ClientCapab
 }
 export function verifiableCapability(capabilities: ClientCapabilities | undefined): VerifiableToolsCapability | undefined {
   const value = capabilities?.extensions?.[EXTENSION_ID];
-  return value && "proofFormats" in value ? value : value ? {} : undefined;
+  if (typeof value !== "object" || value === null) return undefined;
+  return "proofFormats" in value ? value : {};
 }
 export function tasksDeclared(capabilities: ClientCapabilities | undefined): boolean {
   return Boolean(capabilities?.extensions?.[TASKS_EXTENSION_ID]);

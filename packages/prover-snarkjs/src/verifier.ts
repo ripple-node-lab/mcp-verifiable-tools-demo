@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { JsonValue, VerifiableToolsMeta, parseAddArguments } from "@demo/protocol";
+import { EMPTY_NONCE, JsonValue, VerifiableToolsMeta, parseAddArguments } from "@demo/protocol";
 import { Verifier, VerifyContext, VerificationKeyRegistry, VerificationKeyRegistryLike } from "@demo/verifier";
 import { FORMAT, circuitHash } from "./constants.js";
 import { groth16Promise } from "./runtime.js";
@@ -17,9 +17,10 @@ export async function verifySnarkjs(meta: VerifiableToolsMeta, context: VerifyCo
   if (meta.proofFormat !== FORMAT || meta.circuitHash !== context.expectedCircuitHash || meta.circuitHash !== circuitHash || !meta.proof) return false;
   const args = parseAddArguments(context.arguments);
   const text = context.content[0]?.text;
-  if (!args || text !== String(args.a + args.b) || !Array.isArray(meta.publicInputs) || meta.publicInputs.length !== 6) return false;
+  if (!args || text !== String(args.a + args.b) || !meta.outputCommitment || !meta.inputCommitment || !Array.isArray(meta.publicInputs)) return false;
   const expectedTail = [String(args.a + args.b), String(args.a), String(args.b)];
-  if (JSON.stringify(meta.publicInputs.slice(3)) !== JSON.stringify(expectedTail)) return false;
+  const expected = [meta.outputCommitment, meta.inputCommitment, meta.nonce ?? EMPTY_NONCE, ...expectedTail];
+  if (meta.publicInputs.length !== expected.length || JSON.stringify(meta.publicInputs) !== JSON.stringify(expected)) return false;
   const uri = context.verificationKeyUri ?? meta.verificationKeyUri;
   if (!uri) return false;
   const registry = context.registry;

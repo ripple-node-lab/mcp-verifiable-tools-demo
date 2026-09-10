@@ -68,8 +68,8 @@ caveats and the spec's Security Implications section.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — repository layout, request flow, sidecar contract, SDK adapter layering.
 - [docs/SECURITY.md](docs/SECURITY.md) — trust model, caveats, and known limitations.
 - [docs/BENCHMARKS.md](docs/BENCHMARKS.md) — measured figures (Phase 2-b in-process; Phase 3 sidecar formats).
-- [docs/PLAN.md](docs/PLAN.md) — phased implementation plan and status (Japanese).
-- [docs/spec/verifiable-tools.md](docs/spec/verifiable-tools.md) — extension specification, SEP draft ([Japanese](docs/spec/verifiable-tools.ja.md)).
+- [docs/PLAN.md](docs/PLAN.md) — phased implementation plan and status.
+- [docs/spec/verifiable-tools.md](docs/spec/verifiable-tools.md) — extension specification, SEP draft.
 - [docs/EXTENSIONS.md](docs/EXTENSIONS.md) — upstream extension landscape notes.
 - [sidecars/README.md](sidecars/README.md) — sidecar contract and per-sidecar details.
 - Tracking: [zk-tokyo/advanced-cryptography-2026 issue #94](https://github.com/zk-tokyo/advanced-cryptography-2026/issues/94).

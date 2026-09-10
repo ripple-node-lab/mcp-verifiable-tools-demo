@@ -37,6 +37,18 @@ test("noir-v1 rejects changed content and native inputs", async () => {
   });
 });
 
+test("noir-v1 rejects a corrupted publicInputs binding head", async () => {
+  await withServer(async (server) => {
+    const client = new VerifiableClient(server.mcpUrl);
+    const discovery = await client.discover();
+    client.setCapabilities({ proofFormats: discovery.proofFormats });
+    const call = await client.callTool("add", { a: 20, b: 22 }, { proofFormat: "noir-v1" });
+    const result = expectComplete(call.result);
+    result._meta![EXTENSION_ID]!.publicInputs![0] = "0xdeadbeef";
+    assert.deepEqual(await client.verify(result, { a: 20, b: 22 }, "add", { nonce: call.nonce }), { ok: false, reason: "proofInvalid" });
+  });
+});
+
 test("noir-v1 rejects a proof for different native inputs", async () => {
   await withServer(async (server) => {
     const client = new VerifiableClient(server.mcpUrl);

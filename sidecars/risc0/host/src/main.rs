@@ -92,6 +92,8 @@ struct ProveInput {
     output_commitment: String,
     nonce: Option<String>,
     output: Option<String>,
+    #[serde(rename = "inputAttestations")]
+    input_attestations: Option<Vec<Value>>,
 }
 
 fn parse_u32(v: &Value, key: &str) -> Option<u32> {
@@ -126,6 +128,18 @@ fn prove(request: &mut tiny_http::Request) -> (u16, Value) {
     };
     if input.circuit_hash != image_id {
         return (400, json!({ "error": "circuitHashMismatch" }));
+    }
+    // publicInputs are a fixed 6-element layout; attestation commitments cannot
+    // be appended, so risc0-v1 cannot carry input provenance at all.
+    if input
+        .input_attestations
+        .as_ref()
+        .is_some_and(|list| !list.is_empty())
+    {
+        return (
+            400,
+            json!({ "error": "unsupported: risc0-v1 does not carry inputAttestations" }),
+        );
     }
     let args = input.arguments.unwrap_or(Value::Null);
     let (a, b) = match (parse_u32(&args, "a"), parse_u32(&args, "b")) {

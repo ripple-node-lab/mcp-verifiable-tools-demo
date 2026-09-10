@@ -22,8 +22,8 @@ sidecar-backed scenarios are enabled purely by environment variables
 | 9 | ZKML proof via sidecar | `ezkl-v1` | `EZKL_SIDECAR_URL` (profile `ezkl`) | `9. zk add (ezkl-v1 sidecar): 42 (verified, proof … bytes, prove …, verify …)` |
 | 10 | zkTLS input provenance | `demo-commit-v1` + `zktls-tlsn-v1` attestation | `TLSN_SIDECAR_URL` (profile `tlsn`) | `10. zktls riskScore: … (verified demo-commit-v1, provenance zktls-tlsn-v1, presentation … bytes)` |
 
-Actual output with no sidecars configured (timings vary; `bb.js` prints one
-status line per proof):
+Actual output with no sidecars configured (timings and proof byte counts vary
+slightly between runs; `bb.js` prints one status line per proof):
 
 ```text
 1. sync add: 42 (verified demo-sig-v1)
@@ -153,6 +153,8 @@ JSON-RPC errors and client rejection reasons, from `packages/server`,
   with `data.reason` = `resultNotFound` (unknown `resultId`) or
   `resultExpired` (the `resultId` tombstone is retained for 2×TTL after
   expiry, then reports `resultNotFound`).
+- `-32000` with `data.reason` = `taskExpired` — a task exceeded its TTL while
+  still working (`tasks/get` reports status `failed` with this `error`).
 - `-32603` — internal failure; for `riskScore` a price-feed failure surfaces
   as `"input provenance unavailable"` when the client declared
   `requireInputProvenance`.
