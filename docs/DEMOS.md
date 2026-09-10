@@ -80,15 +80,15 @@ Evidence travels in CallToolResult._meta["io.github.ripple-node-lab/verifiable-t
 
 8. zk add (risc0-v1 sidecar)
    result:  skipped (RISC0_SIDECAR_URL unset)
-   enable:  docker compose --profile risc0 up --build -d --wait && export RISC0_SIDECAR_URL=http://localhost:4200
+   enable:  docker compose --profile risc0 up --build -d --wait && export RISC0_SIDECAR_URL=http://127.0.0.1:4200
 
 9. zk add (ezkl-v1 sidecar)
    result:  skipped (EZKL_SIDECAR_URL unset)
-   enable:  docker compose --profile ezkl up --build -d --wait && export EZKL_SIDECAR_URL=http://localhost:4300
+   enable:  docker compose --profile ezkl up --build -d --wait && export EZKL_SIDECAR_URL=http://127.0.0.1:4300
 
 10. zktls riskScore (demo-commit-v1)
    result:  skipped (TLSN_SIDECAR_URL unset)
-   enable:  docker compose --profile tlsn up --build -d --wait && export TLSN_SIDECAR_URL=http://localhost:4400
+   enable:  docker compose --profile tlsn up --build -d --wait && export TLSN_SIDECAR_URL=http://127.0.0.1:4400
 
 Tamper checks (verified results mutated client-side, re-verified):
    output 42 -> 43 (#1):          rejected (outputCommitmentMismatch)

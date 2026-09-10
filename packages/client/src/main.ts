@@ -180,7 +180,7 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
     } else {
       skippedCount++;
       resultLine(name, `skipped (${envVar} unset)`);
-      enable(`docker compose --profile ${profile} up --build -d --wait && export ${envVar}=http://localhost:${port}`);
+      enable(`docker compose --profile ${profile} up --build -d --wait && export ${envVar}=http://127.0.0.1:${port}`);
       rows.push({ n: number, scenario: `zk add (${label})`, result: "skipped", format, cls: CLS[format] ?? "-", provenance: "-" });
     }
     gap();
@@ -206,7 +206,7 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
     } else {
       skippedCount++;
       resultLine(name, "skipped (TLSN_SIDECAR_URL unset)");
-      enable("docker compose --profile tlsn up --build -d --wait && export TLSN_SIDECAR_URL=http://localhost:4400");
+      enable("docker compose --profile tlsn up --build -d --wait && export TLSN_SIDECAR_URL=http://127.0.0.1:4400");
       rows.push({ n: 10, scenario: "zktls riskScore", result: "skipped", format: "demo-commit-v1", cls: CLS["demo-commit-v1"] ?? "-", provenance: "-" });
     }
     gap();
