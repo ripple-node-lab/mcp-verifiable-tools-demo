@@ -2,7 +2,8 @@
 
 ## Scenario demo (`npm run demo`)
 
-`npm run demo` runs `packages/client/dist/src/main.js`, which is
+`npm run demo` builds the packages (incremental `tsc -b`) and runs
+`packages/client/dist/src/main.js`, which is
 self-contained: it starts a `DemoServer` in-process on a random port
 (`startServer({ port: 0, … })` in `packages/client/src/main.ts`) and runs ten
 scenarios against it. No separate server, port, or `DEMO_URL` is involved;

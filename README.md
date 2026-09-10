@@ -42,7 +42,7 @@ only needed for the sidecar scenarios 8–10 (see [docs/DEMOS.md](docs/DEMOS.md)
 ```sh
 npm install
 npm test     # builds packages and runs the test suite (no docker needed)
-npm run demo # self-contained: spawns a DemoServer on a random port
+npm run demo # builds (incremental) then runs the self-contained demo
 ```
 
 To run the server standalone (default port 3939, override with `PORT`):
