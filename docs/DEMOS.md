@@ -53,7 +53,7 @@ Evidence travels in CallToolResult._meta["io.github.ripple-node-lab/verifiable-t
    what: add(1,2) with tee-nitro-v1: result comes with an AWS Nitro-style attestation document (COSE_Sign1, PCRs, userData)
 5. tee add: 3 (verified tee-nitro-v1)
    checks: circuitHash=0xe2d677e5… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (tee-nitro-v1)
-   means: client checked cert chain to the pinned root, pinned PCRs and userData = commitments. MOCK attestation: root/PCR fixtures are generated locally, not from real Nitro hardware.
+   means: client checked the attestation cert chain to the pinned root, pinned PCRs, nonce, and userData = hash of the tool's HPKE key; the enclave key certified there signed the commitments. MOCK attestation: root/PCR fixtures are generated locally, not from real Nitro hardware.
    what: add(20,22) with snarkjs-v2: REAL Groth16 proof (circom circuit), verified in-process with a pinned verification key
 6. zk add (snarkjs-v2 Groth16): 42 (verified, proof 720 bytes, prove 306.76 ms, verify 172.09 ms)
    checks: circuitHash=0xfb5e4566… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (snarkjs-v2)

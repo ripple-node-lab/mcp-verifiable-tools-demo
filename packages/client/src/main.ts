@@ -104,7 +104,7 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
   track(tee);
   console.log(`5. tee add: ${tee.content[0].text} (verified tee-nitro-v1)`);
   console.log(checksLine(tee));
-  means("client checked cert chain to the pinned root, pinned PCRs and userData = commitments. MOCK attestation: root/PCR fixtures are generated locally, not from real Nitro hardware.");
+  means("client checked the attestation cert chain to the pinned root, pinned PCRs, nonce, and userData = hash of the tool's HPKE key; the enclave key certified there signed the commitments. MOCK attestation: root/PCR fixtures are generated locally, not from real Nitro hardware.");
 
   client.setCapabilities({ proofFormats: discovery.proofFormats });
   for (const [number, format, label, what, meaning] of [
@@ -193,9 +193,9 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
     { label: "provenance stripped (#2):", result: risk, args: { symbol: "AAPL" }, tool: "riskScore", nonce: riskCall.nonce, mutate: (r) => { delete r._meta![EXTENSION_ID]!.inputAttestations; }, reason: "proofInvalid", requireProvenance: true },
     { label: "attestation doc flipped (#5):", result: tee, args: { a: 1, b: 2 }, tool: "add", nonce: teeCall.nonce, mutate: (r) => {
       const meta = r._meta![EXTENSION_ID]!;
-      const bytes = Buffer.from(String(meta.proof).replace(/^0x/, ""), "hex");
+      const bytes = Buffer.from(String(meta.teeAttestation).replace(/^0x/, ""), "hex");
       bytes[bytes.length >> 1] ^= 0xff;
-      meta.proof = `0x${bytes.toString("hex")}`;
+      meta.teeAttestation = `0x${bytes.toString("hex")}`;
     }, reason: "proofInvalid" }
   ];
   let rejected = 0;
