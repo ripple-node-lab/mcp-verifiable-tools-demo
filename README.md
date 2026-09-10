@@ -36,6 +36,9 @@ surface) is pending publication of an SDK release that speaks `2026-07-28`.
 
 ## Quick start
 
+Requires Node.js 20 or later (CI runs the suite on 20, 22 and 24). Docker is
+only needed for the sidecar scenarios 8–10 (see [docs/DEMOS.md](docs/DEMOS.md)).
+
 ```sh
 npm install
 npm test     # builds packages and runs the test suite (no docker needed)
