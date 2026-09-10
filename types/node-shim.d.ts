@@ -3,6 +3,7 @@ declare namespace NodeJS {
 }
 declare const process: {
   env: NodeJS.ProcessEnv;
+  version: string;
   argv: string[];
   exitCode?: number;
   stdout: { write(value: string): void };

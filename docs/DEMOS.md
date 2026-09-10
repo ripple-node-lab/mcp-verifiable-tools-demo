@@ -7,7 +7,10 @@ self-contained: it starts a `DemoServer` in-process on a random port
 (`startServer({ port: 0, … })` in `packages/client/src/main.ts`) and runs ten
 scenarios against it. No separate server, port, or `DEMO_URL` is involved;
 sidecar-backed scenarios are enabled purely by environment variables
-(`RISC0_SIDECAR_URL`, `EZKL_SIDECAR_URL`, `TLSN_SIDECAR_URL`).
+(`RISC0_SIDECAR_URL`, `EZKL_SIDECAR_URL`, `TLSN_SIDECAR_URL`). By default the
+demo narrates each scenario (what is attempted, what the result means);
+`DEMO_VERBOSE=0 npm run demo` prints only the compact headline/`checks:`/tamper
+lines.
 
 | # | Demonstrates | Proof format(s) | Prerequisites | Expected output line |
 |---|---|---|---|---|
@@ -22,43 +25,80 @@ sidecar-backed scenarios are enabled purely by environment variables
 | 9 | ZKML proof via sidecar | `ezkl-v1` | `EZKL_SIDECAR_URL` (profile `ezkl`) | `9. zk add (ezkl-v1 sidecar): 42 (verified, proof … bytes, prove …, verify …)` |
 | 10 | zkTLS input provenance | `demo-commit-v1` + `zktls-tlsn-v1` attestation | `TLSN_SIDECAR_URL` (profile `tlsn`) | `10. zktls riskScore: … (verified demo-commit-v1, provenance zktls-tlsn-v1, presentation … bytes)` |
 
-Actual output with no sidecars configured (timings and proof byte counts vary
-slightly between runs):
+Actual output with no sidecars configured (verbose default; timings and
+proof byte counts vary slightly between runs):
 
 ```text
+MCP verifiable-tools demo — server runs in-process as an UNTRUSTED operator; the client
+verifies each result against keys/roots pinned locally by circuitHash (never fetched from the server).
+Evidence travels in CallToolResult._meta["io.github.ripple-node-lab/verifiable-tools"]. Node v20.18.1; sidecars: none (scenarios 8-10 skipped)
+
+   what: sync tools/call for add(20,22) with proofFormat demo-sig-v1; client supplies a fresh nonce
 1. sync add: 42 (verified demo-sig-v1)
    checks: circuitHash=0xe2d677e5… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-sig-v1)
+   means: server signed (result, commitments, nonce) with a key pinned by circuitHash. demo-sig-v1 is a DEMO format: it proves origin and freshness, NOT that 20+22 was computed correctly.
+   what: riskScore(AAPL) runs as an MCP Task (tasks/get polling); result carries an oracle-sig-v1 attestation for the upstream price it used
 2. async riskScore: 72 (verified demo-commit-v1, provenance oracle-sig-v1)
    checks: circuitHash=0xfe9a89b0… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-commit-v1) · provenance=ok (oracle-sig-v1)
+   means: the attestation commitment is bound into publicInputs, so the proof covers WHICH input the server used, and the oracle key is pinned by URI. demo-commit-v1 is a DEMO format.
+   what: privateCreditCheck(income, debt) via verifiable-tools/call: arguments HPKE-encrypted to the tool key, inputCommitment salted; reply encrypted back
 3. blind privateCreditCheck: approved (verified demo-sig-v1)
    checks: circuitHash=0xf238b7ce… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-sig-v1) · args=HPKE-encrypted (salted inputCommitment)
+   server saw: inputCommitment + 168 bytes of HPKE ciphertext (no plaintext income/debt)
+   means: the client verified the result against ITS salted commitment, so the result is for exactly the encrypted arguments. Confidentiality here relies on the enclave/prover holding the tool key (demo: same process).
+   what: priceQuote(AAPL) returns immediately with a resultId and no proof; client fetches the proof later with verifiable-tools/prove
 4. deferred priceQuote: 604 (verified demo-sig-v1)
    checks: circuitHash=0xe895ece8… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-sig-v1) · via verifiable-tools/prove
+   means: proof generation is decoupled from the tool call; the deferred proof binds to the original result via resultId + commitments.
+   what: add(1,2) with tee-nitro-v1: result comes with an AWS Nitro-style attestation document (COSE_Sign1, PCRs, userData)
 5. tee add: 3 (verified tee-nitro-v1)
    checks: circuitHash=0xe2d677e5… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (tee-nitro-v1)
-6. zk add (snarkjs-v2 Groth16): 42 (verified, proof 724 bytes, prove 272.82 ms, verify 146.96 ms)
+   means: client checked cert chain to the pinned root, pinned PCRs and userData = commitments. MOCK attestation: root/PCR fixtures are generated locally, not from real Nitro hardware.
+   what: add(20,22) with snarkjs-v2: REAL Groth16 proof (circom circuit), verified in-process with a pinned verification key
+6. zk add (snarkjs-v2 Groth16): 42 (verified, proof 720 bytes, prove 306.76 ms, verify 172.09 ms)
    checks: circuitHash=0xfb5e4566… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (snarkjs-v2)
-7. zk add (noir-v1 UltraHonk): 42 (verified, proof 14656 bytes, prove 262.80 ms, verify 63.83 ms)
+   means: the proof itself shows 20+22=42 was computed by the pinned circuit. Caveat: single-party trusted setup (demo ceremony).
+   what: add(20,22) with noir-v1: REAL UltraHonk proof (Noir circuit, bb.js), no trusted setup
+7. zk add (noir-v1 UltraHonk): 42 (verified, proof 14656 bytes, prove 300.31 ms, verify 64.72 ms)
    checks: circuitHash=0x70d3e406… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (noir-v1)
+   means: same guarantee as 6 without a trusted setup; larger proof.
 8. zk add (risc0-v1 sidecar): skipped (RISC0_SIDECAR_URL unset)
+   enable: docker compose --profile risc0 up -d && export RISC0_SIDECAR_URL=http://localhost:4200
 9. zk add (ezkl-v1 sidecar): skipped (EZKL_SIDECAR_URL unset)
+   enable: docker compose --profile ezkl up -d && export EZKL_SIDECAR_URL=http://localhost:4300
 10. zktls riskScore: skipped (TLSN_SIDECAR_URL unset)
-Tamper checks (scenario 1 result mutated client-side, re-verified):
-   output 42 -> 43:      rejected (outputCommitmentMismatch)
-   nonce replaced:       rejected (nonceMismatch)
-   proof byte flipped:   rejected (proofInvalid)
-Summary: 7 verified, 3 skipped, 3/3 tampered results rejected
+   enable: docker compose --profile tlsn up -d && export TLSN_SIDECAR_URL=http://localhost:4400
+Tamper checks (verified results mutated client-side, re-verified):
+   output 42 -> 43 (#1):          rejected (outputCommitmentMismatch)
+   nonce replaced (#1):           rejected (nonceMismatch)
+   proof byte flipped (#1):       rejected (proofInvalid)
+   provenance stripped (#2):      rejected (proofInvalid)
+   attestation doc flipped (#5):  rejected (proofInvalid)
+Summary: 7 verified (real ZK 2 · demo formats 4 · mock TEE 1), 3 skipped, 5/5 tampered results rejected
 ```
 
-Each `checks:` line lists what `verifyResult`
-(`packages/verifier/src/verifier.ts`) confirmed, in order; a failure at any
-step is a `VerifyOutcome.reason` (`circuitHashMismatch`,
-`inputCommitmentMismatch`, `outputCommitmentMismatch`, `nonceMismatch`,
-`proofInvalid`, `provenance*`), aborts the demo, and the "ok" line is never
-printed. The `provenance=ok` segment appears only when the result carries an
-`inputAttestations` entry. The Tamper section takes the verified scenario-1
-result, mutates one field at a time client-side, re-verifies, and asserts the
-expected rejection reason — an unexpected pass exits non-zero.
+Reading the output:
+
+| Line | Meaning |
+|---|---|
+| `what:` | What the scenario is about to attempt (verbose only). |
+| headline (`N. …`) | The result after the client verified it. |
+| `checks:` | What `verifyResult` (`packages/verifier/src/verifier.ts`) confirmed, in order. A failure at any step is a `VerifyOutcome.reason` (`circuitHashMismatch`, `inputCommitmentMismatch`, `outputCommitmentMismatch`, `nonceMismatch`, `proofInvalid`, `provenance*`), aborts the demo, and the `checks:` line is never printed. `provenance=ok` appears only when the result carries an `inputAttestations` entry. |
+| `means:` | What the verification actually guarantees, and whether the format is real or demo (verbose only). |
+
+Format classification in the summary: **real ZK** (`snarkjs-v2`, `noir-v1`,
+`risc0-v1`, `ezkl-v1`) are genuine proofs — with the caveats that `snarkjs-v2`
+uses a single-party demo trusted setup and the sidecars run on demo inputs;
+**demo formats** (`demo-sig-v1`, `demo-commit-v1`) prove origin, freshness and
+binding but NOT correct computation; **mock TEE** (`tee-nitro-v1`) exercises
+the real attestation verification path against locally generated fixtures, not
+Nitro hardware.
+
+The Tamper section takes verified results, mutates one field at a time
+client-side, re-verifies, and asserts the expected rejection reason — an
+unexpected pass exits non-zero. Note that stripping `inputAttestations`
+rejects with `proofInvalid` rather than `provenanceMissing`: the attestation
+commit is bound into `publicInputs`, so the proof itself fails first.
 
 With sidecars up (see below), scenarios 8–10 print their real lines. Typical
 figures recorded in [BENCHMARKS.md](BENCHMARKS.md): `risc0-v1` proof ≈222 KB,
