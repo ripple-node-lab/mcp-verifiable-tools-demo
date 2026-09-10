@@ -46,13 +46,8 @@ try {
   const tlsnOrigin = process.env.TLSN_SIDECAR_URL ? new URL(process.env.TLSN_SIDECAR_URL).origin : undefined;
   const client = new VerifiableClient(server.mcpUrl, { allowedKeyOrigins: tlsnOrigin ? [tlsnOrigin] : [] });
   if (process.env.TLSN_SIDECAR_URL) client.addProvenanceVerifier(new TlsnProvenanceVerifier({ baseUrl: process.env.TLSN_SIDECAR_URL }));
-  const formatCounts = new Map<string, number>();
   const rows: Row[] = [];
   let skippedCount = 0;
-  const track = (result: CallToolResult): void => {
-    const format = result._meta?.[EXTENSION_ID]?.proofFormat ?? "unknown";
-    formatCounts.set(format, (formatCounts.get(format) ?? 0) + 1);
-  };
   const sidecars = ["RISC0_SIDECAR_URL", "EZKL_SIDECAR_URL", "TLSN_SIDECAR_URL"].filter((name) => process.env[name]);
   if (verbose) {
     console.log(`MCP verifiable-tools demo — server runs in-process as an UNTRUSTED operator; the client
@@ -68,27 +63,29 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
   if (addCall.result.resultType !== "complete") throw new Error("unexpected add task");
   const addOutcome = await client.verify(addCall.result, { a: 20, b: 22 }, "add", { nonce: addCall.nonce });
   if (!addOutcome.ok) throw new Error(`demo-sig-v1 verification failed: ${addOutcome.reason}`);
-  track(addCall.result);
   resultLine("1. sync add", `${addCall.result.content[0].text} (verified demo-sig-v1)`);
   printChecks(addCall.result);
   means("server signed (result, commitments, nonce) with a key pinned by circuitHash. demo-sig-v1 is a DEMO format: it proves origin and freshness, NOT that 20+22 was computed correctly.");
-  rows.push({ n: 1, scenario: "sync add", result: addCall.result.content[0].text, format: "demo-sig-v1", cls: "DEMO", provenance: "-" });
+  rows.push({ n: 1, scenario: "sync add", result: addCall.result.content[0].text, format: "demo-sig-v1", cls: CLS["demo-sig-v1"] ?? "-", provenance: "-" });
   gap();
 
   client.setCapabilities({ proofFormats: discovery.proofFormats }, true);
   title("2. async riskScore", "demo-commit-v1");
-  narrate("riskScore(AAPL) runs as an MCP Task (tasks/get polling); result carries an oracle-sig-v1 attestation for the upstream price it used");
+  narrate(process.env.TLSN_SIDECAR_URL
+    ? "riskScore(AAPL) runs as an MCP Task (tasks/get polling); result carries a TLSNotary presentation of the upstream HTTPS response as provenance"
+    : "riskScore(AAPL) runs as an MCP Task (tasks/get polling); result carries an oracle-sig-v1 attestation for the upstream price it used");
   const riskCall = await client.callTool("riskScore", { symbol: "AAPL" }, { proofFormat: "demo-commit-v1" });
   const risk = riskCall.result.resultType === "task" ? await client.poll(riskCall.result) : riskCall.result;
   if (risk.resultType !== "complete") throw new Error("unexpected riskScore task");
   const riskOutcome = await client.verify(risk, { symbol: "AAPL" }, "riskScore", { nonce: riskCall.nonce });
   if (!riskOutcome.ok) throw new Error(`riskScore verification failed: ${riskOutcome.reason}`);
-  track(risk);
   const riskProvenance = risk._meta?.[EXTENSION_ID]?.inputAttestations?.[0]?.type ?? "none";
   resultLine("2. async riskScore", `${risk.content[0].text} (verified demo-commit-v1, provenance ${riskProvenance})`);
   printChecks(risk);
-  means("the attestation commitment is bound into publicInputs, so the proof covers WHICH input the server used, and the oracle key is pinned by URI. demo-commit-v1 is a DEMO format.");
-  rows.push({ n: 2, scenario: "async riskScore", result: risk.content[0].text, format: "demo-commit-v1", cls: "DEMO", provenance: riskProvenance });
+  means(riskProvenance === "zktls-tlsn-v1"
+    ? "REAL zkTLS provenance bound into publicInputs; demo-commit-v1 is still a DEMO format"
+    : "the attestation commitment is bound into publicInputs, so the proof covers WHICH input the server used, and the oracle key is pinned by URI. demo-commit-v1 is a DEMO format.");
+  rows.push({ n: 2, scenario: "async riskScore", result: risk.content[0].text, format: "demo-commit-v1", cls: CLS["demo-commit-v1"] ?? "-", provenance: riskProvenance });
   gap();
 
   client.setCapabilities({ proofFormats: discovery.proofFormats, blindExecution: true });
@@ -99,11 +96,10 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
     encryptReply: true,
     onEncrypted: (info) => { encryptedBytes = info.encryptedArgumentsBytes; }
   });
-  track(credit);
   resultLine("3. blind privateCreditCheck", `${credit.content[0].text} (verified demo-sig-v1)`);
   printChecks(credit, " · args=HPKE-encrypted (salted inputCommitment)");
   means(`server saw only inputCommitment + ${encryptedBytes} bytes of HPKE ciphertext (no plaintext income/debt); the client verified the result against ITS salted commitment, so the result is for exactly the encrypted arguments. Confidentiality relies on the enclave/prover holding the tool key (demo: same process).`);
-  rows.push({ n: 3, scenario: "blind privateCreditCheck", result: credit.content[0].text, format: "demo-sig-v1", cls: "DEMO", provenance: "-" });
+  rows.push({ n: 3, scenario: "blind privateCreditCheck", result: credit.content[0].text, format: "demo-sig-v1", cls: CLS["demo-sig-v1"] ?? "-", provenance: "-" });
   gap();
 
   title("4. deferred priceQuote", "demo-sig-v1");
@@ -116,11 +112,10 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
   if (proved.result.resultType !== "complete") throw new Error("unexpected deferred task");
   const verified = await client.verify(proved.result, { symbol: "AAPL" }, "priceQuote", { nonce: proved.nonce });
   if (!verified.ok) throw new Error(`deferred verification failed: ${verified.reason}`);
-  track(proved.result);
   resultLine("4. deferred priceQuote", `${proved.result.content[0].text} (verified ${proved.result._meta?.[EXTENSION_ID]?.proofFormat})`);
   printChecks(proved.result, " · via verifiable-tools/prove");
   means("proof generation is decoupled from the tool call; the deferred proof binds to the original result via resultId + commitments.");
-  rows.push({ n: 4, scenario: "deferred priceQuote", result: proved.result.content[0].text, format: "demo-sig-v1", cls: "DEMO", provenance: "-" });
+  rows.push({ n: 4, scenario: "deferred priceQuote", result: proved.result.content[0].text, format: "demo-sig-v1", cls: CLS["demo-sig-v1"] ?? "-", provenance: "-" });
   gap();
 
   title("5. tee add", "tee-nitro-v1");
@@ -130,11 +125,10 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
   const teeOutcome = await client.verify(teeCall.result, { a: 1, b: 2 }, "add", { nonce: teeCall.nonce });
   if (!teeOutcome.ok) throw new Error(`tee-nitro-v1 verification failed: ${teeOutcome.reason}`);
   const tee = teeCall.result;
-  track(tee);
   resultLine("5. tee add", `${tee.content[0].text} (verified tee-nitro-v1)`);
   printChecks(tee);
   means("client checked the attestation cert chain to the pinned root, pinned PCRs, nonce, and userData = hash of the tool's HPKE key; the enclave key certified there signed the commitments. MOCK attestation: root/PCR fixtures are generated locally, not from real Nitro hardware.");
-  rows.push({ n: 5, scenario: "tee add", result: tee.content[0].text, format: "tee-nitro-v1", cls: "MOCK", provenance: "-" });
+  rows.push({ n: 5, scenario: "tee add", result: tee.content[0].text, format: "tee-nitro-v1", cls: CLS["tee-nitro-v1"] ?? "-", provenance: "-" });
   gap();
 
   client.setCapabilities({ proofFormats: discovery.proofFormats });
@@ -153,13 +147,12 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
     const outcome = await client.verify(call.result, { a: 20, b: 22 }, "add", { nonce: call.nonce });
     const verifyMs = performance.now() - verifyStart;
     if (!outcome.ok) throw new Error(`${format} verification failed: ${outcome.reason}`);
-    track(call.result);
     const proof = call.result._meta?.[EXTENSION_ID]?.proof;
     const proofBytes = typeof proof === "string" ? Buffer.from(proof.startsWith("0x") ? proof.slice(2) : proof, format === "snarkjs-v2" ? "base64url" : "hex").byteLength : 0;
     resultLine(name, `${call.result.content[0].text} (verified, proof ${proofBytes} bytes, prove ${proveMs.toFixed(2)} ms, verify ${verifyMs.toFixed(2)} ms)`);
     printChecks(call.result);
     means(meaning);
-    rows.push({ n: number, scenario: `zk add (${label})`, result: call.result.content[0].text, format, cls: "REAL", provenance: "-" });
+    rows.push({ n: number, scenario: `zk add (${label})`, result: call.result.content[0].text, format, cls: CLS[format] ?? "-", provenance: "-" });
     gap();
   }
   for (const [number, format, label, envVar, profile, port, what, meaning] of [
@@ -178,18 +171,17 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
       const outcome = await client.verify(call.result, { a: 20, b: 22 }, "add", { nonce: call.nonce });
       const verifyMs = performance.now() - verifyStart;
       if (!outcome.ok) throw new Error(`${format} verification failed: ${outcome.reason}`);
-      track(call.result);
       const proof = call.result._meta?.[EXTENSION_ID]?.proof;
       const proofBytes = typeof proof === "string" ? Buffer.from(proof, "base64url").byteLength : 0;
       resultLine(name, `${call.result.content[0].text} (verified, proof ${proofBytes} bytes, prove ${proveMs.toFixed(2)} ms, verify ${verifyMs.toFixed(2)} ms)`);
       printChecks(call.result);
       means(meaning);
-      rows.push({ n: number, scenario: `zk add (${label})`, result: call.result.content[0].text, format, cls: "REAL", provenance: "-" });
+      rows.push({ n: number, scenario: `zk add (${label})`, result: call.result.content[0].text, format, cls: CLS[format] ?? "-", provenance: "-" });
     } else {
       skippedCount++;
       resultLine(name, `skipped (${envVar} unset)`);
-      enable(`docker compose --profile ${profile} up -d && export ${envVar}=http://localhost:${port}`);
-      rows.push({ n: number, scenario: `zk add (${label})`, result: "skipped", format, cls: "REAL", provenance: "-" });
+      enable(`docker compose --profile ${profile} up --build -d --wait && export ${envVar}=http://localhost:${port}`);
+      rows.push({ n: number, scenario: `zk add (${label})`, result: "skipped", format, cls: CLS[format] ?? "-", provenance: "-" });
     }
     gap();
   }
@@ -204,19 +196,18 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
       if (result.resultType !== "complete") throw new Error("unexpected riskScore task");
       const outcome = await client.verify(result, { symbol: "AAPL" }, "riskScore", { nonce: call.nonce });
       if (!outcome.ok) throw new Error(`tlsn provenance verification failed: ${outcome.reason}`);
-      track(result);
       const attestation = result._meta?.[EXTENSION_ID]?.inputAttestations?.[0];
       const proofBytes = typeof attestation?.proof === "string" ? Buffer.from(attestation.proof, "base64url").byteLength : 0;
       resultLine(name, `${result.content[0].text} (verified demo-commit-v1, provenance ${attestation?.type}, presentation ${proofBytes} bytes)`);
       printChecks(result);
       means("REAL zkTLS provenance: the upstream response is proven to come from that TLS server, and is bound into publicInputs");
-      rows.push({ n: 10, scenario: "zktls riskScore", result: result.content[0].text, format: "demo-commit-v1", cls: "DEMO", provenance: attestation?.type ?? "-" });
+      rows.push({ n: 10, scenario: "zktls riskScore", result: result.content[0].text, format: "demo-commit-v1", cls: CLS["demo-commit-v1"] ?? "-", provenance: attestation?.type ?? "-" });
       client.setCapabilities({ proofFormats: discovery.proofFormats });
     } else {
       skippedCount++;
       resultLine(name, "skipped (TLSN_SIDECAR_URL unset)");
-      enable("docker compose --profile tlsn up -d && export TLSN_SIDECAR_URL=http://localhost:4400");
-      rows.push({ n: 10, scenario: "zktls riskScore", result: "skipped", format: "demo-commit-v1", cls: "DEMO", provenance: "-" });
+      enable("docker compose --profile tlsn up --build -d --wait && export TLSN_SIDECAR_URL=http://localhost:4400");
+      rows.push({ n: 10, scenario: "zktls riskScore", result: "skipped", format: "demo-commit-v1", cls: CLS["demo-commit-v1"] ?? "-", provenance: "-" });
     }
     gap();
   }
@@ -270,10 +261,11 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
   console.log(renderRow(header));
   for (const row of table) console.log(renderRow(row));
 
-  const real = ["snarkjs-v2", "noir-v1", "risc0-v1", "ezkl-v1"].reduce((n, f) => n + (formatCounts.get(f) ?? 0), 0);
-  const demo = ["demo-sig-v1", "demo-commit-v1"].reduce((n, f) => n + (formatCounts.get(f) ?? 0), 0);
-  const mockTee = formatCounts.get("tee-nitro-v1") ?? 0;
-  const verifiedCount = [...formatCounts.values()].reduce((a, b) => a + b, 0);
+  const byClass = (cls: Class): number => rows.filter((row) => row.result !== "skipped" && CLS[row.format] === cls).length;
+  const real = byClass("REAL");
+  const demo = byClass("DEMO");
+  const mockTee = byClass("MOCK");
+  const verifiedCount = rows.filter((row) => row.result !== "skipped").length;
   console.log(`Summary: ${verifiedCount} verified (real ZK ${real} · demo formats ${demo} · mock TEE ${mockTee}), ${skippedCount} skipped, ${rejected}/${tamperCases.length} tampered results rejected`);
 } catch (error: unknown) {
   console.error(error instanceof Error ? error.message : "demo failed");
