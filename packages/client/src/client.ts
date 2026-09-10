@@ -25,6 +25,10 @@ export interface VerifiableClientOptions {
   // Optional JSON-RPC transport override (e.g. the MCP SDK adapter). When set,
   // `endpoint` is only used as the verification-key registry origin.
   rpc?: RpcTransport;
+  // Raw-HTTP fetch timeout per request (matches the sdkRpc default).
+  timeoutMs?: number;
+  // Optional caller-supplied abort signal combined with the request timeout.
+  signal?: AbortSignal;
 }
 export class VerifiableClient {
   private capabilities: ClientCapabilities;
@@ -42,8 +46,12 @@ export class VerifiableClient {
   private discovered: DiscoverResult | undefined;
   private descriptors = new Map<string, ToolDescriptorMeta>();
   private readonly rpc?: RpcTransport;
+  private readonly timeoutMs: number;
+  private readonly signal?: AbortSignal;
   constructor(private readonly endpoint: string, options: VerifiableClientOptions = {}) {
     this.rpc = options.rpc;
+    this.timeoutMs = options.timeoutMs ?? 200_000;
+    this.signal = options.signal;
     this.registry = new VerificationKeyRegistry([new URL(endpoint).origin, ...(options.allowedKeyOrigins ?? [])]);
     this.sigVerifier = new DemoSigVerifier(this.registry);
     this.extraVerifiers = options.verifiers ?? [];
@@ -169,7 +177,9 @@ export class VerifiableClient {
     if (this.rpc) return this.rpc(method, params);
     const headers: Record<string, string> = { "content-type": "application/json", "MCP-Protocol-Version": PROTOCOL_VERSION, "Mcp-Method": method };
     if (method === "tools/call") headers["Mcp-Name"] = String(asRecord(params).name);
-    const response = await fetch(this.endpoint, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }) });
+    const timeout = AbortSignal.timeout(this.timeoutMs);
+    const signal = this.signal ? AbortSignal.any([this.signal, timeout]) : timeout;
+    const response = await fetch(this.endpoint, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }), signal });
     return await response.json() as { result?: unknown; error?: { code: number; message: string; data?: unknown } };
   }
 }

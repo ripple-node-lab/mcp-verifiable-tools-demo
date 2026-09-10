@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
+import { createServer } from "node:http";
 import { EXTENSION_ID, META_CLIENT_CAPABILITIES, clientCapabilities, expectedCircuitHash, b64u } from "@demo/protocol";
 import { encryptArguments, VerifiableClient } from "@demo/client";
 import { VerificationKeyRegistry } from "@demo/verifier";
@@ -153,6 +154,20 @@ test("unknown verification key circuit returns 404", async () => withServer(asyn
   const response = await fetch(`${server.url}/vk/0xdeadbeef`);
   assert.equal(response.status, 404);
 }));
+
+test("raw HTTP requests time out instead of hanging", async () => {
+  const hanging = createServer(() => { /* never responds */ });
+  await new Promise<void>((resolve) => hanging.listen(0, "127.0.0.1", resolve));
+  try {
+    const port = (hanging.address() as { port: number }).port;
+    const client = new VerifiableClient(`http://127.0.0.1:${port}/mcp`, { timeoutMs: 50 });
+    let error: unknown;
+    try { await client.discover(); } catch (e) { error = e; }
+    assert.equal((error as Error | undefined)?.name, "TimeoutError");
+  } finally {
+    hanging.close();
+  }
+});
 
 test("oversized blind ciphertext is invalid params", async () => withServer(async (server) => {
   const client = new VerifiableClient(server.mcpUrl);

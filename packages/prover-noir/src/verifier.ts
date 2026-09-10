@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { UltraHonkVerifierBackend } from "@aztec/bb.js";
-import { JsonValue, VerifiableToolsMeta, parseAddArguments } from "@demo/protocol";
+import { EMPTY_NONCE, JsonValue, VerifiableToolsMeta, parseAddArguments } from "@demo/protocol";
 import { Verifier, VerifyContext, VerificationKeyRegistry } from "@demo/verifier";
 import { FORMAT, circuitHash, getApi } from "./runtime.js";
 
@@ -16,10 +16,12 @@ export async function verifyNoir(meta: VerifiableToolsMeta, context: VerifyConte
   checkAbort(signal);
   if (meta.proofFormat !== FORMAT || meta.circuitHash !== context.expectedCircuitHash || meta.circuitHash !== circuitHash || !meta.proof) return false;
   const args = parseAddArguments(context.arguments);
-  if (!args || context.content[0]?.text !== String(args.a + args.b) || !Array.isArray(meta.publicInputs) || meta.publicInputs.length !== 6) return false;
-  const expected = [args.a, args.b, args.a + args.b].map((value) => `0x${BigInt(value).toString(16).padStart(64, "0")}`);
+  if (!args || context.content[0]?.text !== String(args.a + args.b) || !meta.outputCommitment || !meta.inputCommitment || !Array.isArray(meta.publicInputs) || meta.publicInputs.length !== 6) return false;
+  const expectedTail = [args.a, args.b, args.a + args.b].map((value) => `0x${BigInt(value).toString(16).padStart(64, "0")}`);
   const tail = meta.publicInputs.slice(3);
-  if (tail.length !== expected.length || tail.some((value, index) => value !== expected[index])) return false;
+  if (tail.length !== expectedTail.length || tail.some((value, index) => value !== expectedTail[index])) return false;
+  const head = [meta.outputCommitment, meta.inputCommitment, meta.nonce ?? EMPTY_NONCE];
+  if (meta.publicInputs.some((value, index) => index < 3 && value !== head[index])) return false;
   const uri = context.verificationKeyUri ?? meta.verificationKeyUri;
   if (!uri) return false;
   const bytes = await keyBytes(context, meta.circuitHash, uri);

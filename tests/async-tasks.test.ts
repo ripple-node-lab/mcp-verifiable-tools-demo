@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { VerifiableClient } from "@demo/client";
+import { VerifiableClient, pollTask } from "@demo/client";
 import { TaskStore } from "@demo/server";
 import { clientCapabilities, JsonRpcProtocolError, META_CLIENT_CAPABILITIES } from "@demo/protocol";
 import { withServer, withServerOptions, rpc, expectTask } from "./helpers.js";
@@ -87,4 +87,40 @@ test("task TTL covers the risc0 proving timeout when the sidecar is configured",
     assert.equal(task.ttlMs, 60_000);
     await rpc(server, "tasks/cancel", { taskId: task.taskId });
   });
+});
+
+test("a producer rejection after cancel leaves the task cancelled without an error", async () => {
+  const store = new TaskStore();
+  let rejectProduce: ((error: unknown) => void) | undefined;
+  const task = store.create(async () => await new Promise<never>((_resolve, reject) => { rejectProduce = reject; }));
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  store.cancel(task.taskId);
+  rejectProduce?.(new Error("late failure"));
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  const settled = store.get(task.taskId);
+  assert.equal(settled?.status, "cancelled");
+  assert.equal(settled?.error, undefined);
+});
+
+test("a working task past its TTL fails with taskExpired", async () => {
+  const store = new TaskStore({ ttlMs: 10 });
+  const task = store.create(async () => await new Promise<never>(() => {}));
+  await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  const expired = store.get(task.taskId);
+  assert.equal(expired?.status, "failed");
+  assert.deepEqual(expired?.error, { code: -32000, message: "task exceeded its TTL", data: { reason: "taskExpired" } });
+});
+
+test("pollTask falls back to the default interval on a bad pollIntervalMs", async () => {
+  let calls = 0;
+  const request = async () => ({
+    result: ++calls === 1
+      ? { status: "working", pollIntervalMs: "bogus" }
+      : { status: "completed", result: { resultType: "complete", content: [{ type: "text", text: "ok" }], isError: false } }
+  });
+  const start = Date.now();
+  const result = await pollTask(request, { resultType: "task", taskId: "task-1", status: "working", pollIntervalMs: 100 }, {});
+  assert.equal(result.content[0].text, "ok");
+  assert.equal(calls, 2);
+  assert.ok(Date.now() - start >= 90, "fell back to the 100ms default poll interval");
 });

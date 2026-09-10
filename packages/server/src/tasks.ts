@@ -40,6 +40,7 @@ export class TaskStore {
         this.controllers.delete(taskId);
         task.status = "failed";
         task.lastUpdatedAt = new Date(now).toISOString();
+        task.error = { code: -32000, message: "task exceeded its TTL", data: { reason: "taskExpired" } };
       } else {
         this.tasks.delete(taskId);
       }
@@ -53,12 +54,11 @@ export class TaskStore {
     if (result) task.result = result;
   }
   private fail(taskId: string, error: unknown): void {
+    const task = this.tasks.get(taskId);
+    if (!task || task.status !== "working") return;
     const protocolError = error instanceof JsonRpcProtocolError ? error : undefined;
     const detail = protocolError?.message ?? (error instanceof Error ? error.message : "task failed");
-    const existing = this.tasks.get(taskId);
-    if (existing?.status === "cancelled" && error instanceof DOMException && error.name === "AbortError") return;
     this.update(taskId, "failed", undefined);
-    const task = this.tasks.get(taskId);
-    if (task) task.error = { code: protocolError?.code ?? -32603, message: detail, ...(protocolError?.data === undefined ? {} : { data: protocolError.data }) };
+    task.error = { code: protocolError?.code ?? -32603, message: detail, ...(protocolError?.data === undefined ? {} : { data: protocolError.data }) };
   }
 }
