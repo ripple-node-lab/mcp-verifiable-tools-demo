@@ -13,7 +13,7 @@
     "test": "npm run build && node --test --test-concurrency=1 tests/dist/*.test.js",
     "server": "node packages/server/dist/src/main.js",
     "test:sidecar": "npm run build && node --test tests/dist/sidecar.test.js",
-    "demo": "node packages/client/dist/src/main.js",
+    "demo": "npm run build && node packages/client/dist/src/main.js",
     "bench": "node --enable-source-maps scripts/bench.mjs"
   },
   "devDependencies": {
