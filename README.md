@@ -57,9 +57,9 @@ and point the client at them via env vars:
 
 ```sh
 docker compose --profile risc0 --profile ezkl --profile tlsn up --build -d --wait
-export RISC0_SIDECAR_URL=http://localhost:4200
-export EZKL_SIDECAR_URL=http://localhost:4300
-export TLSN_SIDECAR_URL=http://localhost:4400
+export RISC0_SIDECAR_URL=http://127.0.0.1:4200
+export EZKL_SIDECAR_URL=http://127.0.0.1:4300
+export TLSN_SIDECAR_URL=http://127.0.0.1:4400
 npm run demo
 docker compose --profile risc0 --profile ezkl --profile tlsn down   # when finished
 ```
