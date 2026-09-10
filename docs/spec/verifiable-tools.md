@@ -11,7 +11,7 @@
 
 ## Abstract
 
-This proposal introduces an optional MCP extension, `io.modelcontextprotocol/verifiable-tools`, that lets servers attach cryptographic evidence to `tools/call` results. The evidence can be a zero-knowledge proof (ZKP), a TEE attestation, or another machine-verifiable artifact. Clients can validate the evidence locally to confirm that the returned data was produced by the expected computation on the expected inputs, without having to trust the server operator. This addresses a gap left by the strong authorization work in MCP `2026-07-28`: knowing *who* called a tool does not tell the caller whether the returned value was tampered with or computed incorrectly. The extension is purely optional, negotiated through the standard `extensions` capability map, and reuses the existing `io.modelcontextprotocol/tasks` extension for long-running proof generation.
+This proposal introduces an optional MCP extension, `io.github.ripple-node-lab/verifiable-tools`, that lets servers attach cryptographic evidence to `tools/call` results. The evidence can be a zero-knowledge proof (ZKP), a TEE attestation, or another machine-verifiable artifact. Clients can validate the evidence locally to confirm that the returned data was produced by the expected computation on the expected inputs, without having to trust the server operator. This addresses a gap left by the strong authorization work in MCP `2026-07-28`: knowing *who* called a tool does not tell the caller whether the returned value was tampered with or computed incorrectly. The extension is purely optional, negotiated through the standard `extensions` capability map, and reuses the existing `io.modelcontextprotocol/tasks` extension for long-running proof generation.
 
 ### Overview
 
@@ -98,10 +98,10 @@ An agent monitoring a system decides to trigger an expensive or destructive acti
 The extension identifier is:
 
 ```text
-io.modelcontextprotocol/verifiable-tools
+io.github.ripple-node-lab/verifiable-tools
 ```
 
-Third-party implementations MUST use a vendor-prefixed identifier they control, e.g. `com.example/verifiable-tools`, following the [extension identifier rules](https://modelcontextprotocol.io/extensions/overview).
+Third-party implementations MUST use a vendor-prefixed identifier they control, e.g. `com.example/verifiable-tools`, following the [extension identifier rules](https://modelcontextprotocol.io/extensions/overview). The identifier above is vendor-prefixed because `io.modelcontextprotocol/` is reserved for official MCP extensions. If this extension is accepted into MCP, the identifier — and the HPKE info labels derived from it — would move to `io.modelcontextprotocol/verifiable-tools`. Implementations are expected to treat the identifier as a single constant so that this migration is trivial.
 
 ### Target protocol version
 
@@ -140,7 +140,7 @@ Example `server/discover` response:
     "capabilities": {
       "tools": {},
       "extensions": {
-        "io.modelcontextprotocol/verifiable-tools": {
+        "io.github.ripple-node-lab/verifiable-tools": {
           "proofFormats": ["ezkl-v1", "tee-sgx-dcap-v1"],
           "blindExecution": true,
           "blindEncryptionSchemes": ["hpke-v1"],
@@ -177,14 +177,14 @@ A client requesting verifiable output includes the extension under `extensions` 
       "io.modelcontextprotocol/clientInfo": { "name": "trading-agent", "version": "1.0.0" },
       "io.modelcontextprotocol/clientCapabilities": {
         "extensions": {
-          "io.modelcontextprotocol/verifiable-tools": {
+          "io.github.ripple-node-lab/verifiable-tools": {
             "proofFormats": ["ezkl-v1"],
             "requireProof": true
           },
           "io.modelcontextprotocol/tasks": {}
         }
       },
-      "io.modelcontextprotocol/verifiable-tools": {
+      "io.github.ripple-node-lab/verifiable-tools": {
         "requestedProofFormat": "ezkl-v1",
         "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"
       }
@@ -209,7 +209,7 @@ Mcp-Name: calculateRisk
 
 ### Verifiable tool result
 
-When the extension is negotiated and the server can produce a proof, the `tools/call` result includes the verifiable evidence in `result._meta["io.modelcontextprotocol/verifiable-tools"]`.
+When the extension is negotiated and the server can produce a proof, the `tools/call` result includes the verifiable evidence in `result._meta["io.github.ripple-node-lab/verifiable-tools"]`.
 
 ```json
 {
@@ -226,7 +226,7 @@ When the extension is negotiated and the server can produce a proof, the `tools/
         "name": "example-verifiable-server",
         "version": "1.0.0"
       },
-      "io.modelcontextprotocol/verifiable-tools": {
+      "io.github.ripple-node-lab/verifiable-tools": {
         "proof": "0x8f3a...",
         "proofFormat": "ezkl-v1",
         "circuitHash": "0x12ab...",
@@ -271,7 +271,7 @@ A proof is only useful if the client can tie it to the exact request it made and
 
 **Output binding.** `outputCommitment = "0x" || hex(SHA-256(JCS(content)))` over the `content` array of the `CallToolResult`. When `publicInputs` is present, `publicInputs[0]` MUST always be `outputCommitment`; `publicInputs[1]` MUST be `inputCommitment`; `publicInputs[2]` MUST be the request `nonce`, or the empty hex string `"0x"` when the client supplied no nonce, so the format-specific tail always starts at index 3. Formats whose circuit exposes the raw output as a public signal include it additionally in the format-specific tail.
 
-**Request binding.** A client MAY include a fresh random `nonce` in `params._meta["io.modelcontextprotocol/verifiable-tools"].nonce`. A valid nonce is lower-case hex with a `0x` prefix encoding 16–64 bytes (`^0x[0-9a-f]{32,128}$`). If present, the server MUST bind it into the proof (as a public input, or in the signed/attested payload) and echo it in the result metadata. When the client supplied no nonce, `publicInputs[2]` MUST be the empty hex string `"0x"` so the format-specific tail always starts at index 3. The server MUST reject a request whose `nonce` is present but does not match this grammar with `-32602`. Uniqueness is the client's responsibility: the server does not track nonces; the client MUST generate a fresh nonce per request and MUST reject a result whose echoed nonce it did not issue for that request. Clients that need freshness (any tool whose correct answer changes over time, e.g. prices, balances, health checks) SHOULD always send a nonce; otherwise a server can replay a proof that was valid for an earlier call.
+**Request binding.** A client MAY include a fresh random `nonce` in `params._meta["io.github.ripple-node-lab/verifiable-tools"].nonce`. A valid nonce is lower-case hex with a `0x` prefix encoding 16–64 bytes (`^0x[0-9a-f]{32,128}$`). If present, the server MUST bind it into the proof (as a public input, or in the signed/attested payload) and echo it in the result metadata. When the client supplied no nonce, `publicInputs[2]` MUST be the empty hex string `"0x"` so the format-specific tail always starts at index 3. The server MUST reject a request whose `nonce` is present but does not match this grammar with `-32602`. Uniqueness is the client's responsibility: the server does not track nonces; the client MUST generate a fresh nonce per request and MUST reject a result whose echoed nonce it did not issue for that request. Clients that need freshness (any tool whose correct answer changes over time, e.g. prices, balances, health checks) SHOULD always send a nonce; otherwise a server can replay a proof that was valid for an earlier call.
 
 A verifier therefore checks, in order: (1) `proofFormat` was negotiated; (2) `circuitHash` matches the pinned hash for the tool *and the negotiated format* (§Tool descriptor metadata); (3) `inputCommitment` equals its own recomputation; (4) `outputCommitment` equals `SHA-256(JCS(content))`; (5) `nonce` matches what it sent; (6) the proof / attestation verifies under the pinned verification key.
 
@@ -285,7 +285,7 @@ The client needs a trustworthy mapping *tool name → circuitHash* before it can
   "description": "...",
   "inputSchema": { "type": "object" },
   "_meta": {
-    "io.modelcontextprotocol/verifiable-tools": {
+    "io.github.ripple-node-lab/verifiable-tools": {
       "circuitHash": "0x12ab...",
       "proofFormats": ["snarkjs-v2", "noir-v1"],
       "proofPolicy": "onDemand",
@@ -343,7 +343,7 @@ A proof that `Y = f(X)` says nothing about whether `X` is true. Many tools fetch
 
 Clients that require provenance SHOULD declare it (`requireInputProvenance: true` in their capability object) and MUST NOT treat a result as verified if a required attestation is missing or fails.
 
-If the server cannot produce a proof for a specific call but the call otherwise succeeds, it MUST return a normal `resultType: "complete"` response and MAY omit the `io.modelcontextprotocol/verifiable-tools` metadata. It MUST NOT fail the call solely because it cannot prove it, unless the client set `requireProof: true` and the server accepted that requirement.
+If the server cannot produce a proof for a specific call but the call otherwise succeeds, it MUST return a normal `resultType: "complete"` response and MAY omit the `io.github.ripple-node-lab/verifiable-tools` metadata. It MUST NOT fail the call solely because it cannot prove it, unless the client set `requireProof: true` and the server accepted that requirement.
 
 ### Asynchronous proof generation via Tasks
 
@@ -367,7 +367,7 @@ Example `tools/call` response that creates a task:
 }
 ```
 
-The client polls `tasks/get` with the `taskId`. When the task reaches `completed`, the `result` field contains the same `CallToolResult` shape shown above, including the `io.modelcontextprotocol/verifiable-tools` metadata. `tasks/cancel` MUST abort proof generation, not merely mark the task cancelled.
+The client polls `tasks/get` with the `taskId`. When the task reaches `completed`, the `result` field contains the same `CallToolResult` shape shown above, including the `io.github.ripple-node-lab/verifiable-tools` metadata. `tasks/cancel` MUST abort proof generation, not merely mark the task cancelled.
 
 ```json
 {
@@ -380,7 +380,7 @@ The client polls `tasks/get` with the `taskId`. When the task reaches `completed
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
       "io.modelcontextprotocol/clientCapabilities": {
         "extensions": {
-          "io.modelcontextprotocol/verifiable-tools": {},
+          "io.github.ripple-node-lab/verifiable-tools": {},
           "io.modelcontextprotocol/tasks": {}
         }
       }
@@ -431,7 +431,7 @@ Defined `encryptionScheme` values:
 
 | Value | Meaning | Who sees plaintext |
 |---|---|---|
-| `hpke-v1` | [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180) HPKE, base mode, `DHKEM(X25519, HKDF-SHA256)` / `HKDF-SHA256` / `AES-128-GCM`. `encryptedArguments` = `base64url(enc \|\| ciphertext)` (unpadded, RFC 4648 §5); `enc` is the 32-byte X25519 encapsulated key, so the receiver splits the first 32 decoded bytes. AAD = `JCS({tool, inputCommitment, encryptionScheme})`. `info` = UTF-8 `"io.modelcontextprotocol/verifiable-tools/hpke-v1/args"`. | The proving environment (TEE or the machine running the prover). The MCP server process outside it MUST NOT. |
+| `hpke-v1` | [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180) HPKE, base mode, `DHKEM(X25519, HKDF-SHA256)` / `HKDF-SHA256` / `AES-128-GCM`. `encryptedArguments` = `base64url(enc \|\| ciphertext)` (unpadded, RFC 4648 §5); `enc` is the 32-byte X25519 encapsulated key, so the receiver splits the first 32 decoded bytes. AAD = `JCS({tool, inputCommitment, encryptionScheme})`. `info` = UTF-8 `"io.github.ripple-node-lab/verifiable-tools/hpke-v1/args"`. | The proving environment (TEE or the machine running the prover). The MCP server process outside it MUST NOT. |
 | `fhe-tfhe-v1` | Arguments encrypted under a client-held TFHE key; the tool is evaluated homomorphically and `content` is returned encrypted. Reserved: requires verifiable FHE to also obtain a correctness proof, which is not yet practical (§Open Questions). No server key; `blindPublicKeys` has no entry for this scheme. | Nobody but the client. |
 
 The server's public key for `hpke-v1` is advertised in its capability object as `blindPublicKeys["hpke-v1"]` (base64url raw X25519 key) together with `blindEncryptionSchemes`. Because `server/discover` is the delivery channel, the key is only as trustworthy as that channel: on a TEE-backed server the key MUST be bound into the attestation's user-data field so the client can check that the key it encrypts to lives inside the attested enclave; otherwise it MUST be pinned like a verification key.
@@ -453,7 +453,7 @@ Blind execution hides *inputs*; it does not, by itself, hide anything about the 
 
 Throughout this document `originalContent` denotes the plaintext `content` array as produced by the tool, before encryption; it is never transmitted as a field of its own.
 
-When `replyPublicKey` is present the server MUST return `content` as a single `{ "type": "text", "text": "<base64url(enc || ciphertext)>" }` element, and the result `_meta["io.modelcontextprotocol/verifiable-tools"].encryptedContent` MUST be `true`. Encryption is `hpke-v1` base mode with the same suite as blind arguments, plaintext = `JCS(originalContent)`, AAD = `JCS({tool, inputCommitment, nonce})` (nonce omitted from the object when absent), and `info` = UTF-8 `"io.modelcontextprotocol/verifiable-tools/hpke-v1/reply"`. `outputCommitment` MUST be computed over the *plaintext* `originalContent`, so the client decrypts first and then runs the normal verification steps. `replyPublicKey` is ignored for non-blind `tools/call`.
+When `replyPublicKey` is present the server MUST return `content` as a single `{ "type": "text", "text": "<base64url(enc || ciphertext)>" }` element, and the result `_meta["io.github.ripple-node-lab/verifiable-tools"].encryptedContent` MUST be `true`. Encryption is `hpke-v1` base mode with the same suite as blind arguments, plaintext = `JCS(originalContent)`, AAD = `JCS({tool, inputCommitment, nonce})` (nonce omitted from the object when absent), and `info` = UTF-8 `"io.github.ripple-node-lab/verifiable-tools/hpke-v1/reply"`. `outputCommitment` MUST be computed over the *plaintext* `originalContent`, so the client decrypts first and then runs the normal verification steps. `replyPublicKey` is ignored for non-blind `tools/call`.
 
 Example request:
 
@@ -472,13 +472,13 @@ Example request:
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
       "io.modelcontextprotocol/clientCapabilities": {
         "extensions": {
-          "io.modelcontextprotocol/verifiable-tools": {
+          "io.github.ripple-node-lab/verifiable-tools": {
             "proofFormats": ["tee-sgx-dcap-v1"],
             "blindExecution": true
           }
         }
       },
-      "io.modelcontextprotocol/verifiable-tools": {
+      "io.github.ripple-node-lab/verifiable-tools": {
         "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"
       }
     }
@@ -503,7 +503,7 @@ Example response:
         "name": "private-credit-server",
         "version": "1.0.0"
       },
-      "io.modelcontextprotocol/verifiable-tools": {
+      "io.github.ripple-node-lab/verifiable-tools": {
         "proof": "0x8f3a...",
         "proofFormat": "tee-sgx-dcap-v1",
         "inputCommitment": "0xdeadbeef...",
@@ -529,13 +529,13 @@ sequenceDiagram
     participant P as Proving Environment (TEE / ZK circuit)
     participant V as Local Verifier
 
-    Note over C,S: server/discover advertises io.modelcontextprotocol/verifiable-tools capability
+    Note over C,S: server/discover advertises io.github.ripple-node-lab/verifiable-tools capability
 
     alt synchronous proof
         C->>S: tools/call(name, arguments, _meta.clientCapabilities)
         S->>P: execute + prove
         P-->>S: result + proof / attestation
-        S-->>C: CallToolResult (resultType: "complete")<br/>_meta["io.modelcontextprotocol/verifiable-tools"]
+        S-->>C: CallToolResult (resultType: "complete")<br/>_meta["io.github.ripple-node-lab/verifiable-tools"]
     else asynchronous proof
         C->>S: tools/call(..., _meta.clientCapabilities includes tasks)
         S-->>C: CreateTaskResult (resultType: "task", taskId)
@@ -561,7 +561,7 @@ sequenceDiagram
     C->>S: verifiable-tools/call(tool, inputCommitment,<br/>encryptionScheme, encryptedArguments, proofFormat)
     S->>P: decrypt and compute inside TEE / ZK circuit
     P-->>S: result + proof / teeAttestation
-    S-->>C: CallToolResult + _meta["io.modelcontextprotocol/verifiable-tools"]
+    S-->>C: CallToolResult + _meta["io.github.ripple-node-lab/verifiable-tools"]
 ```
 
 A client MUST NOT act on a tool result whose proof fails verification unless it has an explicit out-of-band trust relationship with the server.
@@ -618,8 +618,8 @@ Early reviewers of this proposal asked two questions repeatedly. (1) *"If the to
 This extension is **fully backward compatible**.
 
 - Servers and clients that do not support the extension continue to use the core `tools/call` flow unchanged.
-- The extension is negotiated only when both parties include `io.modelcontextprotocol/verifiable-tools` in their `extensions` capability map.
-- `_meta` keys prefixed with `io.modelcontextprotocol/verifiable-tools` are ignored by implementations that do not recognize the extension.
+- The extension is negotiated only when both parties include `io.github.ripple-node-lab/verifiable-tools` in their `extensions` capability map.
+- `_meta` keys prefixed with `io.github.ripple-node-lab/verifiable-tools` are ignored by implementations that do not recognize the extension.
 - Unrecognized `resultType` values continue to be treated as invalid by clients, as per the core protocol. This extension does not introduce new `resultType` values; it relies on the existing `"complete"` result type and the `io.modelcontextprotocol/tasks` extension's `"task"` result type.
 
 ## Security Implications
@@ -740,7 +740,7 @@ only attaches attestations to appending formats (`riskScore` proves with
 ## Testing Plan
 
 - Conformance tests verifying that servers only emit advertised `proofFormats`.
-- Tests proving that clients ignore `io.modelcontextprotocol/verifiable-tools` metadata when the extension is not negotiated.
+- Tests proving that clients ignore `io.github.ripple-node-lab/verifiable-tools` metadata when the extension is not negotiated.
 - Tests for the async path: a `tools/call` that returns a task, and a `tasks/get` that resolves to a verifiable result.
 - Negative tests: invalid proofs, mismatched `circuitHash`, unknown `proofFormat`, and malformed blind inputs.
 - Binding tests: a genuine proof paired with altered `content` is rejected (`outputCommitment`); a proof replayed from a previous call is rejected (`nonce`); an unsalted or wrongly salted blind commitment is rejected.

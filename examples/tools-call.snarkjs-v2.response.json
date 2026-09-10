@@ -15,7 +15,7 @@
         "name": "verifiable-tools-demo",
         "version": "1.0.0"
       },
-      "io.modelcontextprotocol/verifiable-tools": {
+      "io.github.ripple-node-lab/verifiable-tools": {
         "proof": "eyJjdXJ2ZSI6ImJuMTI4IiwicGlfYSI6WyIxODQ4MzI0NTkzODEwMDk3MTc2NTEwODU5Mzg2ODU5MzcxOTMxMjcwNTA5NTE0ODgw…",
         "proofFormat": "snarkjs-v2",
         "circuitHash": "0xfb5e4566f5be574f3e95c0356e19ecef88dabd0692edcf5f4be688106e9968c7",

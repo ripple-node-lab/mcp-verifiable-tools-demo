@@ -8,7 +8,7 @@
       "io.modelcontextprotocol/protocolVersion": "2026-07-28",
       "io.modelcontextprotocol/clientCapabilities": {
         "extensions": {
-          "io.modelcontextprotocol/verifiable-tools": {},
+          "io.github.ripple-node-lab/verifiable-tools": {},
           "io.modelcontextprotocol/tasks": {}
         }
       }

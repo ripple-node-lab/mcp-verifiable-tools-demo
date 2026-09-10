@@ -7,7 +7,7 @@ test("deferred price quote can be proved and expires", async () => withServerOpt
   await client.discover();
   const initial = await client.callTool("priceQuote", { symbol: "AAPL" });
   const initialResult = expectComplete(initial.result);
-  const resultId = initialResult._meta?.["io.modelcontextprotocol/verifiable-tools"]?.resultId;
+  const resultId = initialResult._meta?.["io.github.ripple-node-lab/verifiable-tools"]?.resultId;
   assert.equal(typeof resultId, "string");
   const proved = await client.prove(resultId as string, { proofFormat: "demo-sig-v1" });
   const provedResult = expectComplete(proved.result);
@@ -20,16 +20,16 @@ test("deferred price quote can be proved and expires", async () => withServerOpt
 test("plain price quotes do not retain deferred witnesses without capability", async () => withServer(async (server) => {
   const response = await rpc(server, "tools/call", { name: "priceQuote", arguments: { symbol: "AAPL" } }, { "Mcp-Name": "priceQuote" });
   const result = expectComplete(response.result as never);
-  assert.equal(result._meta?.["io.modelcontextprotocol/verifiable-tools"], undefined);
+  assert.equal(result._meta?.["io.github.ripple-node-lab/verifiable-tools"], undefined);
 }));
 test("capability calls without a nonce use the fixed empty nonce slot", async () => withServer(async (server) => {
   const response = await rpc(server, "tools/call", {
     name: "add",
     arguments: { a: 20, b: 22 },
-    _meta: { "io.modelcontextprotocol/clientCapabilities": { extensions: { "io.modelcontextprotocol/verifiable-tools": { proofFormats: ["demo-sig-v1"] } } } }
+    _meta: { "io.modelcontextprotocol/clientCapabilities": { extensions: { "io.github.ripple-node-lab/verifiable-tools": { proofFormats: ["demo-sig-v1"] } } } }
   }, { "Mcp-Name": "add" });
   const result = expectComplete(response.result as never);
-  const meta = result._meta?.["io.modelcontextprotocol/verifiable-tools"];
+  const meta = result._meta?.["io.github.ripple-node-lab/verifiable-tools"];
   assert.equal(meta?.nonce, undefined);
   assert.equal(meta?.publicInputs?.[2], "0x");
 }));
@@ -37,7 +37,7 @@ test("expired deferred witnesses are swept without traffic", async () => withSer
   const client = new VerifiableClient(server.mcpUrl);
   await client.discover();
   const initial = expectComplete((await client.callTool("priceQuote", { symbol: "AAPL" })).result);
-  const resultId = initial._meta?.["io.modelcontextprotocol/verifiable-tools"]?.resultId;
+  const resultId = initial._meta?.["io.github.ripple-node-lab/verifiable-tools"]?.resultId;
   assert.equal(typeof resultId, "string");
   await new Promise<void>((resolve) => setTimeout(resolve, 250));
   assert.equal(server.results.witnessCount, 0);
@@ -52,7 +52,7 @@ test("unknown deferred result IDs and unsupported formats are rejected", async (
   const client = new VerifiableClient(server.mcpUrl);
   await client.discover();
   const initial = expectComplete((await client.callTool("priceQuote", { symbol: "AAPL" })).result);
-  const resultId = initial._meta?.["io.modelcontextprotocol/verifiable-tools"]?.resultId;
+  const resultId = initial._meta?.["io.github.ripple-node-lab/verifiable-tools"]?.resultId;
   assert.equal(typeof resultId, "string");
   const unsupported = await rpc(server, "verifiable-tools/prove", { resultId, proofFormat: "unknown-format" });
   assert.equal(unsupported.error?.code, -32602);
@@ -63,17 +63,17 @@ test("requireProof proves price quote immediately", async () => withServer(async
   client.setCapabilities({ proofFormats: ["demo-sig-v1"], requireProof: true });
   const value = await client.callTool("priceQuote", { symbol: "AAPL" }, { proofFormat: "demo-sig-v1" });
   const result = expectComplete(value.result);
-  assert.equal(result._meta?.["io.modelcontextprotocol/verifiable-tools"]?.resultId, undefined);
+  assert.equal(result._meta?.["io.github.ripple-node-lab/verifiable-tools"]?.resultId, undefined);
 }));
 test("client prove negotiates its configured proof format", async () => withServer(async (server) => {
   const client = new VerifiableClient(server.mcpUrl);
   await client.discover();
   client.setCapabilities({ proofFormats: ["demo-commit-v1"] });
   const initial = expectComplete((await client.callTool("priceQuote", { symbol: "AAPL" })).result);
-  const resultId = initial._meta?.["io.modelcontextprotocol/verifiable-tools"]?.resultId;
+  const resultId = initial._meta?.["io.github.ripple-node-lab/verifiable-tools"]?.resultId;
   assert.equal(typeof resultId, "string");
   const proved = await client.prove(resultId as string);
   const result = expectComplete(proved.result);
-  assert.equal(result._meta?.["io.modelcontextprotocol/verifiable-tools"]?.proofFormat, "demo-commit-v1");
+  assert.equal(result._meta?.["io.github.ripple-node-lab/verifiable-tools"]?.proofFormat, "demo-commit-v1");
   assert.equal((await client.verify(result, { symbol: "AAPL" }, "priceQuote", { nonce: proved.nonce })).ok, true);
 }));

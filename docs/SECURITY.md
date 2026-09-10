@@ -1,7 +1,7 @@
 # Security notes
 
 This repository is a reference/demo implementation of the
-`io.modelcontextprotocol/verifiable-tools` extension. It is **not** suitable
+`io.github.ripple-node-lab/verifiable-tools` extension. It is **not** suitable
 for production security. The normative security analysis lives in the spec's
 [Security Implications](spec/verifiable-tools.md#security-implications)
 section; this file consolidates the demo-specific caveats.

@@ -22,7 +22,7 @@ A `tools/call` flows through the reference implementation as follows:
    `{ resultType: "task", taskId, … }` envelope and the proof is resolved by
    `tasks/get` polling.
 4. The `CallToolResult` carries the proof in
-   `_meta["io.modelcontextprotocol/verifiable-tools"]` — `proof`,
+   `_meta["io.github.ripple-node-lab/verifiable-tools"]` — `proof`,
    `proofFormat`, `circuitHash`, `inputCommitment`, `outputCommitment`,
    `nonce`, `publicInputs`, `verificationKeyUri`, and optionally
    `inputAttestations` — plus `_meta["io.modelcontextprotocol/serverInfo"]`.
