@@ -12,7 +12,7 @@ const paint = (code: number, text: string): string => (color ? `[${code}m${text
 const GREEN = 32, RED = 31, YELLOW = 33, MAGENTA = 35, DIM = 2;
 
 // Indented detail fields, padded to a common label width (verbose only).
-const field = (label: string, text: string): string => `   ${(label + ":").padEnd(8)} ${text}`;
+const field = (label: string, text: string): string => `   ${(label + ":").padEnd(10)} ${text}`;
 const title = (name: string, format?: string): void => { if (verbose) console.log(format ? `${name} (${format})` : name); };
 const narrate = (text: string): void => { if (verbose) console.log(field("what", text)); };
 const resultLine = (name: string, text: string, skipped = false): void => {
@@ -244,7 +244,7 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
     } else {
       skippedCount++;
       resultLine(name, `skipped (${envVar} unset)`, true);
-      enable(`docker compose --profile ${profile} up --build -d --wait && export ${envVar}=http://localhost:${port}`);
+      enable(`docker compose --profile ${profile} up --build -d --wait && export ${envVar}=http://127.0.0.1:${port}`);
       means(`if enabled: ${meaning}`);
       rows.push({ n: number, scenario: `zk add (${label})`, result: "skipped", format, cls: CLS[format] ?? "-", provenance: "-" });
     }
@@ -274,11 +274,10 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
     } else {
       skippedCount++;
       resultLine(name, "skipped (TLSN_SIDECAR_URL unset)", true);
-      enable("docker compose --profile tlsn up --build -d --wait && export TLSN_SIDECAR_URL=http://localhost:4400");
+      enable("docker compose --profile tlsn up --build -d --wait && export TLSN_SIDECAR_URL=http://127.0.0.1:4400");
       means("if enabled: REAL zkTLS provenance: the upstream response is proven to come from that TLS server, and is bound into publicInputs");
       rows.push({ n: 10, scenario: "zktls riskScore", result: "skipped", format: "demo-commit-v1", cls: CLS["demo-commit-v1"] ?? "-", provenance: "-" });
     }
-    gap();
   }
 
   // Tamper detection: mutate verified results client-side and re-verify; each

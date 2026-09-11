@@ -53,75 +53,74 @@ Evidence travels in CallToolResult._meta["io.github.ripple-node-lab/verifiable-t
 
 ── Scenarios ──
 1. sync add (demo-sig-v1)
-   what:    sync tools/call for add(20,22) with proofFormat demo-sig-v1; client supplies a fresh nonce
-   result:  42 (verified demo-sig-v1)
-   checks:  circuitHash=0xe2d677e5… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-sig-v1)
-   evidence: inputCommitment=0x19a9da21… outputCommitment=0x5f0cd650… nonce=0x171e1adf… proof=64 B
-   means:   server signed (result, commitments, nonce) with a key pinned by circuitHash. demo-sig-v1 is a DEMO format: it proves origin and freshness, NOT that 20+22 was computed correctly.
+   what:      sync tools/call for add(20,22) with proofFormat demo-sig-v1; client supplies a fresh nonce
+   result:    42 (verified demo-sig-v1)
+   checks:    circuitHash=0xe2d677e5… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-sig-v1)
+   evidence:  inputCommitment=0x19a9da21… outputCommitment=0x5f0cd650… nonce=0xe96c2377… proof=64 B
+   means:     server signed (result, commitments, nonce) with a key pinned by circuitHash. demo-sig-v1 is a DEMO format: it proves origin and freshness, NOT that 20+22 was computed correctly.
 
 2. async riskScore (demo-commit-v1)
-   what:    riskScore(AAPL) runs as an MCP Task (tasks/get polling); result carries an oracle-sig-v1 attestation for the upstream price it used
-   result:  72 (verified demo-commit-v1 · provenance oracle-sig-v1)
-   checks:  circuitHash=0xfe9a89b0… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-commit-v1) · provenance=ok (oracle-sig-v1)
-   evidence: inputCommitment=0x81c8d84d… outputCommitment=0x6061bcfd… nonce=0x05661c9a… proof=32 B attestation=oracle-sig-v1
-   means:   the attestation commitment is bound into publicInputs, so the proof covers WHICH input the server used, and the oracle key is pinned by URI. demo-commit-v1 is a DEMO format.
+   what:      riskScore(AAPL) runs as an MCP Task (tasks/get polling); result carries an oracle-sig-v1 attestation for the upstream price it used
+   result:    72 (verified demo-commit-v1 · provenance oracle-sig-v1)
+   checks:    circuitHash=0xfe9a89b0… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-commit-v1) · provenance=ok (oracle-sig-v1)
+   evidence:  inputCommitment=0x81c8d84d… outputCommitment=0x6061bcfd… nonce=0xf58af785… proof=32 B attestation=oracle-sig-v1
+   means:     the attestation commitment is bound into publicInputs, so the proof covers WHICH input the server used, and the oracle key is pinned by URI. demo-commit-v1 is a DEMO format.
 
 3. blind privateCreditCheck (demo-sig-v1)
-   what:    privateCreditCheck(income, debt) via verifiable-tools/call: arguments HPKE-encrypted to the tool key, inputCommitment salted; reply encrypted back
-   result:  approved (verified demo-sig-v1)
-   checks:  circuitHash=0xf238b7ce… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-sig-v1) · args=HPKE-encrypted (salted inputCommitment)
-   evidence: inputCommitment=0xbef8666d… outputCommitment=0x87a98d30… nonce=0x3da0efc2… proof=64 B ciphertext=0fc939b5… (168 B)
-   means:   server saw only inputCommitment + 168 bytes of HPKE ciphertext (no plaintext income/debt); the client verified the result against ITS salted commitment, so the result is for exactly the encrypted arguments. Confidentiality relies on the enclave/prover holding the tool key (demo: same process).
+   what:      privateCreditCheck(income, debt) via verifiable-tools/call: arguments HPKE-encrypted to the tool key, inputCommitment salted; reply encrypted back
+   result:    approved (verified demo-sig-v1)
+   checks:    circuitHash=0xf238b7ce… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-sig-v1) · args=HPKE-encrypted (salted inputCommitment)
+   evidence:  inputCommitment=0xa6f7a2d6… outputCommitment=0x87a98d30… nonce=0xbb938d90… proof=64 B ciphertext=4d79c0dc… (168 B)
+   means:     server saw only inputCommitment + 168 bytes of HPKE ciphertext (no plaintext income/debt); the client verified the result against ITS salted commitment, so the result is for exactly the encrypted arguments. Confidentiality relies on the enclave/prover holding the tool key (demo: same process).
 
 4. deferred priceQuote (demo-sig-v1)
-   what:    priceQuote(AAPL) returns immediately with a resultId and no proof; client fetches the proof later with verifiable-tools/prove
-   result:  604 (verified demo-sig-v1)
-   checks:  circuitHash=0xe895ece8… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-sig-v1) · via verifiable-tools/prove
-   evidence: inputCommitment=0x81c8d84d… outputCommitment=0xb5002304… nonce=0xcdc3dced… proof=64 B resultId=3b5c3a972fca4d6ff32916d0f10bb803
-   means:   proof generation is decoupled from the tool call; the deferred proof binds to the original result via resultId + commitments.
+   what:      priceQuote(AAPL) returns immediately with a resultId and no proof; client fetches the proof later with verifiable-tools/prove
+   result:    604 (verified demo-sig-v1)
+   checks:    circuitHash=0xe895ece8… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (demo-sig-v1) · via verifiable-tools/prove
+   evidence:  inputCommitment=0x81c8d84d… outputCommitment=0xb5002304… nonce=0x677200ea… proof=64 B resultId=0f3ba9136a83f5604406ef192a00ce3d
+   means:     proof generation is decoupled from the tool call; the deferred proof binds to the original result via resultId + commitments.
 
 5. tee add (tee-nitro-v1)
-   what:    add(1,2) with tee-nitro-v1: result comes with an AWS Nitro-style attestation document (COSE_Sign1, PCRs, userData)
-   result:  3 (verified tee-nitro-v1)
-   checks:  circuitHash=0xe2d677e5… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (tee-nitro-v1)
-   evidence: inputCommitment=0x43258cff… outputCommitment=0xdf3c1a60… nonce=0xebc66184… proof=64 B teeAttestation=1356 B
-   means:   client checked the attestation cert chain to the pinned root, pinned PCRs, nonce, and userData = hash of the tool's HPKE key; the enclave key certified there signed the commitments. MOCK attestation: root/PCR fixtures are generated locally, not from real Nitro hardware.
+   what:      add(1,2) with tee-nitro-v1: result comes with an AWS Nitro-style attestation document (COSE_Sign1, PCRs, userData)
+   result:    3 (verified tee-nitro-v1)
+   checks:    circuitHash=0xe2d677e5… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (tee-nitro-v1)
+   evidence:  inputCommitment=0x43258cff… outputCommitment=0xdf3c1a60… nonce=0xad4c5eaf… proof=64 B teeAttestation=1356 B
+   means:     client checked the attestation cert chain to the pinned root, pinned PCRs, nonce, and userData = hash of the tool's HPKE key; the enclave key certified there signed the commitments. MOCK attestation: root/PCR fixtures are generated locally, not from real Nitro hardware.
 
 6. zk add (snarkjs-v2 Groth16)
-   what:    add(20,22) with snarkjs-v2: REAL Groth16 proof (circom circuit), verified in-process with a pinned verification key
-   result:  42 (verified snarkjs-v2 · proof 721 B · prove 262 ms · verify 150 ms)
-   checks:  circuitHash=0xfb5e4566… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (snarkjs-v2)
-   evidence: inputCommitment=0x19a9da21… outputCommitment=0x5f0cd650… nonce=0xe9d243ab… proof=721 B
-   means:   the proof itself shows 20+22=42 was computed by the pinned circuit. Caveat: single-party trusted setup (demo ceremony).
+   what:      add(20,22) with snarkjs-v2: REAL Groth16 proof (circom circuit), verified in-process with a pinned verification key
+   result:    42 (verified snarkjs-v2 · proof 723 B · prove 259 ms · verify 157 ms)
+   checks:    circuitHash=0xfb5e4566… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (snarkjs-v2)
+   evidence:  inputCommitment=0x19a9da21… outputCommitment=0x5f0cd650… nonce=0xf3ee7de2… proof=723 B
+   means:     the proof itself shows 20+22=42 was computed by the pinned circuit. Caveat: single-party trusted setup (demo ceremony).
 
 7. zk add (noir-v1 UltraHonk)
-   what:    add(20,22) with noir-v1: REAL UltraHonk proof (Noir circuit, bb.js), no trusted setup
-   result:  42 (verified noir-v1 · proof 14656 B · prove 280 ms · verify 67 ms)
-   checks:  circuitHash=0x70d3e406… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (noir-v1)
-   evidence: inputCommitment=0x19a9da21… outputCommitment=0x5f0cd650… nonce=0x6c70c5c5… proof=14656 B
-   means:   same guarantee as 6 without a trusted setup; larger proof.
+   what:      add(20,22) with noir-v1: REAL UltraHonk proof (Noir circuit, bb.js), no trusted setup
+   result:    42 (verified noir-v1 · proof 14656 B · prove 266 ms · verify 64 ms)
+   checks:    circuitHash=0x70d3e406… (pinned client-side) · inputCommitment=ok · outputCommitment=ok · nonce=ok · proof=ok (noir-v1)
+   evidence:  inputCommitment=0x19a9da21… outputCommitment=0x5f0cd650… nonce=0xf6a92e3a… proof=14656 B
+   means:     same guarantee as 6 without a trusted setup; larger proof.
 
 8. zk add (risc0-v1 sidecar)
-   what:    add(20,22) proved in a Rust RISC Zero zkVM sidecar (receipt verified in-process via WASM)
-   result:  skipped (RISC0_SIDECAR_URL unset)
-   enable:  docker compose --profile risc0 up --build -d --wait && export RISC0_SIDECAR_URL=http://localhost:4200
-   means:   if enabled: REAL zkVM receipt: any Rust program, no circuit authoring
+   what:      add(20,22) proved in a Rust RISC Zero zkVM sidecar (receipt verified in-process via WASM)
+   result:    skipped (RISC0_SIDECAR_URL unset)
+   enable:    docker compose --profile risc0 up --build -d --wait && export RISC0_SIDECAR_URL=http://127.0.0.1:4200
+   means:     if enabled: REAL zkVM receipt: any Rust program, no circuit authoring
 
 9. zk add (ezkl-v1 sidecar)
-   what:    add(20,22) proved by a Python ezkl ZKML sidecar (verified in-process via @ezkljs/engine)
-   result:  skipped (EZKL_SIDECAR_URL unset)
-   enable:  docker compose --profile ezkl up --build -d --wait && export EZKL_SIDECAR_URL=http://localhost:4300
-   means:   if enabled: REAL ZKML proof over an ONNX model
+   what:      add(20,22) proved by a Python ezkl ZKML sidecar (verified in-process via @ezkljs/engine)
+   result:    skipped (EZKL_SIDECAR_URL unset)
+   enable:    docker compose --profile ezkl up --build -d --wait && export EZKL_SIDECAR_URL=http://127.0.0.1:4300
+   means:     if enabled: REAL ZKML proof over an ONNX model
 
 10. zktls riskScore (demo-commit-v1)
-   what:    riskScore(AAPL) with a TLSNotary presentation of the upstream HTTPS response as provenance (requireInputProvenance=true)
-   result:  skipped (TLSN_SIDECAR_URL unset)
-   enable:  docker compose --profile tlsn up --build -d --wait && export TLSN_SIDECAR_URL=http://localhost:4400
-   means:   if enabled: REAL zkTLS provenance: the upstream response is proven to come from that TLS server, and is bound into publicInputs
-
+   what:      riskScore(AAPL) with a TLSNotary presentation of the upstream HTTPS response as provenance (requireInputProvenance=true)
+   result:    skipped (TLSN_SIDECAR_URL unset)
+   enable:    docker compose --profile tlsn up --build -d --wait && export TLSN_SIDECAR_URL=http://127.0.0.1:4400
+   means:     if enabled: REAL zkTLS provenance: the upstream response is proven to come from that TLS server, and is bound into publicInputs
 
 ── Tamper checks ──
-   what:    each verified result is deep-copied client-side, ONE field is changed, and the same verify() runs again; every copy must be rejected
+   what:      each verified result is deep-copied client-side, ONE field is changed, and the same verify() runs again; every copy must be rejected
    output 42 -> 43 (#1):          rejected (outputCommitmentMismatch)  ← outputCommitment recomputed from content no longer matches
    nonce replaced (#1):           rejected (nonceMismatch)  ← echoed nonce differs from the one the client sent
    proof byte flipped (#1):       rejected (proofInvalid)  ← signature/proof fails against the pinned key
