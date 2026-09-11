@@ -162,3 +162,20 @@ test("waits retryDelayMs between attempts", async () => {
     assert.equal(requests.count, 2);
   });
 });
+
+test("aborting during the retry delay rejects immediately with signal.reason", async () => {
+  await withStub(status(503), async (url, requests) => {
+    const feed = new TlsnPriceFeed({ baseUrl: url, timeoutMs: 500, retryDelayMs: 10_000 });
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new Error("caller stopped")), 100);
+    const start = Date.now();
+    try {
+      await feed.fetch("AAPL", controller.signal);
+      assert.ok(false, "expected rejection");
+    } catch (error: unknown) {
+      assert.ok(error instanceof Error && error.message === "caller stopped");
+    }
+    assert.ok(Date.now() - start < 2_000, "expected the delay to be cut short by abort");
+    assert.equal(requests.count, 1);
+  });
+});

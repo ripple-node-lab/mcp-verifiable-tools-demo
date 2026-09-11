@@ -51,6 +51,13 @@ export class OraclePriceFeed implements PriceFeed {
 // zktls-tlsn-v1 price feed: fetches the fixture exchange through the TLSNotary
 // sidecar; /attest returns the attested InputAttestation directly.
 const TLSN_SYMBOL_PATTERN = /^[A-Za-z0-9._-]{1,16}$/;
+const delay = (ms: number, signal?: AbortSignal): Promise<void> =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    const onAbort = (): void => { clearTimeout(timer); reject(signal?.reason); };
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", onAbort); resolve(); }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 export class TlsnPriceFeed implements PriceFeed {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
@@ -99,7 +106,7 @@ export class TlsnPriceFeed implements PriceFeed {
           if (status < 500) throw error;
           lastError = error;
         }
-        if (attempt + 1 < this.attempts) await new Promise<void>((resolve) => setTimeout(resolve, this.retryDelayMs));
+        if (attempt + 1 < this.attempts) await delay(this.retryDelayMs, signal);
         continue;
       }
       const parsed = JSON.parse(new TextDecoder().decode(body)) as JsonValue;
