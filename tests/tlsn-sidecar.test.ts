@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { createPublicKey, generateKeyPairSync } from "node:crypto";
 import { VerifiableClient } from "@demo/client";
 import { TlsnProvenanceVerifier } from "@demo/prover-sidecar";
+import { TlsnPriceFeed } from "@demo/server";
 import { EXTENSION_ID, VerifiableToolsMeta } from "@demo/protocol";
 import { withServerOptions, expectComplete } from "./helpers.js";
 
@@ -71,12 +72,7 @@ run("tampered data yields provenanceInvalid", async () => withServerOptions({ tl
 }));
 
 run("a different notary key fails sidecar /verify", async () => {
-  const attest = await fetch(`${SIDECAR}/attest`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ source: "https://test-server.io/v1/price/AAPL" })
-  });
-  const attestation = await attest.json();
+  const attestation = await new TlsnPriceFeed({ baseUrl: SIDECAR! }).fetch("AAPL");
   const other = generateSecp256k1("ec", { namedCurve: "secp256k1" });
   const pem = String(other.publicKey.export({ type: "spki", format: "pem" }));
   const outcome = await tlsnVerify(attestation, pem);
