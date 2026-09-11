@@ -7,7 +7,7 @@ import { TlsnProvenanceVerifier } from "@demo/prover-sidecar";
 import { CallToolResult, EXTENSION_ID, freshNonce, JsonValue, VerifiableToolsMeta } from "@demo/protocol";
 
 const verbose = process.env.DEMO_VERBOSE !== "0";
-const color = process.stdout.isTTY === true && !process.env.NO_COLOR;
+const color = process.stdout.isTTY === true && process.env.NO_COLOR === undefined;
 const paint = (code: number, text: string): string => (color ? `[${code}m${text}[0m` : text);
 const GREEN = 32, RED = 31, YELLOW = 33, MAGENTA = 35, DIM = 2;
 
@@ -25,10 +25,20 @@ const evidence = (text: string): void => { if (verbose) console.log(field("evide
 const gap = (): void => { if (verbose) console.log(); };
 const section = (name: string): void => { if (verbose) console.log(`\n── ${name} ──`); };
 let stepInterface: ReturnType<typeof createInterface> | undefined;
+let stepClosed = false;
 const pause = async (label: string): Promise<void> => {
-  if (process.env.DEMO_PAUSE !== "1" || !process.stdin.isTTY) return;
-  stepInterface ??= createInterface({ input: process.stdin, output: process.stdout });
-  await new Promise<void>((resolve) => stepInterface!.question(`   ${label}`, () => resolve()));
+  if (process.env.DEMO_PAUSE !== "1" || !process.stdin.isTTY || stepClosed) return;
+  if (!stepInterface) {
+    stepInterface = createInterface({ input: process.stdin, output: process.stdout });
+    stepInterface.on("close", () => { stepClosed = true; });
+  }
+  // Resolve on Enter or on stdin close (Ctrl-D) so the demo never hangs.
+  await new Promise<void>((resolve) => {
+    let done = false;
+    const finish = (): void => { if (!done) { done = true; resolve(); } };
+    stepInterface!.question(`   ${label}`, finish);
+    stepInterface!.once("close", finish);
+  });
 };
 const printChecks = (result: CallToolResult, extra?: string): void => {
   console.log(verbose ? field("checks", checksLine(result, extra)) : `   checks: ${checksLine(result, extra)}`);

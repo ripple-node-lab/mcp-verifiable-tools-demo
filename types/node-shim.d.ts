@@ -103,7 +103,7 @@ declare module "node:worker_threads" {
 }
 declare module "node:url" { export function fileURLToPath(url: string | URL): string; }
 declare module "node:readline" {
-  interface Interface { question(query: string, cb: (answer: string) => void): void; close(): void; }
+  interface Interface { question(query: string, cb: (answer: string) => void): void; close(): void; on(event: "close", cb: () => void): void; once(event: "close", cb: () => void): void; }
   export function createInterface(options: { input: unknown; output: unknown }): Interface;
 }
 declare module "node:module" { export function createRequire(url: string | URL): (specifier: string) => { isMainThread?: boolean }; }
