@@ -13,10 +13,14 @@ export type { ProveInput, VerifiableToolsMeta };
 
 export const MAX_RESPONSE = 1 << 20;
 
-export async function readJsonBounded(response: Response): Promise<unknown> {
+export async function readBodyBounded(response: Response): Promise<ArrayBuffer> {
   const declared = Number(response.headers.get("content-length") ?? 0);
   if (declared > MAX_RESPONSE) throw new Error("sidecar response too large");
   const body = await response.arrayBuffer();
   if (body.byteLength > MAX_RESPONSE) throw new Error("sidecar response too large");
-  return JSON.parse(new TextDecoder().decode(body));
+  return body;
+}
+
+export async function readJsonBounded(response: Response): Promise<unknown> {
+  return JSON.parse(new TextDecoder().decode(await readBodyBounded(response)));
 }

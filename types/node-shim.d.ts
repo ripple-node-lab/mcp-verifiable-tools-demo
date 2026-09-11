@@ -33,6 +33,8 @@ declare module "node:http" {
   export interface ServerResponse extends EventEmitter {
     statusCode: number;
     setHeader(name: string, value: string): void;
+    writeHead(statusCode: number, headers?: Record<string, string>): this;
+    flushHeaders(): void;
     end(body?: string | Uint8Array): void;
   }
   export interface Server extends EventEmitter {
