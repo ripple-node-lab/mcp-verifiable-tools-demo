@@ -236,6 +236,12 @@ npm run build          # tests run from tests/dist
 docker compose --profile <profile> down
 ```
 
+Apple Silicon / arm64: the `risc0` image is x86_64-only and is pinned to
+`platform: linux/amd64`, so Docker Desktop runs it under Rosetta/QEMU
+emulation — build and proving are noticeably slower (the ≈20 s proof can take
+several minutes). `ezkl` and `tlsn` build natively. If it is too slow, omit
+`--profile risc0` and run 9–10 only.
+
 See [../sidecars/README.md](../sidecars/README.md) for the sidecar contract.
 
 ## SDK adapter demo

@@ -73,6 +73,11 @@ Notes:
   its proving key at startup, so this can take a minute).
 - Scenario 8 produces a real zkVM receipt on the CPU (≈20 s per proof, several
   GB of RAM), so the demo pauses noticeably there.
+- Apple Silicon / arm64: the `risc0` image is x86_64-only and is pinned to
+  `platform: linux/amd64`, so Docker Desktop runs it under Rosetta/QEMU
+  emulation — build and proving are noticeably slower (the ≈20 s proof can
+  take several minutes). `ezkl` and `tlsn` build natively. If it is too slow,
+  omit `--profile risc0` and run 9–10 only.
 - Any subset works: start only the profiles you want and set only their env
   vars; the others stay `skipped`. Ports and gated tests are listed in
   [docs/DEMOS.md](docs/DEMOS.md#sidecars).
