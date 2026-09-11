@@ -303,3 +303,4 @@ export class DemoServer {
 export async function startServer(options: DemoServerOptions = {}): Promise<DemoServer> { const server = new DemoServer(options); await server.listen(options.port); return server; }
 export { ResultStore } from "./prove.js";
 export { TaskStore } from "./tasks.js";
+export { TlsnPriceFeed } from "./pricefeed.js";

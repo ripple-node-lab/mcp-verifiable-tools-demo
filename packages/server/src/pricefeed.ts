@@ -54,23 +54,41 @@ const TLSN_SYMBOL_PATTERN = /^[A-Za-z0-9._-]{1,16}$/;
 export class TlsnPriceFeed implements PriceFeed {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
-  constructor(options: { baseUrl: string; timeoutMs?: number }) {
+  private readonly attempts: number;
+  constructor(options: { baseUrl: string; timeoutMs?: number; attempts?: number }) {
     this.baseUrl = options.baseUrl;
-    this.timeoutMs = options.timeoutMs ?? 30_000;
+    this.timeoutMs = options.timeoutMs ?? 15_000;
+    this.attempts = options.attempts ?? 2;
   }
   async fetch(symbol: string, signal?: AbortSignal): Promise<InputAttestation> {
     if (!TLSN_SYMBOL_PATTERN.test(symbol)) throw new Error(`invalid price symbol: ${symbol}`);
-    const timeout = AbortSignal.timeout(this.timeoutMs);
-    const response = await fetch(`${this.baseUrl}/attest`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ source: `https://test-server.io/v1/price/${symbol}` }),
-      signal: signal ? AbortSignal.any([timeout, signal]) : timeout
-    });
-    if (!response.ok) throw new Error(`tlsn /attest failed: ${response.status}`);
-    const body = await readJsonBounded(response) as JsonValue;
-    const attestation = parseInputAttestation(body);
-    if (!attestation || attestation.type !== "zktls-tlsn-v1") throw new Error("tlsn /attest returned an invalid attestation");
-    return attestation;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < this.attempts; attempt++) {
+      if (signal?.aborted) throw lastError ?? new Error("aborted");
+      let response;
+      try {
+        const timeout = AbortSignal.timeout(this.timeoutMs);
+        response = await fetch(`${this.baseUrl}/attest`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ source: `https://test-server.io/v1/price/${symbol}` }),
+          signal: signal ? AbortSignal.any([timeout, signal]) : timeout
+        });
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        lastError = error;
+        continue;
+      }
+      if (response.ok) {
+        const body = await readJsonBounded(response) as JsonValue;
+        const attestation = parseInputAttestation(body);
+        if (!attestation || attestation.type !== "zktls-tlsn-v1") throw new Error("tlsn /attest returned an invalid attestation");
+        return attestation;
+      }
+      const error = new Error(`tlsn /attest failed: ${response.status}`);
+      if (response.status < 500) throw error;
+      lastError = error;
+    }
+    throw lastError;
   }
 }
