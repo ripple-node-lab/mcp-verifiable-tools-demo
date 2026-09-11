@@ -1,3 +1,6 @@
+# x86_64-only image: risc0-build 3.0.6 has no Linux aarch64 support and the
+# toolchain tarballs below are x86_64; docker-compose.yml pins
+# `platform: linux/amd64` so Apple Silicon builds/runs it under emulation.
 # risc0-v1 proving sidecar. The guest ELF is compiled inside this image with
 # the pinned rzup toolchain layout (replicated via direct release downloads so
 # the build does not depend on the GitHub API / rzup). Bump the versions below

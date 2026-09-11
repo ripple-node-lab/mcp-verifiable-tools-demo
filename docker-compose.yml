@@ -13,6 +13,7 @@ services:
       retries: 15
   sidecar-risc0:
     profiles: ["risc0"]
+    platform: linux/amd64
     build:
       context: .
       dockerfile: sidecars/risc0/Dockerfile
