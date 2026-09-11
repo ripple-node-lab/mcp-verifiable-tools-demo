@@ -7,8 +7,9 @@ verification happens in-process in TypeScript via `@ezkljs/engine` 22.0.1
 ## Layout
 
 - `server.py` — stdlib `http.server.ThreadingHTTPServer` HTTP host
-- `Dockerfile` — `python:3.12-slim` + pinned `ezkl==22.0.1`
-- `requirements.txt` — pip pins
+- `Dockerfile` — `python:3.12-alpine` + pinned `ezkl==22.0.1` (musl base so
+  the musllinux aarch64 wheel installs on Apple Silicon as well as amd64)
+- `requirements.txt` — pip pin (`ezkl` only; the runtime has no other deps)
 - `fixtures/` — committed proof JSON (`a=2, b=40`) + meta for the
   default test suite
 - Circuit artifacts (shared with the TS verifier) live at
