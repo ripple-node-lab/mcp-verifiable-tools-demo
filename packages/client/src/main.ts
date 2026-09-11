@@ -26,18 +26,18 @@ const gap = (): void => { if (verbose) console.log(); };
 const section = (name: string): void => { if (verbose) console.log(`\n── ${name} ──`); };
 let stepInterface: ReturnType<typeof createInterface> | undefined;
 let stepClosed = false;
+let pendingStep: (() => void) | undefined;
 const pause = async (label: string): Promise<void> => {
   if (process.env.DEMO_PAUSE !== "1" || !process.stdin.isTTY || stepClosed) return;
   if (!stepInterface) {
     stepInterface = createInterface({ input: process.stdin, output: process.stdout });
-    stepInterface.on("close", () => { stepClosed = true; });
+    // One permanent listener: stdin close (Ctrl-D) releases the pending prompt so the demo never hangs.
+    stepInterface.on("close", () => { stepClosed = true; pendingStep?.(); });
   }
-  // Resolve on Enter or on stdin close (Ctrl-D) so the demo never hangs.
   await new Promise<void>((resolve) => {
-    let done = false;
-    const finish = (): void => { if (!done) { done = true; resolve(); } };
+    const finish = (): void => { pendingStep = undefined; resolve(); };
+    pendingStep = finish;
     stepInterface!.question(`   ${label}`, finish);
-    stepInterface!.once("close", finish);
   });
 };
 const printChecks = (result: CallToolResult, extra?: string): void => {
