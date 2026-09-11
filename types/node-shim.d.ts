@@ -6,7 +6,8 @@ declare const process: {
   version: string;
   argv: string[];
   exitCode?: number;
-  stdout: { write(value: string): void };
+  stdin: { isTTY?: boolean; pause(): void };
+  stdout: { isTTY?: boolean; write(value: string): void };
 };
 declare const Buffer: {
   from(value: string | ArrayBuffer | Uint8Array, encoding?: string): Buffer;
@@ -101,6 +102,10 @@ declare module "node:worker_threads" {
   export const parentPort: (EventEmitter & { on(event: "message", listener: (value: unknown) => void): EventEmitter; postMessage(value: unknown): void }) | null;
 }
 declare module "node:url" { export function fileURLToPath(url: string | URL): string; }
+declare module "node:readline" {
+  interface Interface { question(query: string, cb: (answer: string) => void): void; close(): void; }
+  export function createInterface(options: { input: unknown; output: unknown }): Interface;
+}
 declare module "node:module" { export function createRequire(url: string | URL): (specifier: string) => { isMainThread?: boolean }; }
 declare module "node:fs/promises" {
   export function readFile(path: string | URL, options: "utf8"): Promise<string>;

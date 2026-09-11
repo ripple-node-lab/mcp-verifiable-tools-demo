@@ -146,11 +146,12 @@ export class VerifiableClient {
     return result;
   }
   async poll(task: TaskEnvelope): Promise<CallToolResult> { return pollTask(this.request.bind(this) as RpcRequest, task, this.requestMeta(true)); }
-  async blindCall(args: JsonValue, options: { proofFormat?: string; encryptReply?: boolean; onEncrypted?: (info: { inputCommitment: string; encryptedArgumentsBytes: number }) => void } = {}): Promise<CallToolResult> {
+  async blindCall(args: JsonValue, options: { proofFormat?: string; encryptReply?: boolean; onEncrypted?: (info: { inputCommitment: string; encryptedArgumentsBytes: number; encryptedArgumentsPrefixHex: string }) => void } = {}): Promise<CallToolResult> {
     const discovery = this.discovered ?? await this.discover();
     if (!discovery.blindExecution || !discovery.blindPublicKeys["hpke-v1"]) throw new Error("server does not support blind execution");
     const encrypted = encryptArguments(args, discovery.blindPublicKeys["hpke-v1"], "privateCreditCheck");
-    options.onEncrypted?.({ inputCommitment: encrypted.inputCommitment, encryptedArgumentsBytes: unb64u(encrypted.encryptedArguments).byteLength });
+    const encryptedBytes = unb64u(encrypted.encryptedArguments);
+    options.onEncrypted?.({ inputCommitment: encrypted.inputCommitment, encryptedArgumentsBytes: encryptedBytes.byteLength, encryptedArgumentsPrefixHex: Buffer.from(encryptedBytes.slice(0, 4)).toString("hex") });
     const nonce = freshNonce();
     const reply = options.encryptReply ? generateReplyKeyPair() : undefined;
     const response = await this.request("verifiable-tools/call", { tool: "privateCreditCheck", inputCommitment: encrypted.inputCommitment, encryptionScheme: "hpke-v1", encryptedArguments: encrypted.encryptedArguments, proofFormat: options.proofFormat ?? "demo-sig-v1", ...(reply ? { replyPublicKey: b64u(reply.publicKey) } : {}), _meta: { ...this.requestMeta(), [EXTENSION_ID]: { nonce } } });
