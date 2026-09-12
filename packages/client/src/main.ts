@@ -6,6 +6,11 @@ import { VerifiableClient } from "./client.js";
 import { TlsnProvenanceVerifier } from "@demo/prover-sidecar";
 import { CallToolResult, EXTENSION_ID, freshNonce, JsonValue, VerifiableToolsMeta } from "@demo/protocol";
 
+if (Number(process.versions.node.split(".")[0]) < 20 || typeof AbortSignal.any !== "function") {
+  console.error(`Node.js 20.3 or later is required (running ${process.version}); see README Quick start`);
+  process.exit(1);
+}
+
 const verbose = process.env.DEMO_VERBOSE !== "0";
 const color = process.stdout.isTTY === true && process.env.NO_COLOR === undefined;
 const paint = (code: number, text: string): string => (color ? `[${code}m${text}[0m` : text);
@@ -79,10 +84,6 @@ const server = await startServer({
   tlsnSidecarUrl: process.env.TLSN_SIDECAR_URL,
 });
 try {
-  const nodeMajor = Number(process.versions.node.split(".")[0]);
-  if (nodeMajor < 20) {
-    throw new Error(`Node.js 20 or later is required (running ${process.version}); see README Quick start`);
-  }
   const tlsnOrigin = process.env.TLSN_SIDECAR_URL ? new URL(process.env.TLSN_SIDECAR_URL).origin : undefined;
   const client = new VerifiableClient(server.mcpUrl, { allowedKeyOrigins: tlsnOrigin ? [tlsnOrigin] : [] });
   if (process.env.TLSN_SIDECAR_URL) client.addProvenanceVerifier(new TlsnProvenanceVerifier({ baseUrl: process.env.TLSN_SIDECAR_URL }));

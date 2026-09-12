@@ -7,6 +7,7 @@ declare const process: {
   versions: { node: string };
   argv: string[];
   exitCode?: number;
+  exit(code: number): never;
   stdin: { isTTY?: boolean; pause(): void };
   stdout: { isTTY?: boolean; write(value: string): void };
 };
