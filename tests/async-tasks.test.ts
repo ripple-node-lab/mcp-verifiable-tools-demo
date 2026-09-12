@@ -111,6 +111,20 @@ test("a working task past its TTL fails with taskExpired", async () => {
   assert.deepEqual(expired?.error, { code: -32000, message: "task exceeded its TTL", data: { reason: "taskExpired" } });
 });
 
+test("pollTask surfaces the server-recorded task error message", async () => {
+  const store = new TaskStore();
+  const task = store.create(() => { throw new Error("AbortSignal.any is not a function"); });
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  assert.equal(store.get(task.taskId)?.status, "failed");
+  const request: Parameters<typeof pollTask>[0] = async () => ({ result: store.get(task.taskId) as never });
+  try {
+    await pollTask(request, { resultType: "task", taskId: task.taskId, status: "working", pollIntervalMs: 100 }, {});
+    assert.ok(false, "expected rejection");
+  } catch (error: unknown) {
+    assert.ok(error instanceof Error && error.message === "task failed: AbortSignal.any is not a function");
+  }
+});
+
 test("pollTask falls back to the default interval on a bad pollIntervalMs", async () => {
   let calls = 0;
   const request = async () => ({

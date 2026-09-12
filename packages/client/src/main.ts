@@ -79,6 +79,10 @@ const server = await startServer({
   tlsnSidecarUrl: process.env.TLSN_SIDECAR_URL,
 });
 try {
+  const nodeMajor = Number(process.versions.node.split(".")[0]);
+  if (nodeMajor < 20) {
+    throw new Error(`Node.js 20 or later is required (running ${process.version}); see README Quick start`);
+  }
   const tlsnOrigin = process.env.TLSN_SIDECAR_URL ? new URL(process.env.TLSN_SIDECAR_URL).origin : undefined;
   const client = new VerifiableClient(server.mcpUrl, { allowedKeyOrigins: tlsnOrigin ? [tlsnOrigin] : [] });
   if (process.env.TLSN_SIDECAR_URL) client.addProvenanceVerifier(new TlsnProvenanceVerifier({ baseUrl: process.env.TLSN_SIDECAR_URL }));

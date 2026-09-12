@@ -4,6 +4,7 @@ declare namespace NodeJS {
 declare const process: {
   env: NodeJS.ProcessEnv;
   version: string;
+  versions: { node: string };
   argv: string[];
   exitCode?: number;
   stdin: { isTTY?: boolean; pause(): void };
