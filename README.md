@@ -36,7 +36,7 @@ surface) is pending publication of an SDK release that speaks `2026-07-28`.
 
 ## Quick start
 
-Requires Node.js 20 or later (CI runs the suite on 20, 22 and 24).
+Requires Node.js 20.3 or later (CI runs the suite on 20, 22 and 24).
 
 ### Scenarios 1–7 (no Docker)
 

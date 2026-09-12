@@ -6,6 +6,11 @@ import { VerifiableClient } from "./client.js";
 import { TlsnProvenanceVerifier } from "@demo/prover-sidecar";
 import { CallToolResult, EXTENSION_ID, freshNonce, JsonValue, VerifiableToolsMeta } from "@demo/protocol";
 
+if (Number(process.versions.node.split(".")[0]) < 20 || typeof AbortSignal.any !== "function") {
+  console.error(`Node.js 20.3 or later is required (running ${process.version}); see README Quick start`);
+  process.exit(1);
+}
+
 const verbose = process.env.DEMO_VERBOSE !== "0";
 const color = process.stdout.isTTY === true && process.env.NO_COLOR === undefined;
 const paint = (code: number, text: string): string => (color ? `[${code}m${text}[0m` : text);
