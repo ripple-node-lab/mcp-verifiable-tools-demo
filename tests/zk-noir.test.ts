@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { EXTENSION_ID, META_CLIENT_CAPABILITIES, clientCapabilities, expectedCircuitHash } from "@demo/protocol";
+import { EXTENSION_ID, META_CLIENT_CAPABILITIES, clientCapabilities, commitmentToField, expectedCircuitHash } from "@demo/protocol";
 import { VerifiableClient } from "@demo/client";
 import { waitForControllersGone, waitForTaskWorking, withServer, withServerOptions, expectComplete, expectTask, rpc } from "./helpers.js";
 
@@ -14,11 +14,32 @@ test("noir-v1 proves and verifies add results", async () => {
     assert.equal((await client.verify(result, { a: 20, b: 22 }, "add", { nonce: call.nonce })).ok, true);
     assert.equal(result._meta?.[EXTENSION_ID]?.proofFormat, "noir-v1");
     assert.equal(result._meta?.[EXTENSION_ID]?.circuitHash, expectedCircuitHash("add", "noir-v1"));
-    assert.deepEqual(result._meta?.[EXTENSION_ID]?.publicInputs?.slice(3), [
+    // Public inputs: [a, b, out_commit_f, in_commit_f, nonce_f, sum] — the
+    // three field elements bind the commitments and nonce into the proof.
+    const fe = (hex: string) => `0x${commitmentToField(hex).toString(16).padStart(64, "0")}`;
+    const meta = result._meta?.[EXTENSION_ID];
+    assert.deepEqual(meta?.publicInputs?.slice(3), [
       "0x0000000000000000000000000000000000000000000000000000000000000014",
       "0x0000000000000000000000000000000000000000000000000000000000000016",
+      fe(meta!.outputCommitment!),
+      fe(meta!.inputCommitment!),
+      fe(call.nonce!),
       "0x000000000000000000000000000000000000000000000000000000000000002a"
     ]);
+  });
+});
+
+test("noir-v1 rejects a proof replayed under a different nonce", async () => {
+  await withServer(async (server) => {
+    const client = new VerifiableClient(server.mcpUrl);
+    const discovery = await client.discover();
+    client.setCapabilities({ proofFormats: discovery.proofFormats });
+    const first = expectComplete((await client.callTool("add", { a: 20, b: 22 }, { proofFormat: "noir-v1" })).result);
+    const secondCall = await client.callTool("add", { a: 20, b: 22 }, { proofFormat: "noir-v1" });
+    const second = expectComplete(secondCall.result);
+    assert.notEqual(first._meta?.[EXTENSION_ID]?.nonce, second._meta?.[EXTENSION_ID]?.nonce);
+    second._meta![EXTENSION_ID]!.proof = first._meta![EXTENSION_ID]!.proof;
+    assert.deepEqual(await client.verify(second, { a: 20, b: 22 }, "add", { nonce: secondCall.nonce }), { ok: false, reason: "proofInvalid" });
   });
 });
 
@@ -32,7 +53,7 @@ test("noir-v1 rejects changed content and native inputs", async () => {
     result.content[0].text = "43";
     assert.deepEqual(await client.verify(result, { a: 20, b: 22 }, "add", { nonce: call.nonce }), { ok: false, reason: "outputCommitmentMismatch" });
     result.content[0].text = "42";
-    result._meta![EXTENSION_ID]!.publicInputs![5] = "0x2b";
+    result._meta![EXTENSION_ID]!.publicInputs![8] = "0x2b";
     assert.deepEqual(await client.verify(result, { a: 20, b: 22 }, "add", { nonce: call.nonce }), { ok: false, reason: "proofInvalid" });
   });
 });

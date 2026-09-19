@@ -34,8 +34,11 @@ rounds to 2^24), and the circuit's range-check decomposition
 threefold: the server rejects `ezkl-v1` calls with `-32602`
 (`parseEzklAddArguments`), this sidecar returns 400 `invalidArguments`, and
 `EzklVerifier`/`/verify` reject out-of-domain claims. After proving, the
-sidecar also asserts `instances[0] === [felt(a), felt(b), felt(sum)]` and
-returns 500 `instancesMismatch` on drift.
+sidecar also asserts `instances[0] === [felt(a), felt(b), limbs(out),
+limbs(in), limbs(nonce), felt(sum)]` and returns 500 `instancesMismatch` on
+drift. The 48 `limbs(*)` entries are the 16 big-endian u16 limbs of each
+value's `commitmentToField` element — they make the commitments and nonce
+proof-level public inputs, so a captured proof fails under rewritten meta.
 
 ## Build / run
 
@@ -66,10 +69,10 @@ Same contract as `packages/prover-sidecar/src/contract.ts`:
 - `POST /prove` → `ProveInput` → `VerifiableToolsMeta`
   (`proof` = base64url of the ezkl proof JSON file;
   `publicInputs = [outputCommitment, inputCommitment, nonce ?? "0x", sum, a, b]`;
-  400 `circuitHashMismatch` / `invalidArguments` / `outputMismatch`, 503 `busy`)
+  400 `circuitHashMismatch` / `invalidArguments` / `invalidCommitments` / `outputMismatch`, 503 `busy`)
 - `POST /verify` → `{meta, expectedCircuitHash}` → `{ok, reason?}`
   (reasons: `malformed|circuitHashMismatch|publicInputsMismatch|instancesMismatch|proofInvalid`;
-  `instances[0]` must equal `[feltLE(a), feltLE(b), feltLE(sum)]`)
+  `instances[0]` must equal `[feltLE(a), feltLE(b), limbs(out), limbs(in), limbs(nonce), feltLE(sum)]` — 51 entries)
 - `GET /vk/{circuitHash}` → `vk.json` (`circuitHash` = `0x` + sha256(vk.json))
 - Body limit 1 MiB; `400`/`404` otherwise.
 

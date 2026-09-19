@@ -40,19 +40,30 @@ section; this file consolidates the demo-specific caveats.
   `u32` sum to fit in `[0, 2^32 - 1]`; invalid arguments are rejected with
   `-32602`.
 
-## Known limitation: ZK proof freshness
+## ZK proof binding
 
-The ZK proof formats (`snarkjs-v2`, `noir-v1`, `risc0-v1`, `ezkl-v1`) prove
-only `[sum, a, b]` — `outputCommitment`, `inputCommitment`, and `nonce` in
-`publicInputs[0..3]` are **self-attested**: they are echoed and checked by
-`verifyResult`, but the proof itself does not cover them. A captured ZK proof
-therefore verifies under a rewritten `meta` (fresh nonce, different
-commitments for the same computation); replay protection holds only at the
-meta layer for these formats. `demo-sig-v1`, `demo-commit-v1`, and
-`tee-nitro-v1` do bind the nonce and commitments into the signed/attested
-payload, satisfying the spec's §Result binding requirement. Binding the nonce
-(and ideally both commitments) as additional circuit public inputs is the
-fix; it requires rebuilding the circuit artifacts and pinned hashes.
+The ZK proof formats bind `outputCommitment`, `inputCommitment`, and `nonce`
+into the proof itself, not just into `meta.publicInputs[0..3]`:
+
+- `snarkjs-v2`: the circuit takes the three values as public inputs holding
+  `commitmentToField(hex)` — `int(hex) mod` the BN254 scalar field — so the
+  Groth16 public signals are `[c, a, b, out, in, nonce]` and
+  `meta.publicInputs` echoes all 9.
+- `noir-v1`: same scheme — public inputs `[a, b, out_commit, in_commit,
+  nonce, c]` (9-element `meta.publicInputs`).
+- `risc0-v1`: the journal commits `sha256(lowercased "0x…")` digests of the
+  three values (108 bytes: `a || b || sum || out || in || nonce`); the
+  `meta.publicInputs` tail stays `[sum, a, b]`.
+- `ezkl-v1`: ONNX f32 inputs can't carry a 254-bit element exactly, so each
+  value enters as 16 big-endian u16 limbs of `commitmentToField(hex)` — 51
+  public instances `[a, b, ob*, ib*, nb*, sum]`; `meta.publicInputs` tail
+  stays `[sum, a, b]`.
+
+A captured proof therefore does not verify under a rewritten `meta` (fresh
+nonce or different commitments) — replay protection holds at the proof layer
+for all ZK formats. `demo-sig-v1`, `demo-commit-v1`, and `tee-nitro-v1`
+likewise bind the nonce and commitments into the signed/attested payload,
+satisfying the spec's §Result binding requirement.
 
 ## Trust anchors
 

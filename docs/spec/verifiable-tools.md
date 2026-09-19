@@ -663,24 +663,31 @@ The reference demo implements these concrete profiles for `add`. Each binds
 `publicInputs = [outputCommitment, inputCommitment, nonce ?? "0x", ...nativeTail]`.
 
 - `snarkjs-v2`: `proof` is unpadded base64url of JCS-serialized snarkjs
-  Groth16 JSON; the native tail is decimal `[c, a, b]`. The verification-key
-  document is the committed Circom `vk.json` bytes.
+  Groth16 JSON; the native tail is decimal `[c, a, b, outCommit, inCommit,
+  nonce]` where the last three are the bound values as BN254 field elements
+  (`int(hex) mod p`). The verification-key document is the committed Circom
+  `vk.json` bytes.
 - `noir-v1`: `proof` is `0x` plus lowercase hexadecimal proof bytes; the native
-  tail is padded lowercase hexadecimal field strings `[a, b, c]`. The
-  verification-key document is JCS JSON
+  tail is padded lowercase hexadecimal field strings `[a, b, out_commit,
+  in_commit, nonce, c]` where the three bound values are BN254 field elements
+  (`int(hex) mod p`). The verification-key document is JCS JSON
   `{"format":"noir-v1","vk":"<base64url raw vk bytes>"}`.
 - `risc0-v1`: `proof` is unpadded base64url of a bincode-serialized RISC Zero
   composite receipt; the guest computes `a.checked_add(b)` over `u32` and
-  commits a 12-byte little-endian journal `a ‖ b ‖ sum`. The native tail is
-  the journal decoded as decimal `[sum, a, b]`. `circuitHash` is `0x` plus the
+  commits a 108-byte little-endian journal `a ‖ b ‖ sum ‖ out ‖ in ‖ nonce`,
+  where the three trailing digests are `sha256(lowercased "0x…")` of the meta
+  commitments/nonce. The native tail is the journal decoded as decimal
+  `[sum, a, b]`. `circuitHash` is `0x` plus the
   guest's 32-byte image ID in hex — the image ID itself is the circuit pin —
   and `verificationKeyUri` serves `{"format":"risc0-v1","imageId":…}` from the
   sidecar. Verification runs in-process against a wasm32 build of
   `risc0-zkvm` (`sidecars/risc0/wasm-verify`); the prover is the Rust sidecar.
 - `ezkl-v1`: `proof` is unpadded base64url of the ezkl/Halo2-KZG proof JSON;
-  the JSON's `instances[0]` holds the circuit's three public instances
-  `[a, b, sum]` as `0x`-prefixed 32-byte little-endian field elements, while
-  the meta `publicInputs` tail is decimal `[sum, a, b]`. The input domain is
+  the JSON's `instances[0]` holds the circuit's 51 public instances
+  `[a, b, ob0..15, ib0..15, nb0..15, sum]` as `0x`-prefixed 32-byte
+  little-endian field elements — the `ob`/`ib`/`nb` groups are the 16
+  big-endian u16 limbs of each bound value's field element — while the meta
+  `publicInputs` tail is decimal `[sum, a, b]`. The input domain is
   restricted to `a, b ∈ [0, 2^24]`: ONNX FLOAT ingestion is only exact below
   `2^24`, and the circuit's range-check decomposition (base 16384, n = 2)
   caps at `2^28`. Verification runs in-process via `@ezkljs/engine`'s wasm

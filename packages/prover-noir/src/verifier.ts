@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { UltraHonkVerifierBackend } from "@aztec/bb.js";
-import { EMPTY_NONCE, JsonValue, VerifiableToolsMeta, parseAddArguments } from "@demo/protocol";
+import { EMPTY_NONCE, JsonValue, VerifiableToolsMeta, commitmentToField, parseAddArguments } from "@demo/protocol";
 import { Verifier, VerifyContext, VerificationKeyRegistry } from "@demo/verifier";
 import { FORMAT, circuitHash, getApi } from "./runtime.js";
 
@@ -16,8 +16,19 @@ export async function verifyNoir(meta: VerifiableToolsMeta, context: VerifyConte
   checkAbort(signal);
   if (meta.proofFormat !== FORMAT || meta.circuitHash !== context.expectedCircuitHash || meta.circuitHash !== circuitHash || !meta.proof) return false;
   const args = parseAddArguments(context.arguments);
-  if (!args || context.content[0]?.text !== String(args.a + args.b) || !meta.outputCommitment || !meta.inputCommitment || !Array.isArray(meta.publicInputs) || meta.publicInputs.length !== 6) return false;
-  const expectedTail = [args.a, args.b, args.a + args.b].map((value) => `0x${BigInt(value).toString(16).padStart(64, "0")}`);
+  if (!args || context.content[0]?.text !== String(args.a + args.b) || !meta.outputCommitment || !meta.inputCommitment || !Array.isArray(meta.publicInputs) || meta.publicInputs.length !== 9) return false;
+  // Noir public inputs: [a, b, out_commit, in_commit, nonce, sum] — the three
+  // commitment field elements bind meta.outputCommitment/inputCommitment/nonce
+  // into the proof itself.
+  const fe = (hex: string) => `0x${commitmentToField(hex).toString(16).padStart(64, "0")}`;
+  const expectedTail = [
+    `0x${BigInt(args.a).toString(16).padStart(64, "0")}`,
+    `0x${BigInt(args.b).toString(16).padStart(64, "0")}`,
+    fe(meta.outputCommitment),
+    fe(meta.inputCommitment),
+    fe(meta.nonce ?? EMPTY_NONCE),
+    `0x${BigInt(args.a + args.b).toString(16).padStart(64, "0")}`,
+  ];
   const tail = meta.publicInputs.slice(3);
   if (tail.length !== expectedTail.length || tail.some((value, index) => value !== expectedTail[index])) return false;
   const head = [meta.outputCommitment, meta.inputCommitment, meta.nonce ?? EMPTY_NONCE];

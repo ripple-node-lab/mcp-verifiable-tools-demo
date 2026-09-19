@@ -75,10 +75,10 @@ export const PINNED_CIRCUITS: { [tool: string]: { default: string; formats?: { [
   add: {
     default: circuitHash("add"),
     formats: {
-      "snarkjs-v2": "0xfb5e4566f5be574f3e95c0356e19ecef88dabd0692edcf5f4be688106e9968c7",
-      "noir-v1": "0x70d3e40690fb97fbcace5ce1d3114282e7dfff1387b125767b6a942e1ca3261e",
-      "risc0-v1": "0xe9e822f1e91ea14c21f72df178573f76a9b1c0e0d048deeed216a7e47a7fdfa7",
-      "ezkl-v1": "0x0abd17111820f09cbad53deb340becb9739236eb1278e686f2189c77fd09d622",
+      "snarkjs-v2": "0x4da28a1c34f98527600ef9965ec07282ab894ddb5c2c1d578b61674a5c867bb9",
+      "noir-v1": "0x2f60bc716f103cf5157330cc9ca37970b39b8ebbf9788b99da03391ec2b95a21",
+      "risc0-v1": "0x8335dcf8383bdef22e2630fa25bf78d0c42ce1e4ed9ac9c8ad2b8d50c071b141",
+      "ezkl-v1": "0xc098bc4b6d33d916d0bd0917977f99ad3a5d9aa69986e0f68815c10c0e51f4da",
       "demo-sig-v1": circuitHash("add"),
       "demo-commit-v1": circuitHash("add")
     }
