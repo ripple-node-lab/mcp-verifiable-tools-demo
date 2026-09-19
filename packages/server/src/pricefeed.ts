@@ -2,7 +2,7 @@
 // attested as an oracle-sig-v1 InputAttestation so the riskScore proof binds
 // the external input commitment in publicInputs.
 import { createPublicKey, generateKeyPairSync, sign } from "node:crypto";
-import { InputAttestation, JsonValue, attestationCommitment, b64u, isRecord, jcs, parseInputAttestation } from "@demo/protocol";
+import { InputAttestation, JsonRpcProtocolError, JsonValue, attestationCommitment, b64u, isRecord, jcs, parseInputAttestation } from "@demo/protocol";
 import { readBodyBounded } from "@demo/prover-sidecar";
 
 export interface PriceFeed {
@@ -13,10 +13,12 @@ export interface PriceFeed {
 // never from a parallel channel — a feed cannot quote a different number than
 // the one inside `data`.
 export function priceFromAttestation(attestation: InputAttestation, symbol: string): number {
+  // JsonRpcProtocolError so the curated domain reason reaches the caller —
+  // plain Errors are reported to the wire as a generic "Internal error".
   let value: unknown;
-  try { value = JSON.parse(attestation.data); } catch { throw new Error("attested price payload mismatch"); }
+  try { value = JSON.parse(attestation.data); } catch { throw new JsonRpcProtocolError(-32603, "attested price payload mismatch"); }
   if (!isRecord(value) || value.symbol !== symbol || value.currency !== "USD" || typeof value.price !== "number" || !Number.isFinite(value.price)) {
-    throw new Error("attested price payload mismatch");
+    throw new JsonRpcProtocolError(-32603, "attested price payload mismatch");
   }
   return value.price;
 }
@@ -114,6 +116,6 @@ export class TlsnPriceFeed implements PriceFeed {
       if (!attestation || attestation.type !== "zktls-tlsn-v1") throw new Error("tlsn /attest returned an invalid attestation");
       return attestation;
     }
-    throw lastError;
+    throw lastError ?? new Error("tlsn /attest failed");
   }
 }

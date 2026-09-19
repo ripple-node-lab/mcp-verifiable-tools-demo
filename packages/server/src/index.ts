@@ -151,7 +151,9 @@ export class DemoServer {
       if (request.method === "verifiable-tools/prove") return await this.prove(request);
       return errorResponse(request.id, -32601, "Method not found");
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : "Internal error";
+      // Non-protocol errors reflect nothing internal — paths, fetch failures
+      // and worker internals stay server-side.
+      const message = error instanceof JsonRpcProtocolError ? error.message : "Internal error";
       const code = error instanceof JsonRpcProtocolError ? error.code : -32603;
       return errorResponse(request.id, code, message, error instanceof JsonRpcProtocolError ? error.data : undefined);
     }
@@ -287,13 +289,14 @@ export class DemoServer {
     const record = this.results.get(params.resultId);
     if (record === undefined) throw new JsonRpcProtocolError(-32602, "result not found", { reason: "resultNotFound" });
     if (record === "expired") throw new JsonRpcProtocolError(-32602, "result expired", { reason: "resultExpired" });
+    // Deferred proofs are only available to clients that negotiated the
+    // extension — an un-negotiated caller gets no format fallback.
+    if (capability === undefined) throw new JsonRpcProtocolError(-32602, "verifiable-tools extension not negotiated");
     const nonce = params.nonce === undefined ? record.nonce : params.nonce;
     if (nonce !== undefined && !isValidNonce(nonce)) throw new JsonRpcProtocolError(-32602, "invalid nonce");
     const requested = typeof params.proofFormat === "string" ? params.proofFormat : undefined;
     const toolFormats = this.toolFormats(record.tool as ToolName);
-    const format = requestMeta?.[META_CLIENT_CAPABILITIES] !== undefined
-      ? negotiateProofFormat(capability, toolFormats, requested)
-      : requested ?? "demo-sig-v1";
+    const format = negotiateProofFormat(capability, toolFormats, requested);
     if (!format || !toolFormats.includes(format)) throw new JsonRpcProtocolError(-32602, "unsupported proof format");
     const output = record.content[0]?.text ?? "";
     const result = await this.provenResult(record.tool as ToolName, record.arguments, output, format, nonce, record.salt, undefined, record.content);

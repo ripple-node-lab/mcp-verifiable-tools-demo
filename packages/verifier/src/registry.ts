@@ -9,7 +9,9 @@ export class VerificationKeyRegistry {
     let origin: string;
     try { origin = new URL(uri).origin; } catch { throw new Error("verification key URI origin not allowed"); }
     if (!this.allowedOrigins.includes(origin)) throw new Error("verification key URI origin not allowed");
-    const pem = await fetch(uri, { signal: AbortSignal.timeout(5000) }).then(async (response) => {
+    // redirect:"manual" — a redirect's target never re-validates against the
+    // origin allowlist, so redirects are rejected rather than followed.
+    const pem = await fetch(uri, { signal: AbortSignal.timeout(5000), redirect: "manual" }).then(async (response) => {
       if (!response.ok) throw new Error(`verification key fetch failed: ${response.status}`);
       const contentLength = response.headers?.get("content-length") ?? null;
       if (contentLength !== null && Number(contentLength) > 16 * 1024) throw new Error("verification key response too large");
@@ -29,7 +31,7 @@ export class VerificationKeyRegistry {
     let origin: string;
     try { origin = new URL(uri).origin; } catch { throw new Error("verification key URI origin not allowed"); }
     if (!this.allowedOrigins.includes(origin)) throw new Error("verification key URI origin not allowed");
-    const response = await fetch(uri, { signal: AbortSignal.timeout(5000) });
+    const response = await fetch(uri, { signal: AbortSignal.timeout(5000), redirect: "manual" });
     if (!response.ok) throw new Error(`verification key fetch failed: ${response.status}`);
     const contentLength = response.headers?.get("content-length") ?? null;
     if (contentLength !== null && Number(contentLength) > 16 * 1024) throw new Error("verification key response too large");

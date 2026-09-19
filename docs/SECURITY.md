@@ -40,6 +40,20 @@ section; this file consolidates the demo-specific caveats.
   `u32` sum to fit in `[0, 2^32 - 1]`; invalid arguments are rejected with
   `-32602`.
 
+## Known limitation: ZK proof freshness
+
+The ZK proof formats (`snarkjs-v2`, `noir-v1`, `risc0-v1`, `ezkl-v1`) prove
+only `[sum, a, b]` — `outputCommitment`, `inputCommitment`, and `nonce` in
+`publicInputs[0..3]` are **self-attested**: they are echoed and checked by
+`verifyResult`, but the proof itself does not cover them. A captured ZK proof
+therefore verifies under a rewritten `meta` (fresh nonce, different
+commitments for the same computation); replay protection holds only at the
+meta layer for these formats. `demo-sig-v1`, `demo-commit-v1`, and
+`tee-nitro-v1` do bind the nonce and commitments into the signed/attested
+payload, satisfying the spec's §Result binding requirement. Binding the nonce
+(and ideally both commitments) as additional circuit public inputs is the
+fix; it requires rebuilding the circuit artifacts and pinned hashes.
+
 ## Trust anchors
 
 - The client pins verification keys by `circuitHash` and rejects results

@@ -45,7 +45,7 @@ test("expired deferred witnesses are swept without traffic", async () => withSer
   assert.equal(expired.error?.data?.reason, "resultExpired");
 }));
 
-test("unknown deferred result IDs and unsupported formats are rejected", async () => withServer(async (server) => {
+test("un-negotiated and unknown deferred proofs are rejected", async () => withServer(async (server) => {
   const unknown = await rpc(server, "verifiable-tools/prove", { resultId: "00".repeat(16) });
   assert.equal(unknown.error?.code, -32602);
   assert.equal(unknown.error?.data?.reason, "resultNotFound");
@@ -54,7 +54,13 @@ test("unknown deferred result IDs and unsupported formats are rejected", async (
   const initial = expectComplete((await client.callTool("priceQuote", { symbol: "AAPL" })).result);
   const resultId = initial._meta?.["io.github.ripple-node-lab/verifiable-tools"]?.resultId;
   assert.equal(typeof resultId, "string");
-  const unsupported = await rpc(server, "verifiable-tools/prove", { resultId, proofFormat: "unknown-format" });
+  const unNegotiated = await rpc(server, "verifiable-tools/prove", { resultId });
+  assert.equal(unNegotiated.error?.code, -32602);
+  assert.equal(unNegotiated.error?.message, "verifiable-tools extension not negotiated");
+  const unsupported = await rpc(server, "verifiable-tools/prove", {
+    resultId, proofFormat: "unknown-format",
+    _meta: { "io.modelcontextprotocol/clientCapabilities": { extensions: { "io.github.ripple-node-lab/verifiable-tools": { proofFormats: ["demo-sig-v1"] } } } }
+  });
   assert.equal(unsupported.error?.code, -32602);
 }));
 test("requireProof proves price quote immediately", async () => withServer(async (server) => {

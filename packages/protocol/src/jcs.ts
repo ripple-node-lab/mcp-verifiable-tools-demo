@@ -6,7 +6,12 @@ export function jcs(value: JsonValue): string {
   if (value !== null && typeof value === "object") {
     return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${jcs(value[key]!)}`).join(",")}}`;
   }
-  return JSON.stringify(value);
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    throw new TypeError("jcs: non-finite numbers are not encodable (RFC 8785)");
+  }
+  const encoded = JSON.stringify(value);
+  if (encoded === undefined) throw new TypeError("jcs: value is not a JSON value");
+  return encoded;
 }
 
 export function sha256Hex(...parts: (string | Uint8Array)[]): string {

@@ -10,9 +10,6 @@ export function clientCapabilities(proofFormats: string[], options: { blindExecu
   if (options.tasks) extensions[TASKS_EXTENSION_ID] = {};
   return { extensions };
 }
-export function capabilitiesFromMeta(meta: RequestMeta | undefined): ClientCapabilities | undefined {
-  return meta?.[META_CLIENT_CAPABILITIES];
-}
 export function verifiableCapability(capabilities: ClientCapabilities | undefined): VerifiableToolsCapability | undefined {
   const value = capabilities?.extensions?.[EXTENSION_ID];
   if (typeof value !== "object" || value === null) return undefined;

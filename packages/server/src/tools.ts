@@ -13,10 +13,10 @@ export function isZkFormat(format: string): boolean {
 }
 export function toolList(baseUrl: string, proofFormats: string[], formatDescriptors: { [format: string]: ToolFormatDescriptor } = {}, override?: DescriptorOverride): JsonValue {
   const definitions: Array<{ name: ToolName; description: string; inputSchema: JsonValue; proofPolicy: ToolDescriptorMeta["proofPolicy"]; blind: boolean; externalInputs?: boolean }> = [
-    { name: "add", description: "Add two numbers", inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } }, required: ["a", "b"] }, proofPolicy: "always", blind: false },
+    { name: "add", description: "Add two numbers", inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } }, required: ["a", "b"] }, proofPolicy: "always", blind: false, externalInputs: false },
     { name: "riskScore", description: "Calculate a deterministic risk score", inputSchema: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, proofPolicy: "always", blind: false, externalInputs: true },
-    { name: "privateCreditCheck", description: "Check credit eligibility without revealing arguments", inputSchema: { type: "object", properties: { income: { type: "number" }, debt: { type: "number" } }, required: ["income", "debt"] }, proofPolicy: "always", blind: true },
-    { name: "priceQuote", description: "Calculate a deterministic price quote", inputSchema: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, proofPolicy: "onDemand", blind: false }
+    { name: "privateCreditCheck", description: "Check credit eligibility without revealing arguments", inputSchema: { type: "object", properties: { income: { type: "number" }, debt: { type: "number" } }, required: ["income", "debt"] }, proofPolicy: "always", blind: true, externalInputs: false },
+    { name: "priceQuote", description: "Calculate a deterministic price quote", inputSchema: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] }, proofPolicy: "onDemand", blind: false, externalInputs: false }
   ];
   return definitions.map(({ name, description, inputSchema, proofPolicy, blind, externalInputs }) => {
     const hash = expectedCircuitHash(name);
@@ -28,7 +28,9 @@ export function toolList(baseUrl: string, proofFormats: string[], formatDescript
       proofPolicy,
       verificationKeyUri: `${baseUrl}/vk/${hash}`,
       blind,
-      ...(externalInputs ? { externalInputs } : {}),
+      // Always emit the flag (true or false) so a provenance-required client
+      // can distinguish "declared no external inputs" from "not declared".
+      ...(externalInputs === undefined ? {} : { externalInputs }),
       formats: Object.fromEntries(toolFormats.map((format) => [format, format === "demo-sig-v1"
         ? { circuitHash: hash, verificationKeyUri: `${baseUrl}/vk/${hash}` }
         : format === "demo-commit-v1"

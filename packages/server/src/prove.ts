@@ -7,7 +7,6 @@ export interface StoredResult {
   salt?: Uint8Array;
   content: CallToolResult["content"];
   nonce?: string;
-  replyPublicKey?: string;
   createdAt: number;
 }
 
