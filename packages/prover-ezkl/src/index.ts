@@ -6,6 +6,11 @@
 // snarkjs-v2 / noir-v1 / risc0-v1 pattern: commitments + nonce are checked by
 // verifyResult and echoed in publicInputs[0..3]; circuit public inputs are
 // [sum, a, b]. circuitHash = sha256(vk.json bytes).
+//
+// KNOWN LIMITATION: the nonce/commitments in publicInputs[0..3] are
+// self-attested — the proof does not cover them, so a captured proof verifies
+// under a rewritten meta (see docs/SECURITY.md). Freshness exists only at the
+// meta layer; extend the circuit to take them as public inputs to fix.
 import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";

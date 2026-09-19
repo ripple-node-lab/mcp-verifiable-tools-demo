@@ -100,7 +100,8 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
      circuitHash      identifies the circuit/key; the client looks up its PINNED verification key/root by this hash (never trusts one sent by the server)
      inputCommitment  H(salt || JCS(arguments)) recomputed by the client from the arguments it sent; must equal the value the proof binds
      outputCommitment H(JCS(content)) recomputed from the returned content; must equal the value the proof binds
-     nonce            client-chosen fresh value echoed inside the proof (replay protection)
+     nonce            client-chosen fresh value checked against result metadata; bound into the signed payload for
+                      demo-sig/commit/tee formats; NOT covered by the ZK circuits — meta-layer freshness only there
      proof            verified against the pinned key / verification key; REAL formats also prove the computation, DEMO formats only sign
      provenance       inputAttestations (oracle signature / TLSNotary) verified against pinned keys and bound into publicInputs`);
   }

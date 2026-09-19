@@ -47,7 +47,9 @@ test("missing attestations give provenanceMissing when required, ok otherwise", 
   const { client, result, nonce } = await riskScoreCall(server.mcpUrl);
   const value = structuredClone(meta(result));
   delete value.inputAttestations;
-  value.publicInputs = value.publicInputs?.slice(0, 4);
+  // publicInputs = [outputCommitment, inputCommitment, nonce, ...commits] —
+  // slice(0, 3) drops the attestation commitment tail.
+  value.publicInputs = value.publicInputs?.slice(0, 3);
   result._meta![EXT] = reseal(value) as never;
   client.setCapabilities({ proofFormats: ["demo-commit-v1"] });
   assert.deepEqual(await client.verify(result, { symbol: "AAPL" }, "riskScore", { nonce }), { ok: true });

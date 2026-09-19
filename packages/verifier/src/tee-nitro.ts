@@ -12,6 +12,7 @@ export interface TeeNitroVerifierOptions {
   pinnedPcrs: (circuitHash: string) => Record<string, string> | undefined;
   expectedUserData?: () => Uint8Array | undefined;
   maxAgeMs?: number;
+  clockSkewMs?: number;
   now?: () => number;
 }
 
@@ -65,10 +66,12 @@ export class TeeNitroVerifier implements Verifier {
   readonly format = "tee-nitro-v1";
   private readonly rootDer: Uint8Array;
   private readonly maxAgeMs: number;
+  private readonly clockSkewMs: number;
   private readonly now: () => number;
   constructor(private readonly options: TeeNitroVerifierOptions) {
     this.rootDer = new Uint8Array(new X509Certificate(pemToDer(options.rootCertPem)).raw);
     this.maxAgeMs = options.maxAgeMs ?? 300_000;
+    this.clockSkewMs = options.clockSkewMs ?? 60_000;
     this.now = options.now ?? Date.now;
   }
   static fromMockFixtures(dir: string, extra: Partial<TeeNitroVerifierOptions> = {}): TeeNitroVerifier {
@@ -107,7 +110,9 @@ export class TeeNitroVerifier implements Verifier {
     if (expected !== undefined && !bytesEqual(doc.userData, expected)) return fail("userDataMismatch");
     const expectedNonce = context.nonce === undefined ? new Uint8Array() : new Uint8Array(Buffer.from(context.nonce.slice(2), "hex"));
     if (!bytesEqual(doc.nonce, expectedNonce)) return fail("nonceMismatch");
-    if (Math.abs(now - doc.timestamp) > this.maxAgeMs) return fail("attestationStale");
+    // Staleness is asymmetric: tolerate small clock skew in the future, but a
+    // document dated far ahead is as suspicious as a stale one.
+    if (doc.timestamp > now + this.clockSkewMs || now - doc.timestamp > this.maxAgeMs) return fail("attestationStale");
     try {
       const enclaveKey = createPublicKey({ key: doc.publicKey, format: "der", type: "spki" });
       const signature = Buffer.from((meta.proof ?? "").slice(2), "hex");

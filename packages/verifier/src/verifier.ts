@@ -37,7 +37,14 @@ export async function verifyResult(meta: VerifiableToolsMeta | undefined, contex
   if (meta.inputCommitment !== inputCommitment(context.arguments, context.salt)) return { ok: false, reason: "inputCommitmentMismatch" };
   if (meta.outputCommitment !== outputCommitment(context.content)) return { ok: false, reason: "outputCommitmentMismatch" };
   if (context.nonce !== undefined ? meta.nonce !== context.nonce : meta.nonce !== undefined) return { ok: false, reason: "nonceMismatch" };
-  if (!(await verifier.verify(meta, context))) return { ok: false, reason: "proofInvalid" };
+  try {
+    if (!(await verifier.verify(meta, context))) return { ok: false, reason: "proofInvalid" };
+  } catch (error) {
+    // A verifier that throws on malformed meta must not crash the pipeline —
+    // the proof simply fails. Abort is a control-flow exception, rethrow it.
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    return { ok: false, reason: "proofInvalid" };
+  }
   // Provenance runs whenever a policy is supplied, or when the meta carries
   // attestations at all — attached attestations must always be valid.
   if (provenance || meta.inputAttestations !== undefined) {

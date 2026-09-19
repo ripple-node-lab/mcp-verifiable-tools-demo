@@ -48,6 +48,7 @@ export class VerifiableClient {
   private readonly rpc?: RpcTransport;
   private readonly timeoutMs: number;
   private readonly signal?: AbortSignal;
+  private nextRequestId = 1;
   constructor(private readonly endpoint: string, options: VerifiableClientOptions = {}) {
     this.rpc = options.rpc;
     this.timeoutMs = options.timeoutMs ?? 200_000;
@@ -129,6 +130,12 @@ export class VerifiableClient {
       ...(this.teeVerifier && formats.includes("tee-nitro-v1") ? [this.teeVerifier] : []),
       ...this.extraVerifiers.filter((verifier) => formats.includes(verifier.format))
     ];
+    const requireProvenance = verifiableCapability(this.capabilities)?.requireInputProvenance === true;
+    if (requireProvenance && this.descriptors.size === 0 && this.discovered === undefined) {
+      // Fail closed needs the descriptors: lazily discover so a server that
+      // never declared externalInputs flags cannot downgrade the policy.
+      await this.discover();
+    }
     const descriptor = this.descriptors.get(tool);
     const format = meta?.proofFormat;
     const verificationKeyUri = format === undefined || descriptor === undefined
@@ -136,7 +143,10 @@ export class VerifiableClient {
       : descriptor.formats?.[format]?.verificationKeyUri ?? descriptor.verificationKeyUri;
     const formatHash = format === undefined ? undefined : descriptor?.formats?.[format]?.circuitHash;
     return verifyResult(meta, { arguments: args, content: result.content, nonce: options.nonce, salt: options.salt, expectedCircuitHash: formatHash ?? expectedCircuitHash(tool, format), verificationKeyUri, registry: this.registry }, verifiers,
-      { required: verifiableCapability(this.capabilities)?.requireInputProvenance === true && descriptor?.externalInputs === true, verifiers: this.provenanceVerifiers, registry: this.registry });
+      // Fail closed: when the client declares requireInputProvenance, a missing
+      // descriptor or an unmarked externalInputs flag cannot downgrade the
+      // policy — only an explicit `externalInputs: false` waives attestations.
+      { required: requireProvenance && descriptor?.externalInputs !== false, verifiers: this.provenanceVerifiers, registry: this.registry });
   }
   async callAndVerify(name: string, args: JsonValue, proofFormat?: string): Promise<CallToolResult> {
     const value = await this.callTool(name, args, { proofFormat });
@@ -157,6 +167,7 @@ export class VerifiableClient {
     const response = await this.request("verifiable-tools/call", { tool: "privateCreditCheck", inputCommitment: encrypted.inputCommitment, encryptionScheme: "hpke-v1", encryptedArguments: encrypted.encryptedArguments, proofFormat: options.proofFormat ?? "demo-sig-v1", ...(reply ? { replyPublicKey: b64u(reply.publicKey) } : {}), _meta: { ...this.requestMeta(), [EXTENSION_ID]: { nonce } } });
     if (response.error) throw new Error(response.error.message);
     const result = response.result as CallToolResult;
+    if (reply && !result._meta?.[EXTENSION_ID]?.encryptedContent) throw new Error("server did not encrypt reply");
     if (reply && result._meta?.[EXTENSION_ID]?.encryptedContent) {
       const plaintext = hpkeOpen(reply.privateKey, reply.publicKey, new TextEncoder().encode(HPKE_INFO_REPLY), new TextEncoder().encode(jcs({ tool: "privateCreditCheck", inputCommitment: encrypted.inputCommitment, nonce } as JsonValue)), unb64u(result.content[0].text));
       result.content = JSON.parse(new TextDecoder().decode(plaintext)) as CallToolResult["content"];
@@ -181,10 +192,30 @@ export class VerifiableClient {
     if (method === "tools/call") headers["Mcp-Name"] = String(asRecord(params).name);
     const timeout = AbortSignal.timeout(this.timeoutMs);
     const signal = this.signal ? AbortSignal.any([this.signal, timeout]) : timeout;
-    const response = await fetch(this.endpoint, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }), signal });
-    return await response.json() as { result?: unknown; error?: { code: number; message: string; data?: unknown } };
+    const response = await fetch(this.endpoint, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", id: this.nextRequestId++, method, params }), signal });
+    const declared = Number(response.headers.get("content-length") ?? 0);
+    if (declared > MAX_RESPONSE_BYTES) throw new Error("response too large");
+    if (response.body === null) return await response.json() as { result?: unknown; error?: { code: number; message: string; data?: unknown } };
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_RESPONSE_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error("response too large");
+      }
+      chunks.push(value);
+    }
+    const joined = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) { joined.set(chunk, offset); offset += chunk.byteLength; }
+    return JSON.parse(new TextDecoder().decode(joined)) as { result?: unknown; error?: { code: number; message: string; data?: unknown } };
   }
 }
+const MAX_RESPONSE_BYTES = 1024 * 1024;
 export interface TaskEnvelope { resultType: "task"; taskId: string; status: string; pollIntervalMs: number; ttlMs?: number; }
 function isTask(value: unknown): value is TaskEnvelope { return isRecord(value) && value.resultType === "task" && typeof value.taskId === "string"; }
 function asRecord(value: unknown): { [key: string]: JsonValue } { if (!isRecord(value)) throw new Error("malformed JSON response"); return value; }

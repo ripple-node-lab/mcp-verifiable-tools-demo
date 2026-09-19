@@ -4,6 +4,11 @@
 // Binding follows the snarkjs-v2 / noir-v1 pattern: inputCommitment /
 // outputCommitment / nonce are checked by verifyResult and echoed in
 // publicInputs[0..3]; the circuit's public inputs are [sum, a, b].
+//
+// KNOWN LIMITATION: the nonce/commitments are self-attested in meta — the
+// receipt's journal does not cover them, so a captured proof verifies under a
+// rewritten meta (see docs/SECURITY.md). Freshness exists only at the meta
+// layer; commit them in the journal to fix.
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { EMPTY_NONCE, VerifiableToolsMeta, parseAddArguments } from "@demo/protocol";

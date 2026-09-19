@@ -5,7 +5,9 @@ export class DemoCommitProver implements Prover {
   async prove(input: ProveInput, options: { signal?: AbortSignal } = {}): Promise<VerifiableToolsMeta> {
     if (options.signal?.aborted) throw new DOMException("aborted", "AbortError");
     const commits = attestationCommits(input);
-    const publicInputs = [input.outputCommitment, input.inputCommitment, input.nonce ?? "0x", input.output, ...commits];
+    // The output is bound via outputCommitment only — embedding the raw output
+    // in publicInputs would leak it past HPKE reply encryption on blind calls.
+    const publicInputs = [input.outputCommitment, input.inputCommitment, input.nonce ?? "0x", ...commits];
     return {
       proof: `0x${sha256(input.circuitHash + JSON.stringify(publicInputs))}`,
       proofFormat: this.format,
