@@ -1159,6 +1159,7 @@ dependencies = [
  "risc0-zkvm",
  "serde",
  "serde_json",
+ "sha2",
  "tiny_http",
 ]
 

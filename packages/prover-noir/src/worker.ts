@@ -3,7 +3,7 @@ import { parentPort } from "node:worker_threads";
 import { UltraHonkBackend } from "@aztec/bb.js";
 import { Noir } from "@noir-lang/noir_js";
 import { ProveInput } from "@demo/prover";
-import { VerifiableToolsMeta, parseAddArguments, publicInputs } from "@demo/protocol";
+import { VerifiableToolsMeta, commitmentToField, parseAddArguments, publicInputs } from "@demo/protocol";
 import { FORMAT, circuitHash, getApi } from "./runtime.js";
 import { artifacts } from "./artifacts.js";
 
@@ -11,7 +11,15 @@ async function prove(input: ProveInput): Promise<VerifiableToolsMeta> {
   const circuit = JSON.parse(await readFile(artifacts.circuit, "utf8")) as { bytecode: string };
   const args = parseAddArguments(input.arguments);
   if (!args) throw new Error("arguments out of circuit range");
-  const witness = await new Noir(circuit as never).execute(args);
+  // Commitments and nonce are public inputs to the circuit — the proof binds
+  // them, so a replayed proof fails unless all three match.
+  const witness = await new Noir(circuit as never).execute({
+    a: args.a,
+    b: args.b,
+    out_commit: commitmentToField(input.outputCommitment).toString(),
+    in_commit: commitmentToField(input.inputCommitment).toString(),
+    nonce: commitmentToField(input.nonce ?? "0x").toString(),
+  });
   const backend = new UltraHonkBackend(circuit.bytecode, await getApi());
   // bb.js logs "Generated proof for circuit ..." on every prove; keep it out of
   // the demo output (worker-local console, restored in finally).

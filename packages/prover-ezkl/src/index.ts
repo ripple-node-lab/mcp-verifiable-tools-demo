@@ -1,20 +1,18 @@
 // ezkl-v1: proof = an ezkl/Halo2-KZG proof JSON produced by the Python sidecar
 // (ezkl 22.0.1 — must match @ezkljs/engine 22.0.1 exactly), verified in-process
-// by the engine's wasm build. The circuit is a single ONNX Add over u32 inputs;
-// input/param scale 0 maps integers exactly into field elements, so
-// instances[0] = [feltLE(a), feltLE(b), feltLE(sum)]. Binding follows the
-// snarkjs-v2 / noir-v1 / risc0-v1 pattern: commitments + nonce are checked by
-// verifyResult and echoed in publicInputs[0..3]; circuit public inputs are
-// [sum, a, b]. circuitHash = sha256(vk.json bytes).
-//
-// KNOWN LIMITATION: the nonce/commitments in publicInputs[0..3] are
-// self-attested — the proof does not cover them, so a captured proof verifies
-// under a rewritten meta (see docs/SECURITY.md). Freshness exists only at the
-// meta layer; extend the circuit to take them as public inputs to fix.
+// by the engine's wasm build. The circuit is a single ONNX Add plus 48 public
+// binding inputs: input/param scale 0 maps integers exactly into field
+// elements, so instances[0] =
+//   [feltLE(a), feltLE(b), ob0..ob15, ib0..ib15, nb0..nb15, feltLE(sum)]
+// where each bound value contributes its commitmentToField element as 16
+// big-endian u16 limbs (limbs stay < 2^24 so they survive the f32 ONNX ingest
+// exactly). meta.publicInputs stays [outputCommitment, inputCommitment, nonce,
+// sum, a, b]; the proof itself covers all of them, so captured proofs cannot
+// be replayed under a rewritten meta. circuitHash = sha256(vk.json bytes).
 import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { EMPTY_NONCE, VerifiableToolsMeta, parseEzklAddArguments } from "@demo/protocol";
+import { EMPTY_NONCE, VerifiableToolsMeta, commitmentToField, parseEzklAddArguments } from "@demo/protocol";
 import { Verifier, VerifyContext } from "@demo/verifier";
 import { SidecarVerifier } from "@demo/prover-sidecar";
 import { artifacts } from "./artifacts.js";
@@ -45,13 +43,31 @@ interface EzklProof {
   instances?: string[][];
 }
 
-function decodeU32Felt(hex: string): bigint | undefined {
+function decodeFeltLE(hex: string): bigint | undefined {
   const clean = hex.startsWith("0x") ? hex.slice(2) : hex;
   if (!/^[0-9a-f]{64}$/i.test(clean)) return undefined;
   const bytes = Buffer.from(clean, "hex").reverse();
-  const value = BigInt(`0x${bytes.toString("hex")}`);
-  return value <= FIELD_MASK ? value : undefined;
+  return BigInt(`0x${bytes.toString("hex")}`);
 }
+
+function decodeU32Felt(hex: string): bigint | undefined {
+  const value = decodeFeltLE(hex);
+  return value !== undefined && value <= FIELD_MASK ? value : undefined;
+}
+
+// Reassemble 16 big-endian u16 limbs (instances[i..i+15]) into the field
+// element they encode; undefined when any entry isn't a u16.
+function limbsToField(instances: string[], offset: number): bigint | undefined {
+  let fe = 0n;
+  for (let i = 0; i < 16; i++) {
+    const limb = decodeFeltLE(instances[offset + i]);
+    if (limb === undefined || limb > 0xffffn) return undefined;
+    fe = (fe << 16n) | limb;
+  }
+  return fe;
+}
+
+const EXPECTED_INSTANCES = 51;
 
 export async function verifyEzkl(meta: VerifiableToolsMeta, context: VerifyContext, signal?: AbortSignal): Promise<boolean> {
   if (meta.proofFormat !== FORMAT || meta.circuitHash !== context.expectedCircuitHash || !meta.proof) return false;
@@ -62,10 +78,18 @@ export async function verifyEzkl(meta: VerifiableToolsMeta, context: VerifyConte
   } catch { return false; }
   const { proofBytes, proof } = decoded;
   const instances = proof.instances?.[0];
-  if (!Array.isArray(instances) || instances.length !== 3) return false;
-  const felts = instances.map(decodeU32Felt);
-  if (felts.some((v) => v === undefined)) return false;
-  const [a, b, sum] = felts as [bigint, bigint, bigint];
+  if (!Array.isArray(instances) || instances.length !== EXPECTED_INSTANCES) return false;
+  const a = decodeU32Felt(instances[0]);
+  const b = decodeU32Felt(instances[1]);
+  const sum = decodeU32Felt(instances[EXPECTED_INSTANCES - 1]);
+  if (a === undefined || b === undefined || sum === undefined) return false;
+  const bound = [meta.outputCommitment, meta.inputCommitment, meta.nonce ?? EMPTY_NONCE];
+  if (bound.some((v) => typeof v !== "string")) return false;
+  for (const [i, hex] of bound.entries()) {
+    let expected: bigint;
+    try { expected = commitmentToField(hex as string); } catch { return false; }
+    if (limbsToField(instances, 2 + i * 16) !== expected) return false;
+  }
   const args = parseEzklAddArguments(context.arguments);
   if (!args || BigInt(args.a) !== a || BigInt(args.b) !== b || sum !== a + b) return false;
   if (context.content[0]?.text !== String(sum)) return false;

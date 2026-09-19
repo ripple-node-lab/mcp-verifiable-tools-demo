@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { EMPTY_NONCE, JsonValue, VerifiableToolsMeta, parseAddArguments } from "@demo/protocol";
+import { EMPTY_NONCE, JsonValue, VerifiableToolsMeta, commitmentToField, parseAddArguments } from "@demo/protocol";
 import { Verifier, VerifyContext, VerificationKeyRegistry, VerificationKeyRegistryLike } from "@demo/verifier";
 import { FORMAT, circuitHash } from "./constants.js";
 import { groth16Promise } from "./runtime.js";
@@ -18,7 +18,17 @@ export async function verifySnarkjs(meta: VerifiableToolsMeta, context: VerifyCo
   const args = parseAddArguments(context.arguments);
   const text = context.content[0]?.text;
   if (!args || text !== String(args.a + args.b) || !meta.outputCommitment || !meta.inputCommitment || !Array.isArray(meta.publicInputs)) return false;
-  const expectedTail = [String(args.a + args.b), String(args.a), String(args.b)];
+  // Circuit public signals: [c, a, b, out_f, in_f, nonce_f] — the three
+  // trailing field elements bind outputCommitment/inputCommitment/nonce into
+  // the proof itself (groth16.verify commits to all public inputs).
+  const expectedTail = [
+    String(args.a + args.b),
+    String(args.a),
+    String(args.b),
+    commitmentToField(meta.outputCommitment).toString(),
+    commitmentToField(meta.inputCommitment).toString(),
+    commitmentToField(meta.nonce ?? EMPTY_NONCE).toString(),
+  ];
   const expected = [meta.outputCommitment, meta.inputCommitment, meta.nonce ?? EMPTY_NONCE, ...expectedTail];
   if (meta.publicInputs.length !== expected.length || JSON.stringify(meta.publicInputs) !== JSON.stringify(expected)) return false;
   const uri = context.verificationKeyUri ?? meta.verificationKeyUri;

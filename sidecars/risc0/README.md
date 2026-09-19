@@ -1,12 +1,14 @@
 # risc0 sidecar (`risc0-v1`)
 
 RISC Zero zkVM proving sidecar for the verifiable-tools demo. The `add` guest
-reads `(a, b): (u32, u32)` via `env::read`, computes `a.checked_add(b)` (panic
-on overflow) and commits a 12-byte little-endian journal `a || b || sum`.
-The receipt is a RISC Zero composite receipt (bincode-serialized). Input /
-output / nonce binding follows the `snarkjs-v2` / `noir-v1` pattern — it lives
-in `publicInputs` (`[outputCommitment, inputCommitment, nonce ?? "0x", sum, a, b]`),
-not inside the guest. `circuitHash` is the guest image ID (32-byte hex).
+reads `(a, b, out, in, nonce): (u32, u32, [u8; 32] ×3)` via `env::read`,
+computes `a.checked_add(b)` (panic on overflow) and commits a 108-byte
+little-endian journal `a || b || sum || out || in || nonce`. The three trailing
+digests are `sha256(lowercased "0x…")` of the meta commitments/nonce, computed
+by the host — so a captured receipt fails verification under rewritten meta.
+`meta.publicInputs` keeps the shared `[outputCommitment, inputCommitment,
+nonce ?? "0x", sum, a, b]` layout. `circuitHash` is the guest image ID
+(32-byte hex).
 
 ## Layout
 

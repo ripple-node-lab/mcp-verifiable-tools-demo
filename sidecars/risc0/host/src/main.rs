@@ -100,9 +100,23 @@ fn parse_u32(v: &Value, key: &str) -> Option<u32> {
     v.get(key)?.as_u64().and_then(|n| u32::try_from(n).ok())
 }
 
-fn make_receipt(a: u32, b: u32) -> Result<Receipt, String> {
+// Binds a meta value (commitment or nonce hex string) into the journal:
+// sha256 of the lowercased "0x…" string. Deterministic on both sides and
+// independent of string length.
+fn bound_digest(hex_str: &str) -> [u8; 32] {
+    use sha2::{Digest as _, Sha256};
+    Sha256::digest(hex_str.to_lowercase().as_bytes()).into()
+}
+
+fn make_receipt(
+    a: u32,
+    b: u32,
+    out_commit: [u8; 32],
+    in_commit: [u8; 32],
+    nonce: [u8; 32],
+) -> Result<Receipt, String> {
     let env = ExecutorEnv::builder()
-        .write(&(a, b))
+        .write(&(a, b, out_commit, in_commit, nonce))
         .map_err(|e| e.to_string())?
         .build()
         .map_err(|e| e.to_string())?;
@@ -153,12 +167,24 @@ fn prove(request: &mut tiny_http::Request) -> (u16, Value) {
     if input.output.as_deref() != Some(&sum.to_string()) {
         return (400, json!({ "error": "outputMismatch" }));
     }
-    let receipt = match make_receipt(a, b) {
+    let out_commit = bound_digest(&input.output_commitment);
+    let in_commit = bound_digest(&input.input_commitment);
+    let nonce = bound_digest(input.nonce.as_deref().unwrap_or(EMPTY_NONCE));
+    let receipt = match make_receipt(a, b, out_commit, in_commit, nonce) {
         Ok(r) => r,
         Err(e) => return (500, json!({ "error": e })),
     };
     let journal: &[u8] = &receipt.journal.bytes;
-    if journal != [a.to_le_bytes(), b.to_le_bytes(), sum.to_le_bytes()].concat() {
+    let expected_journal: Vec<u8> = [
+        a.to_le_bytes().as_slice(),
+        b.to_le_bytes().as_slice(),
+        sum.to_le_bytes().as_slice(),
+        out_commit.as_slice(),
+        in_commit.as_slice(),
+        nonce.as_slice(),
+    ]
+    .concat();
+    if journal != expected_journal.as_slice() {
         return (500, json!({ "error": "journalMismatch" }));
     }
     let proof = base64::engine::general_purpose::URL_SAFE_NO_PAD
@@ -225,7 +251,7 @@ fn verify(request: &mut tiny_http::Request) -> (u16, Value) {
         return (200, json!({ "ok": false, "reason": "receiptInvalid" }));
     }
     let journal: &[u8] = &receipt.journal.bytes;
-    if journal.len() != 12 {
+    if journal.len() != 108 {
         return (200, json!({ "ok": false, "reason": "journalMismatch" }));
     }
     let a = u32::from_le_bytes(journal[0..4].try_into().unwrap());
@@ -253,6 +279,20 @@ fn verify(request: &mut tiny_http::Request) -> (u16, Value) {
             200,
             json!({ "ok": false, "reason": "publicInputsMismatch" }),
         );
+    }
+    // The journal commits sha256(lowercased hex) digests of the meta
+    // commitments and nonce — a receipt replayed under different meta fails.
+    let bound: Vec<[u8; 32]> = binding
+        .iter()
+        .map(|v| v.map(bound_digest))
+        .collect::<Option<_>>()
+        .unwrap_or_default();
+    if bound.len() != 3
+        || journal[12..44] != bound[0]
+        || journal[44..76] != bound[1]
+        || journal[76..108] != bound[2]
+    {
+        return (200, json!({ "ok": false, "reason": "journalMismatch" }));
     }
     let tail = [sum.to_string(), a.to_string(), b.to_string()];
     if str_entry(3) != Some(tail[0].as_str())

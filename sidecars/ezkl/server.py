@@ -28,6 +28,7 @@ SRS = os.path.join(ARTIFACTS, "kzg.srs")
 
 MAX_BODY = 1 << 20
 EMPTY_NONCE = "0x"
+BN254_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617
 # Input domain: ONNX FLOAT ingest is f32 (exact only below 2^24), and the
 # circuit's range-check decomposition (base 16384, n=2) caps values at 2^28.
 # a + b ≤ 2^25 stays inside both bounds.
@@ -47,14 +48,46 @@ def felt_hex(value: int) -> str:
     return value.to_bytes(32, "little").hex()
 
 
-def prove_job(a: int, b: int) -> tuple[bytes, list]:
-    """Run witness+prove; returns (proof_json_bytes, instances[0])."""
+def commitment_to_limbs(value) -> list[int] | None:
+    """Mirror protocol commitmentToU16Limbs — 16 big-endian u16 limbs of the
+    BN254 field element int(hex) % p. Returns None for malformed input so the
+    caller can fail closed."""
+    if not isinstance(value, str):
+        return None
+    clean = value[2:] if value.startswith("0x") else value
+    if clean == "":
+        fe = 0
+    else:
+        try:
+            fe = int(clean, 16) % BN254_SCALAR_FIELD
+        except ValueError:
+            return None
+    return [(fe >> (16 * (15 - i))) & 0xFFFF for i in range(16)]
+
+
+def bound_instances(a: int, b: int, total: int, out_commit, in_commit, nonce) -> list[str] | None:
+    """instances[0] layout: [felt(a), felt(b), ob0..15, ib0..15, nb0..15, felt(total)]."""
+    limbs: list[int] = []
+    for value in (out_commit, in_commit, nonce):
+        ls = commitment_to_limbs(value)
+        if ls is None:
+            return None
+        limbs += ls
+    return [felt_hex(v) for v in [a, b, *limbs, total]]
+
+
+def prove_job(a: int, b: int, expected_instances: list[str]) -> tuple[bytes, list]:
+    """Run witness+prove; returns (proof_json_bytes, instances[0]).
+
+    expected_instances drives the witness inputs: the 48 limb elements at
+    positions 2..50 of input_data."""
+    limb_inputs = [[float(int.from_bytes(bytes.fromhex(h), "little"))] for h in expected_instances[2:50]]
     with tempfile.TemporaryDirectory() as tmp:
         input_path = os.path.join(tmp, "input.json")
         witness_path = os.path.join(tmp, "witness.json")
         proof_path = os.path.join(tmp, "proof.json")
         with open(input_path, "w") as f:
-            json.dump({"input_data": [[float(a)], [float(b)]]}, f)
+            json.dump({"input_data": [[float(a)], [float(b)], *limb_inputs]}, f)
 
         async def run():
             await ezkl.gen_witness(input_path, MODEL, witness_path)
@@ -102,13 +135,20 @@ def handle_prove(body: dict) -> tuple[int, dict]:
         total = a + b
         if body.get("output") is not None and body.get("output") != str(total):
             return 400, {"error": "outputMismatch"}
+        nonce = body.get("nonce")
+        if not isinstance(nonce, str):
+            nonce = EMPTY_NONCE
+        expected_instances = bound_instances(
+            a, b, total, body.get("outputCommitment"), body.get("inputCommitment"), nonce
+        )
+        if expected_instances is None:
+            return 400, {"error": "invalidCommitments"}
         try:
-            proof_bytes, instances = prove_job(a, b)
+            proof_bytes, instances = prove_job(a, b, expected_instances)
         except Exception as e:  # noqa: BLE001
             return 500, {"error": f"prove failed: {e}"}
-        if instances != [felt_hex(a), felt_hex(b), felt_hex(total)]:
+        if instances != expected_instances:
             return 500, {"error": "instancesMismatch"}
-        nonce = body.get("nonce")
         meta = {
             "proof": base64.urlsafe_b64encode(proof_bytes).rstrip(b"=").decode(),
             "proofFormat": "ezkl-v1",
@@ -124,8 +164,8 @@ def handle_prove(body: dict) -> tuple[int, dict]:
                 str(b),
             ],
         }
-        if isinstance(nonce, str):
-            meta["nonce"] = nonce
+        if isinstance(body.get("nonce"), str):
+            meta["nonce"] = body["nonce"]
         if body.get("verificationKeyUri") is not None:
             meta["verificationKeyUri"] = body["verificationKeyUri"]
         return 200, meta
@@ -161,9 +201,8 @@ def handle_verify(body: dict) -> tuple[int, dict]:
     total, a, b = int(tail[0]), int(tail[1]), int(tail[2])
     if a + b != total or max(a, b) > MAX_INPUT or total > 2 * MAX_INPUT:
         return 200, {"ok": False, "reason": "instancesMismatch"}
-    instances = proof.get("instances")
-    expected_instances = [felt_hex(a), felt_hex(b), felt_hex(total)]
-    if instances != [expected_instances]:
+    expected_instances = bound_instances(a, b, total, binding[0], binding[1], binding[2])
+    if expected_instances is None or proof.get("instances") != [expected_instances]:
         return 200, {"ok": False, "reason": "instancesMismatch"}
     with tempfile.TemporaryDirectory() as tmp:
         proof_path = os.path.join(tmp, "proof.json")

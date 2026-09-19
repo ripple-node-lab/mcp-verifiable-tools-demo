@@ -1,14 +1,9 @@
 // risc0-v1: proof = a RISC Zero composite receipt (bincode) verified in-process
 // by a wasm32 build of risc0-zkvm (sidecars/risc0/wasm-verify). The guest
-// computes sum = a + b on u32 and commits a 12-byte LE journal a||b||sum.
-// Binding follows the snarkjs-v2 / noir-v1 pattern: inputCommitment /
-// outputCommitment / nonce are checked by verifyResult and echoed in
-// publicInputs[0..3]; the circuit's public inputs are [sum, a, b].
-//
-// KNOWN LIMITATION: the nonce/commitments are self-attested in meta — the
-// receipt's journal does not cover them, so a captured proof verifies under a
-// rewritten meta (see docs/SECURITY.md). Freshness exists only at the meta
-// layer; commit them in the journal to fix.
+// commits a 108-byte LE journal: a || b || sum || bound(out) || bound(in) ||
+// bound(nonce), where bound(x) = sha256(utf8(lowercased "0x…" string)). The
+// bound digests make the receipt non-replayable under rewritten meta.
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { EMPTY_NONCE, VerifiableToolsMeta, parseAddArguments } from "@demo/protocol";
@@ -68,12 +63,20 @@ export async function verifyRisc0(meta: VerifiableToolsMeta, context: VerifyCont
     journal = await verifyReceiptWasm(Uint8Array.from(Buffer.from(meta.proof, "base64url")), imageId);
   } catch { return false; }
   signal?.throwIfAborted();
-  if (!journal || journal.length !== 12) return false;
+  if (!journal || journal.length !== 108) return false;
   const view = new DataView(journal.buffer, journal.byteOffset, journal.byteLength);
   const a = view.getUint32(0, true), b = view.getUint32(4, true), sum = view.getUint32(8, true);
   const args = parseAddArguments(context.arguments);
   if (!args || args.a !== a || args.b !== b) return false;
   if (context.content[0]?.text !== String(sum)) return false;
+  // Journal[12..108] commits sha256(lowercased hex) of outputCommitment,
+  // inputCommitment, nonce — replaying the receipt under rewritten meta fails.
+  const bound = (hex: string) => createHash("sha256").update(hex.toLowerCase()).digest();
+  for (const [i, hexStr] of [meta.outputCommitment, meta.inputCommitment, meta.nonce ?? EMPTY_NONCE].entries()) {
+    if (typeof hexStr !== "string") return false;
+    const digest = bound(hexStr);
+    for (let j = 0; j < 32; j++) if (journal[12 + i * 32 + j] !== digest[j]) return false;
+  }
   const expected = [meta.outputCommitment, meta.inputCommitment, meta.nonce ?? EMPTY_NONCE, String(sum), String(a), String(b)];
   const inputs = meta.publicInputs;
   return Array.isArray(inputs) && inputs.length === expected.length &&

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { EXTENSION_ID, META_CLIENT_CAPABILITIES, clientCapabilities, expectedCircuitHash } from "@demo/protocol";
+import { EXTENSION_ID, META_CLIENT_CAPABILITIES, clientCapabilities, commitmentToField, expectedCircuitHash } from "@demo/protocol";
 import { VerifiableClient } from "@demo/client";
 import { rpc, waitForControllersGone, waitForTaskWorking, withServer, withServerOptions, expectComplete, expectTask } from "./helpers.js";
 
@@ -15,7 +15,30 @@ test("snarkjs-v2 proves and verifies add results", async () => {
     const meta = result._meta?.[EXTENSION_ID];
     assert.equal(meta?.proofFormat, "snarkjs-v2");
     assert.equal(meta?.circuitHash, expectedCircuitHash("add", "snarkjs-v2"));
-    assert.deepEqual(meta?.publicInputs?.slice(3), ["42", "20", "22"]);
+    // Circuit public signals tail: [sum, a, b, out_f, in_f, nonce_f] — the
+    // three field elements bind the commitments and nonce into the proof.
+    assert.deepEqual(meta?.publicInputs?.slice(3), [
+      "42", "20", "22",
+      commitmentToField(meta!.outputCommitment!).toString(),
+      commitmentToField(meta!.inputCommitment!).toString(),
+      commitmentToField(call.nonce!).toString(),
+    ]);
+  });
+});
+
+test("snarkjs-v2 rejects a proof replayed under a different nonce", async () => {
+  await withServer(async (server) => {
+    const client = new VerifiableClient(server.mcpUrl);
+    const discovery = await client.discover();
+    client.setCapabilities({ proofFormats: discovery.proofFormats });
+    // Two identical calls share a/b/sum but differ in nonce+commitments —
+    // swapping the proof must fail because the nonce is a public input.
+    const first = expectComplete((await client.callTool("add", { a: 20, b: 22 }, { proofFormat: "snarkjs-v2" })).result);
+    const secondCall = await client.callTool("add", { a: 20, b: 22 }, { proofFormat: "snarkjs-v2" });
+    const second = expectComplete(secondCall.result);
+    assert.notEqual(first._meta?.[EXTENSION_ID]?.nonce, second._meta?.[EXTENSION_ID]?.nonce);
+    second._meta![EXTENSION_ID]!.proof = first._meta![EXTENSION_ID]!.proof;
+    assert.deepEqual(await client.verify(second, { a: 20, b: 22 }, "add", { nonce: secondCall.nonce }), { ok: false, reason: "proofInvalid" });
   });
 });
 

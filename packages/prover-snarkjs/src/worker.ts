@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { parentPort } from "node:worker_threads";
 import { ProveInput } from "@demo/prover";
-import { VerifiableToolsMeta, jcs, parseAddArguments, publicInputs } from "@demo/protocol";
+import { VerifiableToolsMeta, commitmentToField, jcs, parseAddArguments, publicInputs } from "@demo/protocol";
 import { FORMAT, circuitHash } from "./constants.js";
 import { artifacts } from "./artifacts.js";
 
@@ -14,7 +14,17 @@ async function prove(input: ProveInput): Promise<VerifiableToolsMeta> {
   const args = parseAddArguments(input.arguments);
   if (!args) throw new Error("arguments out of circuit range");
   const groth16 = await groth16Promise;
-  const result = await groth16.fullProve(args, fileURLToPath(artifacts.wasm), fileURLToPath(artifacts.zkey), undefined, undefined, { singleThread: true });
+  // The commitments and nonce enter the circuit as public inputs (field
+  // elements), so the resulting proof is bound to them — replaying it with
+  // different meta fails verification.
+  const circuitInputs: Record<string, number | string> = {
+    a: args.a,
+    b: args.b,
+    outCommit: commitmentToField(input.outputCommitment).toString(),
+    inCommit: commitmentToField(input.inputCommitment).toString(),
+    nonce: commitmentToField(input.nonce ?? "0x").toString(),
+  };
+  const result = await groth16.fullProve(circuitInputs, fileURLToPath(artifacts.wasm), fileURLToPath(artifacts.zkey), undefined, undefined, { singleThread: true });
   return {
     proof: Buffer.from(jcs(result.proof)).toString("base64url"),
     proofFormat: FORMAT,
