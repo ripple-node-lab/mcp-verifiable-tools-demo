@@ -101,7 +101,7 @@ Evidence travels in CallToolResult._meta["${EXTENSION_ID}"]. Node ${process.vers
      inputCommitment  H(salt || JCS(arguments)) recomputed by the client from the arguments it sent; must equal the value the proof binds
      outputCommitment H(JCS(content)) recomputed from the returned content; must equal the value the proof binds
      nonce            client-chosen fresh value checked against result metadata; bound into the signed payload for
-                      demo-sig/commit/tee formats; NOT covered by the ZK circuits — meta-layer freshness only there
+                      demo-sig/commit/tee formats and bound as a circuit public input / journal digest for the ZK circuits
      proof            verified against the pinned key / verification key; REAL formats also prove the computation, DEMO formats only sign
      provenance       inputAttestations (oracle signature / TLSNotary) verified against pinned keys and bound into publicInputs`);
   }
