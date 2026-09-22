@@ -276,8 +276,8 @@ Field definitions:
 | `verificationKeyUri` | `string` (URI) | Optional | Location of the verification key needed to check the proof. |
 | `publicInputs` | `array` | Conditional | Public inputs required to verify the proof, in the order `[outputCommitment, inputCommitment, nonce, ...format-specific]`. Index 2 is fixed: when the client supplied no nonce, `publicInputs[2]` MUST be the empty hex string `"0x"` so the format-specific tail always starts at index 3. Omitted for pure TEE attestations. |
 | `teeAttestation` | `string` | Optional | A TEE attestation document, for cases where the computation ran inside a trusted execution environment. |
-| `inputCommitment` | `string` | Required | REQUIRED whenever `proof` or `teeAttestation` is present. Commitment to the inputs used, so the client can verify that the proof was generated against the same arguments it supplied. See §Result binding for the commitment construction. |
-| `outputCommitment` | `string` | Required | REQUIRED whenever `proof` or `teeAttestation` is present. `SHA-256` of the canonical encoding of `content`, so the client can verify that the proven output is the returned output. See §Result binding. |
+| `inputCommitment` | `string` | Required | REQUIRED whenever `proof`, `proofUri`, or `teeAttestation` is present. Commitment to the inputs used, so the client can verify that the proof was generated against the same arguments it supplied. See §Result binding for the commitment construction. |
+| `outputCommitment` | `string` | Required | REQUIRED whenever `proof`, `proofUri`, or `teeAttestation` is present. `SHA-256` of the canonical encoding of `content`, so the client can verify that the proven output is the returned output. See §Result binding. |
 | `nonce` | `string` | Conditional | Echo of the client-supplied `nonce` from the request metadata. REQUIRED when the client supplied one. |
 | `inputAttestations` | `object[]` | Optional | Provenance evidence for external inputs consumed by the tool (e.g. a zkTLS transcript proof, an oracle signature). See §Input provenance. |
 | `resultId` | `string` | Optional | Opaque identifier the client can later pass to `verifiable-tools/prove` to obtain a proof for this result. See §Deferred proofs. |
@@ -285,7 +285,7 @@ Field definitions:
 Reserved result field: `encryptedContent` (companion blind-execution proposal).
 
 The server MUST only emit `proofFormat` values it advertised in its capability object. The client MUST only attempt to verify formats it advertised.
-A result that carries `proof` or `teeAttestation` but lacks either commitment MUST be treated by the verifier as unverified (equivalent to no proof).
+A result that carries `proof`, `proofUri`, or `teeAttestation` but lacks either commitment MUST be treated by the verifier as `absent` (§Proof requirement and verification outcome).
 
 ### Result binding
 
@@ -313,6 +313,7 @@ The client needs a trustworthy mapping *tool name → circuitHash* before it can
       "circuitHash": "0x12ab...",
       "proofFormats": ["snarkjs-v2", "noir-v1"],
       "proofPolicy": "onDemand",
+      "externalInputs": true,
       "verificationKeyUri": "https://example.com/vk/0x12ab...",
       "formats": {
         "snarkjs-v2": {
@@ -335,6 +336,7 @@ The client needs a trustworthy mapping *tool name → circuitHash* before it can
 | `proofFormats` | `string[]` | Formats available for this tool (subset of the capability-level list). |
 | `proofPolicy` | `"always" \| "onDemand" \| "sampled"` | A server *promise* about eager proving: every call carries evidence (`always`); evidence is produced only on request via `resultId` (`onDemand`); the server proves a fraction of calls eagerly and every other call is provable on demand (`sampled`). See §Deferred proofs and §Proof requirement and verification outcome for how a broken promise is treated. |
 | `verificationKeyUri` | `string` | Where to fetch the verification key for `circuitHash`. |
+| `externalInputs` | `boolean` | Optional. Whether the tool consumes inputs other than the request arguments (upstream feeds, databases, other services) that would need `inputAttestations` to be provenance-checked. Omitted means unknown and is treated as `true` by clients that declared `requireInputProvenance`; only an explicit `false` waives the attestation requirement (§Proof requirement and verification outcome). Because the descriptor is not a root of trust, clients SHOULD pin this value together with `circuitHash`. |
 | `formats` | `object` | Optional per-format overrides: `{ "<proofFormat>": { "circuitHash", "verificationKeyUri" } }`. When present for the negotiated format, its values take precedence over the top-level `circuitHash` / `verificationKeyUri`, which then act as defaults. Servers offering formats with distinct artifacts (e.g. `snarkjs-v2` and `noir-v1` for one tool) MUST use `formats`. |
 
 Reserved descriptor field: `blind` (companion blind-execution proposal).
