@@ -115,7 +115,7 @@ In one sentence: **the pinned program `f` was executed on committed `X` and prod
 
 - **Execution integrity** (also *execution provenance*): the property that a returned `content` is exactly the output of the program identified by `circuitHash` applied to the arguments committed by `inputCommitment`, for this request (`nonce`). It is the only property this extension proves.
 - **verified** / **verify**: throughout this document, *verified* means the evidence passed every check of §Verification flow. It never means the output is semantically correct, that the inputs are true, or that the program is the right one.
-- **Evidence**: a `proof`, a `teeAttestation`, or both, together with the binding fields (`circuitHash`, `inputCommitment`, `outputCommitment`, `nonce`, `publicInputs`).
+- **Evidence**: a `proof`, a `proofUri`, a `teeAttestation`, or any combination of them, together with the binding fields (`circuitHash`, `inputCommitment`, `outputCommitment`, `nonce`, `publicInputs`).
 - **absent** / **invalid** / **verified**: the three verification outcomes defined in §Proof requirement and verification outcome.
 
 ### Extension identifier
@@ -405,7 +405,7 @@ The level is taken from `params._meta["io.github.ripple-node-lab/verifiable-tool
 
 - A result on a `proofPolicy: "always"` tool that arrives `absent` is a **descriptor violation**. The client MUST surface it exactly as it would a `circuitHash` change for a known tool, regardless of its own requirement level (except `none`), and SHOULD treat the server as untrusted for the tool until the discrepancy is explained out of band.
 - Under `onDemand` and `sampled`, `absent` results MUST carry `resultId` so that the client can demand a proof (§Deferred proofs). An `absent` result without `resultId` on such a tool is likewise a descriptor violation. The deferred path exists for `preferred` callers only; a `required` call on such a tool is proven eagerly (or rejected with `proofUnavailable`), exactly as on an `always` tool.
-- Under `sampled`, the **server** chooses which calls it proves eagerly; the **client** chooses which additional calls to audit through `verifiable-tools/prove`, and MUST make that choice unpredictably to the server (e.g. uniformly at random) for the audit to have deterrent value. A `resultId` that the server cannot honour within `resultTtlMs` for a call it accepted (other than `resultExpired` after the TTL) is evidence of a broken promise, and the client SHOULD treat all results from that tool in the same period as `invalid`. The period is bounded by `resultTtlMs`: it covers every result from that tool whose `resultId` was issued within the preceding `resultTtlMs` (every result the server was still contractually able to prove), together with any later result until trust is re-established out of band.
+- Under `sampled`, the **server** chooses which calls it proves eagerly; the **client** chooses which additional calls to audit through `verifiable-tools/prove`, and MUST make that choice unpredictably to the server (e.g. uniformly at random) for the audit to have deterrent value. Under either `onDemand` or `sampled`, a `resultId` that the server cannot honour within `resultTtlMs` for a call it accepted (other than `resultExpired` after the TTL) is evidence of a broken promise, and the client SHOULD treat all results from that tool in the same period as `invalid`. The period is bounded by `resultTtlMs`: it covers every result from that tool whose `resultId` was issued within the preceding `resultTtlMs` (every result the server was still contractually able to prove), together with any later result until trust is re-established out of band.
 
 **Distinguishing `absent` from `invalid` matters.** `invalid` is an active signal of tampering or misconfiguration and is never acceptable to act on. `absent` is a statement about coverage: the client knows it has no evidence, and only its own declared requirement decides whether that is acceptable. Implementations MUST keep the two apart in their APIs and logs.
 
@@ -508,7 +508,7 @@ sequenceDiagram
     V-->>C: valid / invalid
 ```
 
-A client MUST NOT act on a tool result whose proof fails verification unless it has an explicit out-of-band trust relationship with the server.
+A client MUST NOT act on a tool result whose evidence fails verification (`invalid`, §Proof requirement and verification outcome). An out-of-band trust relationship with the server does not change this: it may justify calling the tool with `proofRequirement: "none"`, but evidence that was requested and then failed is a tampering or misconfiguration signal, not something to be waived.
 
 ### TEE attestation formats
 
