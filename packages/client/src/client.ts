@@ -175,7 +175,7 @@ export class VerifiableClient {
     const act = outcome === "verified" ? true : outcome === "invalid" ? false : requirement === "preferred" && !descriptorViolation;
     return { outcome, requirement, act, ...(verified.ok ? {} : { reason: verified.reason }), descriptorViolation };
   }
-  async callAndVerify(name: string, args: JsonValue, proofFormat?: string, proofRequirement?: ProofRequirement): Promise<CallToolResult> {
+  async callAndVerify(name: string, args: JsonValue, proofFormat?: string, proofRequirement?: Exclude<ProofRequirement, "none">): Promise<CallToolResult> {
     const value = await this.callTool(name, args, { proofFormat, proofRequirement });
     const result = isTask(value.result) ? await this.poll(value.result) : value.result;
     const outcome = await this.verifyWithRequirement(result, args, name, { nonce: value.nonce, proofRequirement });
