@@ -105,6 +105,10 @@ test("a valid proof over widened arguments is rejected by the approved-argument 
   const client = new VerifiableClient(server.mcpUrl);
   await client.discover();
   client.setCapabilities({ proofFormats: ["demo-commit-v1"], requireInputProvenance: true });
+  const inScope = await client.callTool("riskScore", approvedArgs, { proofFormat: "demo-commit-v1" });
+  const inScopeResult = expectComplete(inScope.result);
+  assert.deepEqual(await client.verify(inScopeResult, approvedArgs, "riskScore", { nonce: inScope.nonce }), { ok: true });
+  assert.equal(meta(inScopeResult).inputCommitment, approvedCommitment);
   const call = await client.callTool("riskScore", widenedArgs, { proofFormat: "demo-commit-v1" });
   const result = expectComplete(call.result);
   assert.deepEqual(await client.verify(result, widenedArgs, "riskScore", { nonce: call.nonce }), { ok: true });
