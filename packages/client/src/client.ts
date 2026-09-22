@@ -167,7 +167,7 @@ export class VerifiableClient {
       descriptor = this.descriptors.get(tool);
     }
     const resultId = result._meta?.[EXTENSION_ID]?.resultId;
-    const provable = resultId !== undefined && typeof this.discovered?.resultTtlMs === "number" && this.discovered.resultTtlMs > 0;
+    const provable = typeof resultId === "string" && resultId.length > 0 && typeof this.discovered?.resultTtlMs === "number" && this.discovered.resultTtlMs > 0;
     const descriptorViolation = outcome === "absent" && (
       descriptor?.proofPolicy === "always" ||
       ((descriptor?.proofPolicy === "onDemand" || descriptor?.proofPolicy === "sampled") && !provable)
@@ -179,7 +179,7 @@ export class VerifiableClient {
     const value = await this.callTool(name, args, { proofFormat, proofRequirement });
     const result = isTask(value.result) ? await this.poll(value.result) : value.result;
     const outcome = await this.verifyWithRequirement(result, args, name, { nonce: value.nonce, proofRequirement });
-    if (!outcome.act) throw new Error(`verification failed for ${name}: ${outcome.outcome}${outcome.reason ? ` (${outcome.reason})` : ""}`);
+    if (outcome.outcome !== "verified") throw new Error(`verification failed for ${name}: ${outcome.outcome}${outcome.reason ? ` (${outcome.reason})` : ""}`);
     return result;
   }
   async poll(task: TaskEnvelope): Promise<CallToolResult> { return pollTask(this.request.bind(this) as RpcRequest, task, this.requestMeta(true)); }

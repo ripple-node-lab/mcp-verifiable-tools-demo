@@ -78,6 +78,12 @@ test("preferred price quotes remain actionable with a deferred result", async ()
   assert.deepEqual(outcome, { outcome: "absent", requirement: "preferred", act: true, reason: "noProof", descriptorViolation: false });
 }));
 
+test("callAndVerify rejects preferred absent deferred results", async () => withServer(async (server) => {
+  const client = new VerifiableClient(server.mcpUrl);
+  await client.discover();
+  await assert.rejects(() => client.callAndVerify("priceQuote", { symbol: "AAPL" }, "demo-sig-v1", "preferred"));
+}));
+
 test("preferred absent evidence violates an always descriptor", async () => withServer(async (server) => {
   const client = new VerifiableClient(server.mcpUrl);
   await client.discover();
@@ -106,6 +112,14 @@ test("none skips verification and asks the server for no proof", async () => wit
   assert.equal(result._meta, undefined);
   const outcome = await client.verifyWithRequirement(result, { a: 1, b: 2 }, "add", { nonce: call.nonce, proofRequirement: "none" });
   assert.deepEqual(outcome, { outcome: "absent", requirement: "none", act: true, reason: "notEvaluated", descriptorViolation: false });
+}));
+
+test("none price quotes do not retain deferred results", async () => withServer(async (server) => {
+  const client = new VerifiableClient(server.mcpUrl);
+  await client.discover();
+  const call = await client.callTool("priceQuote", { symbol: "AAPL" }, { proofFormat: "demo-sig-v1", proofRequirement: "none" });
+  const result = expectComplete(call.result);
+  assert.equal(result._meta?.[EXTENSION_ID]?.resultId, undefined);
 }));
 
 test("preferred proven results are verified and actionable", async () => withServer(async (server) => {

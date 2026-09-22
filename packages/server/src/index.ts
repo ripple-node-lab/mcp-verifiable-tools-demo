@@ -200,7 +200,7 @@ export class DemoServer {
         }
       }
       const execution = executeTool(tool, params.arguments!, isZkFormat(format ?? ""), { price });
-      if (tool === "priceQuote" && capability && requirement !== "required") {
+      if (tool === "priceQuote" && capability && requirement === "preferred") {
         const content = [{ type: "text" as const, text: execution.output }];
         const resultId = this.results.put({ tool, arguments: execution.arguments, content, nonce });
         return makeResult(execution.output, { [META_SERVER_INFO]: { name: "verifiable-tools-demo", version: "1.0.0" }, [EXTENSION_ID]: { resultId } });
