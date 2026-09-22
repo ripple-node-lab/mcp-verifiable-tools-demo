@@ -23,7 +23,9 @@ What the demo shows:
 3. Asynchronous proof generation via the `io.modelcontextprotocol/tasks`
    extension (`resultType: "task"` → `tasks/get`)
 4. Blind execution via `verifiable-tools/call` (encrypted arguments +
-   `inputCommitment`)
+   `inputCommitment`) — since the 2026-09-22 spec split this belongs to the
+   companion proposal `docs/spec/verifiable-tools-blind.md`; the demo keeps
+   implementing it as that companion's reference implementation
 5. The negative tests listed in the spec's Testing Plan (invalid proof,
    `circuitHash` mismatch, undeclared `proofFormat`, malformed blind input,
    ignoring the extension when it is not negotiated)
@@ -353,6 +355,13 @@ support, on-chain verifier output, and whether a trusted setup is required.
   cost of Nitro attestation verification was resolved in Phase 3-a.
 - Whether to spin up vFHE (`fhe-tfhe-v1` with correctness guarantees) and an
   MPC / co-SNARK prover as phases, or keep them as open questions.
+- Companion identifier migration: the spec split gives blind execution its own
+  identifier (`io.github.ripple-node-lab/verifiable-tools-blind`), but the
+  demo still advertises `blindExecution` / `blindEncryptionSchemes` /
+  `blindPublicKeys`, dispatches `verifiable-tools/call`, and derives HPKE
+  `info` labels under the base identifier. Moving them (a `BLIND_EXTENSION_ID`
+  constant in `packages/protocol`, separate capability output, negotiation
+  tests) is a small follow-up.
 - Whether to put price / cost hints on the capability for Scenario A (tool
   marketplaces) (economic-incentive handling, #94 comment 3).
 - Whether to incubate inside the MCP org as an experimental extension

@@ -11,7 +11,7 @@
 
 ## Abstract
 
-This proposal introduces an optional MCP extension, `io.github.ripple-node-lab/verifiable-tools`, that lets servers attach cryptographic evidence to `tools/call` results. The evidence can be a zero-knowledge proof (ZKP), a TEE attestation, or another machine-verifiable artifact. Clients can validate the evidence locally to confirm that the returned data was produced by the expected computation on the expected inputs, without having to trust the server operator. This addresses a gap left by the strong authorization work in MCP `2026-07-28`: knowing *who* called a tool does not tell the caller whether the returned value was tampered with or computed incorrectly. The extension is purely optional, negotiated through the standard `extensions` capability map, and reuses the existing `io.modelcontextprotocol/tasks` extension for long-running proof generation.
+This proposal introduces an optional MCP extension, `io.github.ripple-node-lab/verifiable-tools`, that lets servers attach cryptographic evidence to `tools/call` results. The evidence can be a zero-knowledge proof (ZKP), a TEE attestation, or another machine-verifiable artifact. Clients can validate the evidence locally to confirm that the returned data was produced by the expected computation on the expected inputs, without having to trust the server operator. This addresses a gap left by the strong authorization work in MCP `2026-07-28`: knowing *who* called a tool does not tell the caller whether the returned value was tampered with or computed incorrectly. The extension is purely optional, negotiated through the standard `extensions` capability map, and reuses the existing `io.modelcontextprotocol/tasks` extension for long-running proof generation. Confidentiality of the arguments towards the server operator (blind / committed-input calls) is **out of scope** for this extension; it is specified by a companion proposal, [`verifiable-tools-blind.md`](./verifiable-tools-blind.md), that builds on the binding rules defined here without changing them.
 
 ### Overview
 
@@ -27,7 +27,7 @@ flowchart LR
     end
     R[(VK / Attestation Registry)]
 
-    C -->|tools/call or verifiable-tools/call| S
+    C -->|tools/call| S
     S -->|execute + prove| P
     P -->|result + proof / attestation| S
     S -->|CallToolResult + _meta| C
@@ -65,7 +65,7 @@ A trading agent calls `riskScore(symbol)` on a vendor's server and sizes a posit
 
 #### Scenario C: Regulated decisions on private data
 
-A bank's agent calls `privateCreditCheck` on a scoring service. Two obligations conflict: the applicant's data must not be revealed to the service operator beyond what the computation needs, and the regulator must later be able to confirm that the *approved* scoring model, not a discriminatory variant, was applied. Blind execution (§Blind / committed-input tool calls) handles the first; a proof bound to the model's `circuitHash` handles the second. The proof, not a log entry, becomes the audit artifact.
+A bank's agent calls `creditCheck` on a scoring service. The regulator must later be able to confirm that the *approved* scoring model, not a discriminatory variant, was applied to the applicant's record. A proof bound to the model's `circuitHash` and to `inputCommitment` over the record answers that question; the proof, not a log entry, becomes the audit artifact. (Keeping the applicant's data confidential from the service operator is a separate concern, addressed by the companion blind-execution proposal on top of the same binding.)
 
 #### Scenario D: Certified model inference in healthcare and safety systems
 
@@ -86,7 +86,7 @@ An agent monitoring a system decides to trigger an expensive or destructive acti
 | `Y = f(X)` for the pinned `f` (`circuitHash`) and committed `X` (`inputCommitment`) | ZK proof or TEE attestation | The core guarantee. |
 | The returned `content` is the `Y` that was proven | `outputCommitment` in `publicInputs` | See §Result binding. |
 | The proof answers *this* request and is not a replay | `nonce` in `publicInputs` | See §Result binding. |
-| The plaintext of `X` is hidden from the server | Blind execution | Only with `verifiable-tools/call`; the server's proving environment still sees `X` unless FHE is used. |
+| The plaintext of `X` is hidden from the server operator | **Not guaranteed** by this extension | Out of scope. Arguments travel in the clear in `tools/call`, and `inputCommitment` is unsalted (not hiding). The companion proposal [`verifiable-tools-blind.md`](./verifiable-tools-blind.md) adds this on top of the same commitment construction. |
 | `X` itself is *true* (a real price, a real record) | **Not guaranteed** by this extension alone | Requires input provenance (§Input provenance): zkTLS / oracle attestations / signed data. |
 | `f` is the *right* function (a good model, a correct algorithm) | **Not guaranteed** | Out of scope; `circuitHash` identifies `f`, it does not judge it. |
 | The server will answer at all (liveness) | **Not guaranteed** | `requireProof` may cause refusals. |
@@ -101,7 +101,7 @@ The extension identifier is:
 io.github.ripple-node-lab/verifiable-tools
 ```
 
-Third-party implementations MUST use a vendor-prefixed identifier they control, e.g. `com.example/verifiable-tools`, following the [extension identifier rules](https://modelcontextprotocol.io/extensions/overview). The identifier above is vendor-prefixed because `io.modelcontextprotocol/` is reserved for official MCP extensions. If this extension is accepted into MCP, the identifier — and the HPKE info labels derived from it — would move to `io.modelcontextprotocol/verifiable-tools`. Implementations are expected to treat the identifier as a single constant so that this migration is trivial.
+Third-party implementations MUST use a vendor-prefixed identifier they control, e.g. `com.example/verifiable-tools`, following the [extension identifier rules](https://modelcontextprotocol.io/extensions/overview). The identifier above is vendor-prefixed because `io.modelcontextprotocol/` is reserved for official MCP extensions. If this extension is accepted into MCP, the identifier would move to `io.modelcontextprotocol/verifiable-tools`. Implementations are expected to treat the identifier as a single constant so that this migration is trivial.
 
 ### Target protocol version
 
@@ -121,12 +121,11 @@ Both client and server advertise the extension under the `extensions` capability
 | Field | Type | Description |
 |---|---|---|
 | `proofFormats` | `string[]` | Proof / attestation formats the party supports, identified as `"{engine}-{majorVersion}"` (e.g. `"ezkl-v1"`, `"risc0-v1"`, `"snarkjs-v2"`, `"tee-sgx-dcap-v1"`). |
-| `blindExecution` | `boolean` | Whether the party supports blind / committed-input tool calls. |
 | `requireProof` | `boolean` | For clients: if true, the server SHOULD return a proof when it can; servers MAY omit results for calls they cannot prove. |
 | `requireInputProvenance` | `boolean` | For clients: if true, results that consume external data MUST carry `inputAttestations` (see §Input provenance). |
-| `blindEncryptionSchemes` | `string[]` | For servers: `encryptionScheme` values accepted by `verifiable-tools/call`, e.g. `["hpke-v1"]`. REQUIRED when `blindExecution: true` on a server. |
-| `blindPublicKeys` | `object` | For servers: map from `encryptionScheme` value to that scheme's base64url public key, for every listed scheme that encrypts to a server-held recipient key (`hpke-v1`: raw X25519). REQUIRED when `blindExecution: true` and at least one such scheme is listed. Client-keyed schemes (the reserved `fhe-tfhe-v1`, where the client holds the decryption key) MUST NOT have an entry. |
 | `resultTtlMs` | `number` | For servers: how long a `resultId` stays provable via `verifiable-tools/prove`. REQUIRED when the server may emit `resultId`; clients MUST treat a `resultId` from a server that did not advertise `resultTtlMs` as unprovable. |
+
+Reserved capability members: `blindExecution`, `blindEncryptionSchemes`, `blindPublicKeys`. They are defined by the companion blind-execution proposal and MUST NOT be given a different meaning under this identifier.
 
 Example `server/discover` response:
 
@@ -142,9 +141,6 @@ Example `server/discover` response:
       "extensions": {
         "io.github.ripple-node-lab/verifiable-tools": {
           "proofFormats": ["ezkl-v1", "tee-sgx-dcap-v1"],
-          "blindExecution": true,
-          "blindEncryptionSchemes": ["hpke-v1"],
-          "blindPublicKeys": { "hpke-v1": "<base64url X25519 public key>" },
           "resultTtlMs": 86400000
         },
         "io.modelcontextprotocol/tasks": {}
@@ -197,7 +193,8 @@ A client requesting verifiable output includes the extension under `extensions` 
 |---|---|---|
 | `requestedProofFormat` | `string` | Preferred format among the negotiated intersection. |
 | `nonce` | `string` | Lower-case hex with `0x` prefix encoding 16–64 bytes (`^0x[0-9a-f]{32,128}$`). The server MUST bind it into the proof and echo it back. See §Result binding. |
-| `replyPublicKey` | `string` | For blind calls: base64url raw X25519 public key to which the server encrypts `content` under `hpke-v1` when the tool's output must also stay confidential. See §Encrypted replies. |
+
+Reserved request option: `replyPublicKey` (companion blind-execution proposal).
 
 On HTTP transports the request MUST also include:
 
@@ -258,7 +255,8 @@ Field definitions:
 | `nonce` | `string` | Conditional | Echo of the client-supplied `nonce` from the request metadata. REQUIRED when the client supplied one. |
 | `inputAttestations` | `object[]` | Optional | Provenance evidence for external inputs consumed by the tool (e.g. a zkTLS transcript proof, an oracle signature). See §Input provenance. |
 | `resultId` | `string` | Optional | Opaque identifier the client can later pass to `verifiable-tools/prove` to obtain a proof for this result. See §Deferred proofs. |
-| `encryptedContent` | `boolean` | Optional | Whether `content` was encrypted under §Encrypted replies. |
+
+Reserved result field: `encryptedContent` (companion blind-execution proposal).
 
 The server MUST only emit `proofFormat` values it advertised in its capability object. The client MUST only attempt to verify formats it advertised.
 A result that carries `proof` or `teeAttestation` but lacks either commitment MUST be treated by the verifier as unverified (equivalent to no proof).
@@ -267,7 +265,7 @@ A result that carries `proof` or `teeAttestation` but lacks either commitment MU
 
 A proof is only useful if the client can tie it to the exact request it made and the exact result it received. Three bindings are defined.
 
-**Input binding.** `inputCommitment = "0x" || hex(SHA-256(salt || JCS(arguments)))` where `JCS` is the JSON Canonicalization Scheme ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)). `salt` is either empty or exactly 32 bytes from a cryptographically secure random source. For plain `tools/call` the salt MUST be empty (no request field carries it, and the arguments are visible to the server anyway), so `inputCommitment = "0x" || hex(SHA-256(JCS(arguments)))`. For `verifiable-tools/call` the salt MUST be 32 random bytes and MUST be carried inside `encryptedArguments`, so that the commitment is *hiding* and a network observer cannot brute-force low-entropy arguments from the commitment. Servers MUST reject a blind call whose decrypted salt is not 32 bytes with `-32602`.
+**Input binding.** `inputCommitment = "0x" || hex(SHA-256(salt || JCS(arguments)))` where `JCS` is the JSON Canonicalization Scheme ([RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)). `salt` is either empty or exactly 32 bytes from a cryptographically secure random source; no other length is valid. For `tools/call` the salt MUST be empty (no request field carries it, and the arguments are visible to the server anyway), so `inputCommitment = "0x" || hex(SHA-256(JCS(arguments)))`; such a commitment is *binding* but not *hiding*. The non-empty branch is an extension point: a companion extension MAY define a method in which the client carries a 32-byte salt to the prover inside an encrypted request envelope, making the commitment hiding so that a network observer cannot brute-force low-entropy arguments from it. Such an extension MUST keep this construction and the `publicInputs` layout unchanged, so that a verifier written against this document verifies its results by supplying the salt. The companion proposal [`verifiable-tools-blind.md`](./verifiable-tools-blind.md) is the first such extension.
 
 **Output binding.** `outputCommitment = "0x" || hex(SHA-256(JCS(content)))` over the `content` array of the `CallToolResult`. When `publicInputs` is present, `publicInputs[0]` MUST always be `outputCommitment`; `publicInputs[1]` MUST be `inputCommitment`; `publicInputs[2]` MUST be the request `nonce`, or the empty hex string `"0x"` when the client supplied no nonce, so the format-specific tail always starts at index 3. Formats whose circuit exposes the raw output as a public signal include it additionally in the format-specific tail.
 
@@ -299,8 +297,7 @@ The client needs a trustworthy mapping *tool name → circuitHash* before it can
           "circuitHash": "0x34cd...",
           "verificationKeyUri": "https://example.com/vk/noir/0x34cd..."
         }
-      },
-      "blind": false
+      }
     }
   }
 }
@@ -313,7 +310,8 @@ The client needs a trustworthy mapping *tool name → circuitHash* before it can
 | `proofPolicy` | `"always" \| "onDemand" \| "sampled"` | Whether every call carries a proof, whether proofs are produced only on request (§Deferred proofs), or whether the server proves a fraction of calls. |
 | `verificationKeyUri` | `string` | Where to fetch the verification key for `circuitHash`. |
 | `formats` | `object` | Optional per-format overrides: `{ "<proofFormat>": { "circuitHash", "verificationKeyUri" } }`. When present for the negotiated format, its values take precedence over the top-level `circuitHash` / `verificationKeyUri`, which then act as defaults. Servers offering formats with distinct artifacts (e.g. `snarkjs-v2` and `noir-v1` for one tool) MUST use `formats`. |
-| `blind` | `boolean` | Whether the tool accepts `verifiable-tools/call`. |
+
+Reserved descriptor field: `blind` (companion blind-execution proposal).
 
 The descriptor is a *hint*, not a root of trust: a malicious server controls `tools/list`. Clients MUST pin `circuitHash` and verification keys on first use (TOFU) or, preferably, obtain them from an out-of-band registry (a signed manifest, a package registry, a transparency log). A change in `circuitHash` for a known tool MUST be surfaced to the user or policy layer rather than silently accepted.
 
@@ -403,119 +401,11 @@ verifiable-tools/prove
 | `proofFormat` | `string` | No | Preferred proof format. |
 | `nonce` | `string` | No | Fresh nonce to bind into the deferred proof. |
 
-`verifiable-tools/prove` is an ordinary JSON-RPC request on the same MCP session and transport as `tools/call`. It is available only after the extension has been negotiated by both parties; servers that have not advertised `resultTtlMs` MUST answer `-32601`. `resultId` MUST be unguessable (at least 128 bits from a cryptographically secure random source) and MUST be bound to the principal (authorization identity) and, where the transport has one, the session that made the original call; the server MUST answer `-32602` with `data.reason: "resultNotFound"` for any other caller, without distinguishing unknown from unauthorized identifiers. For results of blind calls whose `content` was returned encrypted to `replyPublicKey`, the deferred response MUST re-encrypt the same `originalContent` (see §Encrypted replies) under §Encrypted replies using the nonce of the `verifiable-tools/prove` request (or the original nonce if none was supplied); the ciphertext therefore differs while `outputCommitment`, computed over the plaintext, is unchanged. Request options (`proofFormat`, `nonce`) live in `params` directly, not under `_meta`.
+`verifiable-tools/prove` is an ordinary JSON-RPC request on the same MCP session and transport as `tools/call`. It is available only after the extension has been negotiated by both parties; servers that have not advertised `resultTtlMs` MUST answer `-32601`. `resultId` MUST be unguessable (at least 128 bits from a cryptographically secure random source) and MUST be bound to the principal (authorization identity) and, where the transport has one, the session that made the original call; the server MUST answer `-32602` with `data.reason: "resultNotFound"` for any other caller, without distinguishing unknown from unauthorized identifiers. Request options (`proofFormat`, `nonce`) live in `params` directly, not under `_meta`.
 
-The response is either a `CallToolResult` whose plaintext `content` (`originalContent` for encrypted replies) is byte-identical to the original and whose `_meta` now contains the proof, or a task (`resultType: "task"`) that resolves to one. The server MUST retain enough state, including any private witness required by the selected proof format (the plaintext arguments for ZK formats; the sealed execution record for TEE formats), together with the output and nonce, to prove the original computation for at least the `resultTtlMs` it advertises (REQUIRED when emitting `resultId`); after `resultTtlMs` has elapsed the server MUST reject the `resultId` with `-32602` and `data.reason: "resultExpired"` and MUST delete the retained witness. `resultExpired` is returned only to the principal (and session) the `resultId` is bound to; every other caller receives `resultNotFound` as above, so an outsider cannot learn whether an identifier ever existed.
+The response is either a `CallToolResult` whose `content` is byte-identical to the original and whose `_meta` now contains the proof, or a task (`resultType: "task"`) that resolves to one. The server MUST retain enough state, including any private witness required by the selected proof format (the plaintext arguments for ZK formats; the sealed execution record for TEE formats), together with the output and nonce, to prove the original computation for at least the `resultTtlMs` it advertises (REQUIRED when emitting `resultId`); after `resultTtlMs` has elapsed the server MUST reject the `resultId` with `-32602` and `data.reason: "resultExpired"` and MUST delete the retained witness. `resultExpired` is returned only to the principal (and session) the `resultId` is bound to; every other caller receives `resultNotFound` as above, so an outsider cannot learn whether an identifier ever existed.
 
-Which mode is appropriate is a per-tool decision expressed by `proofPolicy`. `always` suits low-volume, high-value calls (Scenario C); `onDemand` and `sampled` suit high-volume calls where the *possibility* of being audited is the deterrent (Scenario B). A server that is caught returning an unprovable result under `sampled` should be treated by the client as untrusted for all past results in the same period.
-
-### Blind / committed-input tool calls
-
-Clients can request a tool call without revealing plaintext arguments to the server. The extension defines a new method:
-
-```text
-verifiable-tools/call
-```
-
-Parameters:
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `tool` | `string` | Yes | The name of the tool to invoke. |
-| `inputCommitment` | `string` | Yes | Cryptographic commitment (hash) of the plaintext inputs. |
-| `encryptionScheme` | `string` | Yes | Identifier for the encryption/key-agreement scheme. See the table below. |
-| `encryptedArguments` | `string` | Yes | base64url string; the plaintext is the JCS encoding of `{ "salt": "0x...", "arguments": { ... } }`. |
-| `proofFormat` | `string` | No | Preferred proof format. |
-
-Defined `encryptionScheme` values:
-
-| Value | Meaning | Who sees plaintext |
-|---|---|---|
-| `hpke-v1` | [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180) HPKE, base mode, `DHKEM(X25519, HKDF-SHA256)` / `HKDF-SHA256` / `AES-128-GCM`. `encryptedArguments` = `base64url(enc \|\| ciphertext)` (unpadded, RFC 4648 §5); `enc` is the 32-byte X25519 encapsulated key, so the receiver splits the first 32 decoded bytes. AAD = `JCS({tool, inputCommitment, encryptionScheme})`. `info` = UTF-8 `"io.github.ripple-node-lab/verifiable-tools/hpke-v1/args"`. | The proving environment (TEE or the machine running the prover). The MCP server process outside it MUST NOT. |
-| `fhe-tfhe-v1` | Arguments encrypted under a client-held TFHE key; the tool is evaluated homomorphically and `content` is returned encrypted. Reserved: requires verifiable FHE to also obtain a correctness proof, which is not yet practical (§Open Questions). No server key; `blindPublicKeys` has no entry for this scheme. | Nobody but the client. |
-
-The server's public key for `hpke-v1` is advertised in its capability object as `blindPublicKeys["hpke-v1"]` (base64url raw X25519 key) together with `blindEncryptionSchemes`. Because `server/discover` is the delivery channel, the key is only as trustworthy as that channel: on a TEE-backed server the key MUST be bound into the attestation's user-data field so the client can check that the key it encrypts to lives inside the attested enclave; otherwise it MUST be pinned like a verification key.
-
-HTTP headers:
-
-```http
-MCP-Protocol-Version: 2026-07-28
-Mcp-Method: verifiable-tools/call
-```
-
-`Mcp-Name` is only required by SEP-2243 for `tools/call`, `resources/read`, and `prompts/get`; it is not used for this custom method.
-
-The server decrypts and evaluates the arguments inside a TEE or ZK circuit, computes the tool result, and returns the result with verifiable metadata. The plaintext arguments MUST NOT be logged or retained outside the execution environment. The server MUST recompute `inputCommitment` from the decrypted `salt` and `arguments` and reject the call with `-32602` on mismatch.
-
-Blind execution hides *inputs*; it does not, by itself, hide anything about the *output*. A tool whose output is a function of a few private bits (e.g. `approved`/`declined`) leaks those bits to the operator. Tools with this shape SHOULD either return the output encrypted to the client (see §Encrypted replies) or run inside a TEE whose operator cannot read outputs.
-
-#### Encrypted replies
-
-Throughout this document `originalContent` denotes the plaintext `content` array as produced by the tool, before encryption; it is never transmitted as a field of its own.
-
-When `replyPublicKey` is present the server MUST return `content` as a single `{ "type": "text", "text": "<base64url(enc || ciphertext)>" }` element, and the result `_meta["io.github.ripple-node-lab/verifiable-tools"].encryptedContent` MUST be `true`. Encryption is `hpke-v1` base mode with the same suite as blind arguments, plaintext = `JCS(originalContent)`, AAD = `JCS({tool, inputCommitment, nonce})` (nonce omitted from the object when absent), and `info` = UTF-8 `"io.github.ripple-node-lab/verifiable-tools/hpke-v1/reply"`. `outputCommitment` MUST be computed over the *plaintext* `originalContent`, so the client decrypts first and then runs the normal verification steps. `replyPublicKey` is ignored for non-blind `tools/call`.
-
-Example request:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3,
-  "method": "verifiable-tools/call",
-  "params": {
-    "tool": "privateCreditCheck",
-    "inputCommitment": "0xdeadbeef...",
-    "encryptionScheme": "hpke-v1",
-    "encryptedArguments": "<base64url(enc || ciphertext)>",
-    "proofFormat": "tee-sgx-dcap-v1",
-    "_meta": {
-      "io.modelcontextprotocol/protocolVersion": "2026-07-28",
-      "io.modelcontextprotocol/clientCapabilities": {
-        "extensions": {
-          "io.github.ripple-node-lab/verifiable-tools": {
-            "proofFormats": ["tee-sgx-dcap-v1"],
-            "blindExecution": true
-          }
-        }
-      },
-      "io.github.ripple-node-lab/verifiable-tools": {
-        "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"
-      }
-    }
-  }
-}
-```
-
-Example response:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3,
-  "result": {
-    "resultType": "complete",
-    "content": [
-      { "type": "text", "text": "approved" }
-    ],
-    "isError": false,
-    "_meta": {
-      "io.modelcontextprotocol/serverInfo": {
-        "name": "private-credit-server",
-        "version": "1.0.0"
-      },
-      "io.github.ripple-node-lab/verifiable-tools": {
-        "proof": "0x8f3a...",
-        "proofFormat": "tee-sgx-dcap-v1",
-        "inputCommitment": "0xdeadbeef...",
-        "outputCommitment": "0x...",
-        "nonce": "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e",
-        "publicInputs": ["0x<outputCommitment>", "0x<inputCommitment>", "0x5f1c3a9e7b2d4c6f8a1e0d3b5c7f9a2e"],
-        "teeAttestation": "0x9c2f..."
-      }
-    }
-  }
-}
-```
+Which mode is appropriate is a per-tool decision expressed by `proofPolicy`. `always` suits low-volume, high-value calls (Scenarios C, D); `onDemand` and `sampled` suit high-volume calls where the *possibility* of being audited is the deterrent (Scenario B). A server that is caught returning an unprovable result under `sampled` should be treated by the client as untrusted for all past results in the same period.
 
 ### Verification flow
 
@@ -550,20 +440,6 @@ sequenceDiagram
     V-->>C: valid / invalid
 ```
 
-#### Blind / committed-input tool calls
-
-```mermaid
-sequenceDiagram
-    participant C as MCP Client
-    participant S as MCP Server
-    participant P as Proving Environment (TEE / ZK circuit)
-
-    C->>S: verifiable-tools/call(tool, inputCommitment,<br/>encryptionScheme, encryptedArguments, proofFormat)
-    S->>P: decrypt and compute inside TEE / ZK circuit
-    P-->>S: result + proof / teeAttestation
-    S-->>C: CallToolResult + _meta["io.github.ripple-node-lab/verifiable-tools"]
-```
-
 A client MUST NOT act on a tool result whose proof fails verification unless it has an explicit out-of-band trust relationship with the server.
 
 ### TEE attestation formats
@@ -572,7 +448,7 @@ For `proofFormat` values of the form `tee-{platform}-v{N}` the `proof` is a sign
 
 1. The attestation document's certificate chain terminates at the platform vendor's root (AWS Nitro: COSE_Sign1 with the Nitro root; Intel SGX: DCAP quote with Intel PCS collateral; AMD SEV-SNP: VCEK chain).
 2. The measurement in the document (Nitro PCRs, SGX `MRENCLAVE`, SNP launch digest) equals the measurement the client has pinned for `circuitHash`. `circuitHash` for TEE formats SHOULD be defined as a hash over the measurement plus the reproducible-build recipe that produces it.
-3. The document's user-data / report-data field contains the signing public key used for `proof` (and `blindPublicKeys["hpke-v1"]` if blind execution is offered), so the key is provably enclave-resident.
+3. The document's user-data / report-data field contains the signing public key used for `proof` (and any recipient key a companion extension asks clients to encrypt to), so the key is provably enclave-resident.
 4. The document is fresh: it either embeds the request `nonce` or was issued within a client-defined window.
 
 Defined values: `tee-nitro-v1`, `tee-sgx-dcap-v1`, `tee-sevsnp-v1`.
@@ -602,8 +478,9 @@ Indicative trade-offs (orders of magnitude; the reference implementation publish
 | Pairing SNARK (Groth16 / PLONK) | `snarkjs-v2`, Noir/UltraHonk | 10^3–10^6× | ~0.1–1 KB | ms | Trusted setup (Groth16: per-circuit; PLONK: universal) | Small fixed circuits, on-chain verification |
 | zkVM (STARK, optionally wrapped in Groth16) | `risc0-v1`, SP1 | 10^4–10^6× | 100 KB–MB (STARK), ~0.2 KB wrapped | ms–s | None beyond hash / field assumptions | Arbitrary programs, existing code |
 | ZKML | `ezkl-v1` | very high, model-size dependent | KB–MB | ms–s | As underlying SNARK | Certified model inference (Scenario D) |
-| TEE attestation | `tee-nitro-v1`, `tee-sgx-dcap-v1`, `tee-sevsnp-v1` | ~1× | ~1–10 KB (document + chain) | ms | Hardware vendor, firmware, side-channel resistance | Latency-sensitive, large or I/O-heavy tools; blind execution |
-| FHE (reserved) | `fhe-tfhe-v1` | 10^3–10^6×, and no correctness proof without vFHE | n/a | n/a | None for confidentiality; correctness unproven | Output confidentiality (future) |
+| TEE attestation | `tee-nitro-v1`, `tee-sgx-dcap-v1`, `tee-sevsnp-v1` | ~1× | ~1–10 KB (document + chain) | ms | Hardware vendor, firmware, side-channel resistance | Latency-sensitive, large or I/O-heavy tools |
+
+(FHE-based confidential execution is discussed in the companion blind-execution proposal, not here.)
 
 ### Why not just sign results?
 
@@ -627,12 +504,11 @@ This extension is **fully backward compatible**.
 - **Verification key distribution**: A proof is only as trustworthy as the verification key. Servers SHOULD publish `verificationKeyUri` over an integrity-protected channel, and clients SHOULD pin or cache known-good keys for a given `circuitHash`.
 - **Circuit / program identity**: `circuitHash` must uniquely identify the computation. If the same hash can map to different implementations, the integrity guarantee is weakened.
 - **Proof format negotiation**: The client and server MUST intersect their advertised `proofFormats`. A server MUST NOT use an unadvertised format, and a client MUST reject a format it did not request.
-- **Blind execution**: Encrypted arguments must be decrypted only inside the proving environment. Servers MUST NOT persist plaintext inputs or forward them to untrusted downstream systems.
 - **Side channels**: Proof generation time can leak information about inputs. Implementations SHOULD use constant-time or padded proving schedules where side-channel resistance is required.
 - **Availability**: If `requireProof: true` is set and the server cannot generate a proof, the server may refuse the call. Clients SHOULD handle this gracefully.
 - **Replay**: Without a `nonce`, a valid proof for an earlier call is also a valid proof for the current one. Clients MUST send a nonce for any tool whose correct output is time-dependent, and MUST reject results whose echoed nonce differs.
 - **Output substitution**: Without `outputCommitment` bound into the proof, a server can pair a genuine proof with a different `content`. Verifiers MUST recompute `outputCommitment` from `content`.
-- **Hiding commitments**: An unsalted hash of low-entropy arguments (an account number, a yes/no flag) is trivially inverted by anyone who sees the commitment. Blind calls MUST use a 32-byte random salt.
+- **Commitments are not hiding**: `inputCommitment` for `tools/call` is an unsalted hash, and an unsalted hash of low-entropy arguments (an account number, a yes/no flag) is trivially inverted by anyone who sees the commitment. This extension does not hide arguments from anyone who can read the request or the result metadata; deployments that need that property MUST use the companion blind-execution proposal, which fills the 32-byte salt branch of §Result binding.
 - **Deferred-proof retrieval**: `resultId` is a bearer capability to retained `content`. It MUST be unguessable, scoped to the original caller, and expire with `resultTtlMs`.
 - **Input provenance**: A verified proof over fabricated inputs is worthless. Clients acting on externally sourced data SHOULD require `inputAttestations` and verify them independently of the main proof.
 - **Descriptor trust**: `tools/list` metadata is server-controlled. Pin `circuitHash` / keys out of band or on first use; treat changes as security events.
@@ -643,8 +519,9 @@ This extension is **fully backward compatible**.
 
 A reference implementation is required before this SEP can reach "Final" status. The prototype lives at <https://github.com/ripple-node-lab/mcp-verifiable-tools-demo> (TypeScript, MCP `2026-07-28` Streamable HTTP, `npm install && npm test`). Its staged plan and per-phase measurements are recorded in [`docs/PLAN.md`](../PLAN.md), per-format benchmark figures in [`docs/BENCHMARKS.md`](../BENCHMARKS.md), and CI runs the full suite plus opt-in sidecar jobs on every change ([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), [Actions](https://github.com/ripple-node-lab/mcp-verifiable-tools-demo/actions)). Implemented phases:
 
-- Phase 1 (done): transport, negotiation, Tasks integration, and blind calls with dependency-free stand-in formats (`demo-sig-v1`, `demo-commit-v1`). These are *not* cryptographic proofs and are labelled as such.
-- Phase 2-a (done): the result-binding fields of this revision — `outputCommitment`, `nonce`, salted JCS input commitments, `tools/list` descriptors, deferred proofs (`verifiable-tools/prove`, `resultTtlMs`), abortable `tasks/cancel`, and RFC 9180 `hpke-v1` reply encryption.
+- Phase 1 (done): transport, negotiation, and Tasks integration with dependency-free stand-in formats (`demo-sig-v1`, `demo-commit-v1`). These are *not* cryptographic proofs and are labelled as such.
+- Phase 2-a (done): the result-binding fields of this revision — `outputCommitment`, `nonce`, JCS input commitments, `tools/list` descriptors, deferred proofs (`verifiable-tools/prove`, `resultTtlMs`), and abortable `tasks/cancel`.
+- Companion (done): the same repository also implements the companion blind-execution proposal (`verifiable-tools/call`, `hpke-v1`, 32-byte salted commitments, encrypted replies); see [`verifiable-tools-blind.md`](./verifiable-tools-blind.md) §Reference Implementation.
 - Phase 2-b (done): two real ZK formats that run in-process from npm — `snarkjs-v2` (Groth16 over a Circom circuit) and `noir-v1` (UltraHonk) — with measured figures in `docs/BENCHMARKS.md`.
 - Phase 3-a (done): the sidecar HTTP contract and adapter (`packages/prover-sidecar`, reference sidecar `demo-sig-sidecar-v1` in `packages/sidecar-mock`), and `tee-nitro-v1` — a COSE_Sign1/CBOR attestation verified entirely in TypeScript, issued against *mock* AWS-Nitro-style fixtures (`sidecars/nitro/mock-fixtures`).
 - Phase 3-b (done): `risc0-v1` — Rust zkVM prover sidecar ([`sidecars/risc0`](../../sidecars/risc0/), `docker compose --profile risc0`), verified in-process by a wasm32 build of `risc0-zkvm` (`packages/prover-risc0`).
@@ -655,7 +532,7 @@ A reference implementation is required before this SEP can reach "Final" status.
 
 Verification surface: `demo-sig-v1`, `demo-commit-v1`, `snarkjs-v2`, `noir-v1`, `risc0-v1` (WASM), `ezkl-v1` (WASM), and `tee-nitro-v1` verify in-process in TypeScript/WASM on the client; `zktls-tlsn-v1` attestation verification runs in the sidecar's `/verify` endpoint (the notary key is pinned through the key registry), and the sidecar contract also exposes `/verify` for `risc0-v1` and `ezkl-v1`. The `demo-*` formats, `demo-sig-sidecar-v1`, `oracle-sig-v1`, and the `tee-nitro-v1` mock certificate chain are demonstration artefacts, not production-grade evidence.
 
-The Testing Plan bullets map to `tests/` as follows: conformance to advertised `proofFormats` and extension-absent behaviour → [`negotiation.test.ts`](../../tests/negotiation.test.ts); the async path → [`async-tasks.test.ts`](../../tests/async-tasks.test.ts); negative tests → [`negative.test.ts`](../../tests/negative.test.ts), [`zk-snarkjs.test.ts`](../../tests/zk-snarkjs.test.ts), [`zk-noir.test.ts`](../../tests/zk-noir.test.ts), [`risc0.test.ts`](../../tests/risc0.test.ts), [`ezkl.test.ts`](../../tests/ezkl.test.ts); result binding → [`binding.test.ts`](../../tests/binding.test.ts), [`hpke.test.ts`](../../tests/hpke.test.ts); provenance → [`provenance.test.ts`](../../tests/provenance.test.ts) plus opt-in [`tlsn-sidecar.test.ts`](../../tests/tlsn-sidecar.test.ts); deferred proofs → [`deferred-proof.test.ts`](../../tests/deferred-proof.test.ts); descriptor mismatch → [`descriptor.test.ts`](../../tests/descriptor.test.ts); SDK-transport behaviour → [`sdk-extension.test.ts`](../../tests/sdk-extension.test.ts).
+The Testing Plan bullets map to `tests/` as follows: conformance to advertised `proofFormats` and extension-absent behaviour → [`negotiation.test.ts`](../../tests/negotiation.test.ts); the async path → [`async-tasks.test.ts`](../../tests/async-tasks.test.ts); negative tests → [`negative.test.ts`](../../tests/negative.test.ts), [`zk-snarkjs.test.ts`](../../tests/zk-snarkjs.test.ts), [`zk-noir.test.ts`](../../tests/zk-noir.test.ts), [`risc0.test.ts`](../../tests/risc0.test.ts), [`ezkl.test.ts`](../../tests/ezkl.test.ts); result binding → [`binding.test.ts`](../../tests/binding.test.ts) (the salted branch and [`hpke.test.ts`](../../tests/hpke.test.ts) belong to the companion); provenance → [`provenance.test.ts`](../../tests/provenance.test.ts) plus opt-in [`tlsn-sidecar.test.ts`](../../tests/tlsn-sidecar.test.ts); deferred proofs → [`deferred-proof.test.ts`](../../tests/deferred-proof.test.ts); descriptor mismatch → [`descriptor.test.ts`](../../tests/descriptor.test.ts); SDK-transport behaviour → [`sdk-extension.test.ts`](../../tests/sdk-extension.test.ts).
 
 ### Non-normative appendix: format profiles implemented by the reference demo
 
@@ -749,8 +626,8 @@ only attaches attestations to appending formats (`riskScore` proves with
 - Conformance tests verifying that servers only emit advertised `proofFormats`.
 - Tests proving that clients ignore `io.github.ripple-node-lab/verifiable-tools` metadata when the extension is not negotiated.
 - Tests for the async path: a `tools/call` that returns a task, and a `tasks/get` that resolves to a verifiable result.
-- Negative tests: invalid proofs, mismatched `circuitHash`, unknown `proofFormat`, and malformed blind inputs.
-- Binding tests: a genuine proof paired with altered `content` is rejected (`outputCommitment`); a proof replayed from a previous call is rejected (`nonce`); an unsalted or wrongly salted blind commitment is rejected.
+- Negative tests: invalid proofs, mismatched `circuitHash`, unknown `proofFormat`, and a `salt` of any length other than 0 or 32 bytes.
+- Binding tests: a genuine proof paired with altered `content` is rejected (`outputCommitment`); a proof replayed from a previous call is rejected (`nonce`); a commitment computed over different arguments is rejected (`inputCommitment`).
 - Provenance tests: a result with a valid main proof but a missing or invalid required `inputAttestations` entry is rejected.
 - Deferred-proof tests: `verifiable-tools/prove` returns byte-identical plaintext `content` and a verifying proof; an expired `resultId` is rejected.
 - Descriptor tests: a `tools/list` entry whose `circuitHash` differs from the pinned value is surfaced, not silently accepted.
@@ -771,7 +648,7 @@ only attaches attestations to appending formats (`riskScore` proves with
 - How should clients handle revocation of verification keys or TEE signing keys?
 - Should this extension also apply to `resources/read` and `prompts/get`, or remain scoped to `tools/call`?
 - What is the canonical encoding for `publicInputs` to maximize interoperability across ZKP libraries? (This revision fixes `publicInputs[0]` and the commitment construction; field-element encoding for the remaining entries is still per-format.)
-- Verifiable FHE: `fhe-tfhe-v1` is reserved, but FHE alone gives confidentiality without correctness. What is the minimum viable vFHE construction (proof over the homomorphic evaluation, or TEE-hosted FHE evaluation) worth standardizing?
+- Blind / confidential execution is drafted as a companion with its own identifier ([`verifiable-tools-blind.md`](./verifiable-tools-blind.md)). Do reviewers prefer a separate extension identifier, or a capability member of this one?
 - MPC / co-SNARK provers: when inputs come from several parties (Scenario A with multiple data providers), should the extension describe a multi-prover `inputCommitment` (one commitment per party) or leave that to the format?
 - Economics: should the capability object carry a price or cost hint per `proofFormat` so that agents in a tool market (Scenario A) can choose between `always`, `onDemand`, and `sampled` automatically?
 - Which working group / interest group should incubate this as an `experimental-ext-*` extension before an SEP is filed?

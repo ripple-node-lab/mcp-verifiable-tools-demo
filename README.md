@@ -3,11 +3,15 @@
 Reference implementation of the `io.github.ripple-node-lab/verifiable-tools`
 extension on MCP `2026-07-28` (TypeScript, Streamable HTTP). It demonstrates
 capability negotiation, locally verified tool results, asynchronous proof
-generation through the `io.modelcontextprotocol/tasks` extension, blind
-committed-input calls with HPKE-encrypted arguments, input provenance
-(`inputAttestations`), HTTP sidecar composition for provers that are not
-TypeScript, and an adapter onto the published `@modelcontextprotocol/sdk`
-1.30.0.
+generation through the `io.modelcontextprotocol/tasks` extension, input
+provenance (`inputAttestations`), HTTP sidecar composition for provers that
+are not TypeScript, and an adapter onto the published
+`@modelcontextprotocol/sdk` 1.30.0. It also implements the **companion**
+blind-execution proposal
+([docs/spec/verifiable-tools-blind.md](docs/spec/verifiable-tools-blind.md)):
+committed-input calls with HPKE-encrypted arguments and encrypted replies,
+built on the base spec's `inputCommitment` binding. Blind execution is out of
+scope for the base spec ([docs/spec/verifiable-tools.md](docs/spec/verifiable-tools.md)).
 
 **Status:** Phases 1–4-a of [docs/PLAN.md](docs/PLAN.md) are implemented and
 tested in CI; Phase 4-b (rebasing the SDK adapter on the v2 `server/discover`
