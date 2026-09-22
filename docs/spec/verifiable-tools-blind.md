@@ -162,7 +162,7 @@ When `replyPublicKey` is present the server MUST return `content` as a single `{
 
 #### Deferred proofs of blind results
 
-For results of blind calls whose `content` was returned encrypted to `replyPublicKey`, the `verifiable-tools/prove` response (base extension §Deferred proofs) MUST re-encrypt the same `originalContent` under §Encrypted replies using the nonce of the `verifiable-tools/prove` request (or the original nonce if none was supplied); the ciphertext therefore differs while `outputCommitment`, computed over the plaintext, is unchanged. The plaintext `content` of the deferred response is byte-identical to the original.
+For results of blind calls whose `content` was returned encrypted to `replyPublicKey`, the `verifiable-tools/prove` response (base extension §Deferred proofs) MUST re-encrypt the same `originalContent` under §Encrypted replies using the nonce of the `verifiable-tools/prove` request (or the original nonce if none was supplied); the ciphertext therefore differs while `outputCommitment`, computed over the plaintext, is unchanged. The `originalContent` underlying the deferred response is byte-identical to the original.
 
 ### Example request
 
