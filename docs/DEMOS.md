@@ -141,7 +141,7 @@ Evidence travels in CallToolResult._meta["io.github.ripple-node-lab/verifiable-t
 8   zk add (risc0-v1 sidecar)    skipped   risc0-v1        REAL   -              -
 9   zk add (ezkl-v1 sidecar)     skipped   ezkl-v1         REAL   -              -
 10  zktls riskScore              skipped   demo-commit-v1  DEMO   -              -
-   class: REAL = proof shows the computation itself was done correctly · DEMO = signature only (origin + freshness, not correctness) · MOCK = locally generated attestation fixtures, not real hardware
+   class: REAL = proof shows execution integrity for the pinned computation · DEMO = signature only (origin + freshness, not execution integrity) · MOCK = locally generated attestation fixtures, not real hardware
 Summary: 7 verified (real ZK 2 · demo formats 4 · mock TEE 1), 3 skipped, 5/5 tampered results rejected
 ```
 

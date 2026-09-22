@@ -11,7 +11,7 @@
 
 ## Abstract
 
-This proposal introduces an optional MCP extension, `io.github.ripple-node-lab/verifiable-tools`, that lets servers attach cryptographic evidence to `tools/call` results. The evidence can be a zero-knowledge proof (ZKP), a TEE attestation, or another machine-verifiable artifact. Clients can validate the evidence locally to confirm that the returned data was produced by the expected computation on the expected inputs, without having to trust the server operator. This addresses a gap left by the strong authorization work in MCP `2026-07-28`: knowing *who* called a tool does not tell the caller whether the returned value was tampered with or computed incorrectly. The extension is purely optional, negotiated through the standard `extensions` capability map, and reuses the existing `io.modelcontextprotocol/tasks` extension for long-running proof generation. Confidentiality of the arguments towards the server operator (blind / committed-input calls) is **out of scope** for this extension; it is specified by a companion proposal, [`verifiable-tools-blind.md`](./verifiable-tools-blind.md), that builds on the binding rules defined here without changing them.
+This proposal introduces an optional MCP extension, `io.github.ripple-node-lab/verifiable-tools`, that lets servers attach cryptographic evidence to `tools/call` results. The evidence can be a zero-knowledge proof (ZKP), a TEE attestation, or another machine-verifiable artifact. Clients validate the evidence locally to confirm **execution integrity**: that the pinned program ran on the committed inputs and returned exactly this output, without having to trust the server operator. This addresses a gap left by the strong authorization work in MCP `2026-07-28`: knowing *who* called a tool does not tell the caller *what actually executed, on which inputs, producing which output*. The extension does not claim the output is *correct* in any semantic sense; it identifies the program and binds the result to it (see §Terminology). The extension is purely optional, negotiated through the standard `extensions` capability map, and reuses the existing `io.modelcontextprotocol/tasks` extension for long-running proof generation. Confidentiality of the arguments towards the server operator (blind / committed-input calls) is **out of scope** for this extension; it is specified by a companion proposal, [`verifiable-tools-blind.md`](./verifiable-tools-blind.md), that builds on the binding rules defined here without changing them.
 
 ### Overview
 
@@ -38,17 +38,32 @@ flowchart LR
 
 ## Motivation
 
-MCP `2026-07-28` makes the protocol stateless, adds `server/discover` for capability advertisement, hardens OAuth 2.1 authorization with RFC 9207 issuer validation, and moves long-running work to the `tasks` extension. These improvements solve deployment scale, routing, and access-control problems. They do not, however, guarantee the integrity or correctness of a tool result.
+MCP `2026-07-28` makes the protocol stateless, adds `server/discover` for capability advertisement, hardens OAuth 2.1 authorization with RFC 9207 issuer validation, and moves long-running work to the `tasks` extension. These improvements solve deployment scale, routing, and access-control problems. They do not, however, guarantee the **execution integrity** of a tool result: that the value came from the advertised program applied to the request's inputs.
 
-As AI agents increasingly operate over financial, healthcare, infrastructure, and governance systems, clients need more than authorization. They need **verifiability**: a way to check that the result `Y` was produced by applying the agreed-upon function `f` to the agreed-upon inputs `X`, and that neither `f` nor `X` was altered between the client request and the client response.
+As AI agents increasingly operate over financial, healthcare, infrastructure, and governance systems, clients need more than authorization. They need **verifiability**: a way to check that the result `Y` was produced by applying the agreed-upon function `f` to the agreed-upon inputs `X`, and that neither `f` nor `X` was altered between the client request and the client response. This is *execution provenance*, not correctness: the extension identifies `f`, it does not certify that `f` is the right program.
 
 Zero-knowledge proving systems (ezkl, risc0, snarkjs, etc.) and TEE attestations (Intel SGX, AMD SEV, AWS Nitro) have matured to the point where such verification can be performed in milliseconds to seconds on commodity hardware. Standardizing how these artifacts are carried in MCP lets clients and servers interoperate without baking any single cryptographic library into the core protocol.
+
+### When does a client need this? Deciding before acting
+
+Signed tool manifests and execution receipts reconstruct what happened *after* the fact. This extension exists for the case where the client must **accept or reject a result before acting on it**, with no human review or audit step in between: the result places an order, approves a loan, dispenses a dose, opens a firewall port. In that position a log entry, however well signed, arrives too late; the value itself has to carry evidence the client can check locally, in the time it has, before it acts. Everything in §Specification is shaped by that constraint: verification is local and cheap, proving can be moved off the response path, and the client states per call whether it will act without evidence (§Proof requirement and verification outcome).
+
+### Positioning among related MCP proposals
+
+| Question answered | Mechanism | Where |
+|---|---|---|
+| *Which code was offered?* | Signed tool manifests | modelcontextprotocol#2913 |
+| *Did a call run, and who is accountable for it?* | Work contracts / execution receipts | modelcontextprotocol#3215 |
+| *What happened, reconstructed afterwards?* | Tamper-evident audit ledger | modelcontextprotocol#3112 |
+| *Did **this** program run on **these** inputs and return **this** output?* | Commitment-bound proof / attestation, checked before acting | **this extension** |
+
+The four are complementary. A manifest tells the client what `circuitHash` to pin; a receipt or ledger records that the call took place; this extension supplies the evidence that the recorded call is the one whose output the client is about to act on.
 
 ### Why authorization is not enough: the trust gap
 
 MCP `2026-07-28` answers the question *"is this client allowed to call this tool on this server?"*. It says nothing about *"is the value that came back the value the tool was supposed to compute?"*. Today a client has exactly one option: trust the server operator. That was acceptable while MCP servers were local processes started by the same person who runs the client. It stops being acceptable when:
 
-- **The server is a third party.** Agents increasingly call tools operated by someone else: a market-data vendor, a credit bureau, a compliance-screening service, another organization's agent. Authorization proves the client's identity to the server, not the server's correctness to the client.
+- **The server is a third party.** Agents increasingly call tools operated by someone else: a market-data vendor, a credit bureau, a compliance-screening service, another organization's agent. Authorization proves the client's identity to the server; it tells the client nothing about what the server actually executed.
 - **The server can be compromised without its identity changing.** A supply-chain attack on a server's dependencies, a malicious insider, or a mis-deployed model version all keep OAuth tokens, TLS certificates, and `server/discover` output exactly the same while silently changing what the tool returns. Authorization cannot detect this; a pinned `circuitHash` can.
 - **The result triggers an irreversible action.** Agents act on tool results: they place orders, approve loans, dispense medication, open firewall ports. There is no human review step between "value returned" and "value acted upon", so the value itself must carry its own evidence.
 - **Accountability is required after the fact.** Regulators, auditors, and counterparties ask "which program produced this decision, on which inputs?". A signed log entry proves who *said* something happened; a proof shows that it *did*.
@@ -57,41 +72,51 @@ The following scenarios describe where this gap becomes concrete. They are the w
 
 #### Scenario A: Agent-to-agent tool markets
 
-An orchestrating agent buys results from specialist MCP servers it has never audited (a pricing engine, a legal-clause classifier, a geospatial routing tool) and pays per call. Without verifiability the buyer cannot distinguish a correct result from a cheaper approximation, a cached stale answer, or a fabricated one. With `circuitHash` pinned to the advertised program and a proof attached to every paid result, the market can settle on *"pay for verified results"*: the buyer verifies locally and only then releases payment. This is the pattern under which tool servers can be commoditized without a central rating authority.
+An orchestrating agent buys results from specialist MCP servers it has never audited (a pricing engine, a legal-clause classifier, a geospatial routing tool) and pays per call. Without verifiability the buyer cannot distinguish a result of the advertised program from a cheaper substitute program, a cached stale answer, or a fabricated one. With `circuitHash` pinned to the advertised program and a proof attached to every paid result, the market can settle on *"pay for verified results"*: the buyer verifies locally and only then releases payment. This is the pattern under which tool servers can be commoditized without a central rating authority. *Decide before acting: yes (payment is released on verification).*
 
 #### Scenario B: Trading and treasury agents
 
-A trading agent calls `riskScore(symbol)` on a vendor's server and sizes a position from the answer. A compromised vendor (or a man-in-the-middle after TLS termination in a corporate proxy) that returns a manipulated score is indistinguishable from an honest one. A proof that `riskScore` was evaluated by the pinned model on committed inputs, combined with an input-provenance attestation (§Input provenance) that the price feed came from the named exchange, gives the agent grounds to act. Deferred/sampled proofs (§Deferred proofs) let a high-frequency caller verify a random subset rather than paying for a proof on every call.
+A trading agent calls `riskScore(symbol)` on a vendor's server and sizes a position from the answer. A compromised vendor (or a man-in-the-middle after TLS termination in a corporate proxy) that returns a manipulated score is indistinguishable from an honest one. A proof that `riskScore` was evaluated by the pinned model on committed inputs, combined with an input-provenance attestation (§Input provenance) that the price feed came from the named exchange, gives the agent grounds to act. Deferred/sampled proofs (§Deferred proofs) let a high-frequency caller verify a random subset rather than paying for a proof on every call. *Decide before acting: yes (position sizing).*
 
 #### Scenario C: Regulated decisions on private data
 
-A bank's agent calls `creditCheck` on a scoring service. The regulator must later be able to confirm that the *approved* scoring model, not a discriminatory variant, was applied to the applicant's record. A proof bound to the model's `circuitHash` and to `inputCommitment` over the record answers that question; the proof, not a log entry, becomes the audit artifact. (Keeping the applicant's data confidential from the service operator is a separate concern, addressed by the companion blind-execution proposal on top of the same binding.)
+A bank's agent calls `creditCheck` on a scoring service. The regulator must later be able to confirm that the *approved* scoring model, not a discriminatory variant, was applied to the applicant's record. A proof bound to the model's `circuitHash` and to `inputCommitment` over the record answers that question; the proof, not a log entry, becomes the audit artifact. (Keeping the applicant's data confidential from the service operator is a separate concern, addressed by the companion blind-execution proposal on top of the same binding.) *Decide before acting: partly — the loan decision is gated on the proof; the regulator's check is after the fact.*
 
 #### Scenario D: Certified model inference in healthcare and safety systems
 
-A clinical-decision or industrial-control agent calls a tool that runs a certified ML model (`ezkl`-style proofs of inference, or TEE attestation of the model container). The question "was the certified version used?" cannot be answered by authorization. `circuitHash` identifies the exact model artifact; the proof shows the returned inference came from it.
+A clinical-decision or industrial-control agent calls a tool that runs a certified ML model (`ezkl`-style proofs of inference, or TEE attestation of the model container). The question "was the certified version used?" cannot be answered by authorization. `circuitHash` identifies the exact model artifact; the proof shows the returned inference came from it — not that the model is clinically right, only that the certified one was used. *Decide before acting: yes.*
 
 #### Scenario E: Multi-hop agent chains and delegated tool use
 
-Agent A asks agent B for a result; B obtains it from server C. A only ever sees B. Because proofs are self-contained artifacts in `_meta`, B can forward C's proof unchanged, and A verifies it against C's `circuitHash` and verification key without trusting B. Verifiability composes along the chain; authorization does not.
+Agent A asks agent B for a result; B obtains it from server C. A only ever sees B. Because proofs are self-contained artifacts in `_meta`, B can forward C's proof unchanged, and A verifies it against C's `circuitHash` and verification key without trusting B. Verifiability composes along the chain; authorization does not. *Decide before acting: yes at A, which never talked to C.*
 
 #### Scenario F: Autonomous security responses
 
-An agent monitoring a system decides to trigger an expensive or destructive action (halt a contract, isolate a host) based on a tool that determines "this state is exploitable". A proof that the exploitability predicate was evaluated by an audited program on the observed state (a *proof-of-exploit*, with the exploit input kept private) lets the receiving system act automatically while leaving nothing for an attacker to replay or spoof.
+An agent monitoring a system decides to trigger an expensive or destructive action (halt a contract, isolate a host) based on a tool that determines "this state is exploitable". A proof that the exploitability predicate was evaluated by an audited program on the observed state (a *proof-of-exploit*, with the exploit input kept private) lets the receiving system act automatically while leaving nothing for an attacker to replay or spoof. *Decide before acting: yes (destructive, automated).*
 
 ### What this extension does and does not guarantee
 
+In one sentence: **the pinned program `f` was executed on committed `X` and produced `Y`.** Nothing in this table claims that `f` is correct, that `X` is true, or that the caller was entitled to supply `X`.
+
 | Property | Guaranteed by | Notes |
 |---|---|---|
-| `Y = f(X)` for the pinned `f` (`circuitHash`) and committed `X` (`inputCommitment`) | ZK proof or TEE attestation | The core guarantee. |
+| `Y = f(X)` for the pinned `f` (`circuitHash`) and committed `X` (`inputCommitment`) | ZK proof or TEE attestation | The core guarantee (*execution integrity*). |
 | The returned `content` is the `Y` that was proven | `outputCommitment` in `publicInputs` | See §Result binding. |
 | The proof answers *this* request and is not a replay | `nonce` in `publicInputs` | See §Result binding. |
 | The plaintext of `X` is hidden from the server operator | **Not guaranteed** by this extension | Out of scope. Arguments travel in the clear in `tools/call`, and `inputCommitment` is unsalted (not hiding). The companion proposal [`verifiable-tools-blind.md`](./verifiable-tools-blind.md) adds this on top of the same commitment construction. |
 | `X` itself is *true* (a real price, a real record) | **Not guaranteed** by this extension alone | Requires input provenance (§Input provenance): zkTLS / oracle attestations / signed data. |
-| `f` is the *right* function (a good model, a correct algorithm) | **Not guaranteed** | Out of scope; `circuitHash` identifies `f`, it does not judge it. |
-| The server will answer at all (liveness) | **Not guaranteed** | `requireProof` may cause refusals. |
+| `f` is the *right* function (a good model, a correct algorithm) | **Not guaranteed** | Out of scope; `circuitHash` identifies `f`, it does not judge it. A `riskScore` tool can be provably executed and still return a number from a model that was never validated. |
+| `X` was within the upstream caller's authority to supply (authorization continuity along an agent chain) | **Not guaranteed** | Out of scope; this extension proves what executed, not that the principal who asked was entitled to. Combine with the authorization layer and per-hop policy. |
+| The server will answer at all (liveness) | **Not guaranteed** | A `required` proof requirement may cause refusals (§Proof requirement and verification outcome). |
 
 ## Specification
+
+### Terminology
+
+- **Execution integrity** (also *execution provenance*): the property that a returned `content` is exactly the output of the program identified by `circuitHash` applied to the arguments committed by `inputCommitment`, for this request (`nonce`). It is the only property this extension proves.
+- **verified** / **verify**: throughout this document, *verified* means the evidence passed every check of §Verification flow. It never means the output is semantically correct, that the inputs are true, or that the program is the right one.
+- **Evidence**: a `proof`, a `proofUri`, a `teeAttestation`, or any combination of them, together with the binding fields (`circuitHash`, `inputCommitment`, `outputCommitment`, `nonce`, `publicInputs`).
+- **absent** / **invalid** / **verified**: the three verification outcomes defined in §Proof requirement and verification outcome.
 
 ### Extension identifier
 
@@ -121,7 +146,7 @@ Both client and server advertise the extension under the `extensions` capability
 | Field | Type | Description |
 |---|---|---|
 | `proofFormats` | `string[]` | Proof / attestation formats the party supports, identified as `"{engine}-{majorVersion}"` (e.g. `"ezkl-v1"`, `"risc0-v1"`, `"snarkjs-v2"`, `"tee-sgx-dcap-v1"`). |
-| `requireProof` | `boolean` | For clients: if true, the server SHOULD return a proof when it can; servers MAY omit results for calls they cannot prove. |
+| `requireProof` | `boolean` | For clients: the session-wide default proof requirement (§Proof requirement and verification outcome): `true` ⇔ `"required"`, `false` or absent ⇔ `"preferred"`. Overridable per call with the `proofRequirement` request option. |
 | `requireInputProvenance` | `boolean` | For clients: if true, results that consume external data MUST carry `inputAttestations` (see §Input provenance). |
 | `resultTtlMs` | `number` | For servers: how long a `resultId` stays provable via `verifiable-tools/prove`. REQUIRED when the server may emit `resultId`; clients MUST treat a `resultId` from a server that did not advertise `resultTtlMs` as unprovable. |
 
@@ -193,6 +218,7 @@ A client requesting verifiable output includes the extension under `extensions` 
 |---|---|---|
 | `requestedProofFormat` | `string` | Preferred format among the negotiated intersection. |
 | `nonce` | `string` | Lower-case hex with `0x` prefix encoding 16–64 bytes (`^0x[0-9a-f]{32,128}$`). The server MUST bind it into the proof and echo it back. See §Result binding. |
+| `proofRequirement` | `"required" \| "preferred" \| "none"` | Per-call proof requirement, overriding the capability-level default derived from `requireProof`. See §Proof requirement and verification outcome. |
 
 Reserved request option: `replyPublicKey` (companion blind-execution proposal).
 
@@ -250,8 +276,8 @@ Field definitions:
 | `verificationKeyUri` | `string` (URI) | Optional | Location of the verification key needed to check the proof. |
 | `publicInputs` | `array` | Conditional | Public inputs required to verify the proof, in the order `[outputCommitment, inputCommitment, nonce, ...format-specific]`. Index 2 is fixed: when the client supplied no nonce, `publicInputs[2]` MUST be the empty hex string `"0x"` so the format-specific tail always starts at index 3. Omitted for pure TEE attestations. |
 | `teeAttestation` | `string` | Optional | A TEE attestation document, for cases where the computation ran inside a trusted execution environment. |
-| `inputCommitment` | `string` | Required | REQUIRED whenever `proof` or `teeAttestation` is present. Commitment to the inputs used, so the client can verify that the proof was generated against the same arguments it supplied. See §Result binding for the commitment construction. |
-| `outputCommitment` | `string` | Required | REQUIRED whenever `proof` or `teeAttestation` is present. `SHA-256` of the canonical encoding of `content`, so the client can verify that the proven output is the returned output. See §Result binding. |
+| `inputCommitment` | `string` | Required | REQUIRED whenever `proof`, `proofUri`, or `teeAttestation` is present. Commitment to the inputs used, so the client can verify that the proof was generated against the same arguments it supplied. See §Result binding for the commitment construction. |
+| `outputCommitment` | `string` | Required | REQUIRED whenever `proof`, `proofUri`, or `teeAttestation` is present. `SHA-256` of the canonical encoding of `content`, so the client can verify that the proven output is the returned output. See §Result binding. |
 | `nonce` | `string` | Conditional | Echo of the client-supplied `nonce` from the request metadata. REQUIRED when the client supplied one. |
 | `inputAttestations` | `object[]` | Optional | Provenance evidence for external inputs consumed by the tool (e.g. a zkTLS transcript proof, an oracle signature). See §Input provenance. |
 | `resultId` | `string` | Optional | Opaque identifier the client can later pass to `verifiable-tools/prove` to obtain a proof for this result. See §Deferred proofs. |
@@ -259,7 +285,7 @@ Field definitions:
 Reserved result field: `encryptedContent` (companion blind-execution proposal).
 
 The server MUST only emit `proofFormat` values it advertised in its capability object. The client MUST only attempt to verify formats it advertised.
-A result that carries `proof` or `teeAttestation` but lacks either commitment MUST be treated by the verifier as unverified (equivalent to no proof).
+A result that carries `proof`, `proofUri`, or `teeAttestation` but lacks either commitment MUST be treated by the verifier as `absent` (§Proof requirement and verification outcome).
 
 ### Result binding
 
@@ -287,6 +313,7 @@ The client needs a trustworthy mapping *tool name → circuitHash* before it can
       "circuitHash": "0x12ab...",
       "proofFormats": ["snarkjs-v2", "noir-v1"],
       "proofPolicy": "onDemand",
+      "externalInputs": true,
       "verificationKeyUri": "https://example.com/vk/0x12ab...",
       "formats": {
         "snarkjs-v2": {
@@ -307,8 +334,9 @@ The client needs a trustworthy mapping *tool name → circuitHash* before it can
 |---|---|---|
 | `circuitHash` | `string` | The hash the server will use for this tool. |
 | `proofFormats` | `string[]` | Formats available for this tool (subset of the capability-level list). |
-| `proofPolicy` | `"always" \| "onDemand" \| "sampled"` | Whether every call carries a proof, whether proofs are produced only on request (§Deferred proofs), or whether the server proves a fraction of calls. |
+| `proofPolicy` | `"always" \| "onDemand" \| "sampled"` | A server *promise* about eager proving: every call carries evidence (`always`); evidence is produced only on request via `resultId` (`onDemand`); the server proves a fraction of calls eagerly and every other call is provable on demand (`sampled`). See §Deferred proofs and §Proof requirement and verification outcome for how a broken promise is treated. |
 | `verificationKeyUri` | `string` | Where to fetch the verification key for `circuitHash`. |
+| `externalInputs` | `boolean` | Optional. Whether the tool consumes inputs other than the request arguments (upstream feeds, databases, other services) that would need `inputAttestations` to be provenance-checked. Omitted means unknown and is treated as `true` by clients that declared `requireInputProvenance`; only an explicit `false` waives the attestation requirement (§Proof requirement and verification outcome). Because the descriptor is not a root of trust, clients SHOULD pin this value together with `circuitHash`. |
 | `formats` | `object` | Optional per-format overrides: `{ "<proofFormat>": { "circuitHash", "verificationKeyUri" } }`. When present for the negotiated format, its values take precedence over the top-level `circuitHash` / `verificationKeyUri`, which then act as defaults. Servers offering formats with distinct artifacts (e.g. `snarkjs-v2` and `noir-v1` for one tool) MUST use `formats`. |
 
 Reserved descriptor field: `blind` (companion blind-execution proposal).
@@ -341,7 +369,45 @@ A proof that `Y = f(X)` says nothing about whether `X` is true. Many tools fetch
 
 Clients that require provenance SHOULD declare it (`requireInputProvenance: true` in their capability object) and MUST NOT treat a result as verified if a required attestation is missing or fails.
 
-If the server cannot produce a proof for a specific call but the call otherwise succeeds, it MUST return a normal `resultType: "complete"` response and MAY omit the `io.github.ripple-node-lab/verifiable-tools` metadata. It MUST NOT fail the call solely because it cannot prove it, unless the client set `requireProof: true` and the server accepted that requirement.
+### Proof requirement and verification outcome
+
+This section is normative. It defines what a client may do with a result that carries no evidence, and what the server must do when it cannot produce evidence.
+
+**Requirement levels.** A client states, per call, how much evidence it needs before it acts:
+
+| `proofRequirement` | Meaning |
+|---|---|
+| `required` | The client will not act without verified evidence. The server MUST NOT return a result it cannot prove, and MUST prove eagerly (inline or via a task) even on `onDemand` / `sampled` tools: the `resultId`-only deferred path is not available under `required`. |
+| `preferred` | The client wants evidence when available but will decide for itself what to do without it. The server MUST return the result either way. **Default.** |
+| `none` | The client does not want evidence for this call and will not verify any that arrives. |
+
+The level is taken from `params._meta["io.github.ripple-node-lab/verifiable-tools"].proofRequirement`; when absent it is derived from the client's capability object (`requireProof: true` → `required`, otherwise `preferred`).
+
+**Verification outcomes.** Every result received under a negotiated extension is classified by the client into exactly one of:
+
+| Outcome | Condition |
+|---|---|
+| `absent` | `_meta["io.github.ripple-node-lab/verifiable-tools"]` is missing, or carries none of `proof`, `proofUri`, or `teeAttestation`, or carries evidence but lacks `inputCommitment` / `outputCommitment` (see §Verifiable tool result). A result carrying only `resultId` is `absent` until `verifiable-tools/prove` upgrades it. |
+| `invalid` | Evidence is present and at least one check of §Verification flow fails (unnegotiated format, `circuitHash` mismatch, commitment mismatch, nonce mismatch, proof or attestation does not verify, a `proofUri` that cannot be fetched, or — when the client declared `requireInputProvenance` and the tool is not explicitly marked `externalInputs: false` — a required `inputAttestations` entry missing or failing). |
+| `verified` | Evidence is present and every check passes. |
+
+**Normative behaviour.**
+
+| Requirement → Outcome | `absent` | `invalid` | `verified` |
+|---|---|---|---|
+| `required` | Server: MUST NOT return a result; instead reject with `-32603`, `data.reason: "proofUnavailable"` (cannot prove this call), or `-32602`, `data.reason: "noProofFormat"` (no mutually supported `proofFormat`). Client: if a result nevertheless arrives `absent`, MUST NOT act on it and MUST surface it as a protocol violation. | Client MUST NOT act; MUST surface. | Client MAY act. |
+| `preferred` | Server MUST return the normal `resultType: "complete"` result, MAY omit the extension metadata or include only `resultId`. Client MAY act, but MUST surface the result as *unverified* to its policy layer or user; it MUST NOT present an `absent` result as if it were `verified`. | Client MUST NOT act; MUST surface. | Client MAY act. |
+| `none` | Normal result. | Client does not verify; evidence, if any, is ignored (consistent with "the client MUST only attempt to verify formats it advertised"). | (not evaluated) |
+
+"Surface" means: expose the outcome and reason to whatever decides on the client's behalf (a policy engine, an approval flow, a user) as a distinct state, not as a generic error and not as success. An `absent` result under `preferred` is therefore *advisory-free* only if the client's policy explicitly chooses to treat unverified results as acceptable for that tool; the extension does not make that choice for it.
+
+**Interaction with `proofPolicy`.** `proofPolicy` is a server promise in the tool descriptor (§Tool descriptor metadata):
+
+- A result on a `proofPolicy: "always"` tool that arrives `absent` is a **descriptor violation**. The client MUST surface it exactly as it would a `circuitHash` change for a known tool, regardless of its own requirement level (except `none`), and SHOULD treat the server as untrusted for the tool until the discrepancy is explained out of band.
+- Under `onDemand` and `sampled`, `absent` results MUST carry `resultId` so that the client can demand a proof (§Deferred proofs). An `absent` result without `resultId` on such a tool is likewise a descriptor violation. The deferred path exists for `preferred` callers only; a `required` call on such a tool is proven eagerly (or rejected with `proofUnavailable`), exactly as on an `always` tool.
+- Under `sampled`, the **server** chooses which calls it proves eagerly; the **client** chooses which additional calls to audit through `verifiable-tools/prove`, and MUST make that choice unpredictably to the server (e.g. uniformly at random) for the audit to have deterrent value. Under either `onDemand` or `sampled`, a `resultId` that the server cannot honour within `resultTtlMs` for a call it accepted (other than `resultExpired` after the TTL) is evidence of a broken promise, and the client SHOULD treat all results from that tool in the same period as `invalid`. The period is bounded by `resultTtlMs`: it covers every result from that tool whose `resultId` was issued within the preceding `resultTtlMs` (every result the server was still contractually able to prove), together with any later result until trust is re-established out of band.
+
+**Distinguishing `absent` from `invalid` matters.** `invalid` is an active signal of tampering or misconfiguration and is never acceptable to act on. `absent` is a statement about coverage: the client knows it has no evidence, and only its own declared requirement decides whether that is acceptable. Implementations MUST keep the two apart in their APIs and logs.
 
 ### Asynchronous proof generation via Tasks
 
@@ -405,7 +471,9 @@ verifiable-tools/prove
 
 The response is either a `CallToolResult` whose `content` is byte-identical to the original and whose `_meta` now contains the proof, or a task (`resultType: "task"`) that resolves to one. The server MUST retain enough state, including any private witness required by the selected proof format (the plaintext arguments for ZK formats; the sealed execution record for TEE formats), together with the output and nonce, to prove the original computation for at least the `resultTtlMs` it advertises (REQUIRED when emitting `resultId`); after `resultTtlMs` has elapsed the server MUST reject the `resultId` with `-32602` and `data.reason: "resultExpired"` and MUST delete the retained witness. `resultExpired` is returned only to the principal (and session) the `resultId` is bound to; every other caller receives `resultNotFound` as above, so an outsider cannot learn whether an identifier ever existed.
 
-Which mode is appropriate is a per-tool decision expressed by `proofPolicy`. `always` suits low-volume, high-value calls (Scenarios C, D); `onDemand` and `sampled` suit high-volume calls where the *possibility* of being audited is the deterrent (Scenario B). A server that is caught returning an unprovable result under `sampled` should be treated by the client as untrusted for all past results in the same period.
+Which mode is appropriate is a per-tool decision expressed by `proofPolicy`. `always` suits low-volume, high-value calls (Scenarios C, D); `onDemand` and `sampled` suit high-volume calls where the *possibility* of being audited is the deterrent (Scenario B). Under `onDemand` and `sampled` every result the server does not prove eagerly MUST carry `resultId`; under `sampled` the client, not the server, selects which of those to audit (§Proof requirement and verification outcome). A server that is caught returning an unprovable result under `sampled` or `onDemand` should be treated by the client as untrusted for all past results in the same period, i.e. every result whose `resultId` was issued within the preceding `resultTtlMs` (§Proof requirement and verification outcome).
+
+Deferred and asynchronous proving move *proving* off the response path; they do not move the *decision*. A client whose requirement for a call is `required` still waits for evidence before acting (§Cost model).
 
 ### Verification flow
 
@@ -440,7 +508,7 @@ sequenceDiagram
     V-->>C: valid / invalid
 ```
 
-A client MUST NOT act on a tool result whose proof fails verification unless it has an explicit out-of-band trust relationship with the server.
+A client MUST NOT act on a tool result whose evidence fails verification (`invalid`, §Proof requirement and verification outcome). An out-of-band trust relationship with the server does not change this: it may justify calling the tool with `proofRequirement: "none"`, but evidence that was requested and then failed is a tampering or misconfiguration signal, not something to be waived.
 
 ### TEE attestation formats
 
@@ -484,11 +552,11 @@ Indicative trade-offs (orders of magnitude; the reference implementation publish
 
 ### Why not just sign results?
 
-A plain server signature over `(inputs, output)` proves *origin* ("this server said Y") and gives non-repudiation, but not *correctness* ("Y = f(X)"): a compromised or dishonest server signs wrong answers just as happily. Signatures are still useful as a cheap first step and are what `demo-sig-v1` in the reference implementation models; the extension is designed so that upgrading from a signature to an attestation-backed signature to a ZK proof changes only `proofFormat`, not the transport.
+A plain server signature over `(inputs, output)` proves *origin* ("this server said Y") and gives non-repudiation, but not *execution integrity* (that `Y` is what the pinned `f` returns on `X`): a compromised or dishonest server signs substituted answers just as happily. Signatures are still useful as a cheap first step and are what `demo-sig-v1` in the reference implementation models; the extension is designed so that upgrading from a signature to an attestation-backed signature to a ZK proof changes only `proofFormat`, not the transport.
 
 ### Why include input provenance and deferred proofs?
 
-Early reviewers of this proposal asked two questions repeatedly. (1) *"If the tool reads a price from an API, what does the proof mean?"*: nothing about the price. `inputAttestations` gives the extension a place for zkTLS / oracle evidence so that "correct computation on authentic data" can be expressed end-to-end, and Scenario E shows how nested MCP results reuse the same slot. (2) *"Who pays for proving on every call?"*: often nobody should. `proofPolicy` and `verifiable-tools/prove` let the economic pattern (prove-always, prove-on-audit, prove-a-sample) be chosen per tool rather than baked into the protocol.
+Early reviewers of this proposal asked two questions repeatedly. (1) *"If the tool reads a price from an API, what does the proof mean?"*: nothing about the price. `inputAttestations` gives the extension a place for zkTLS / oracle evidence so that "the pinned computation on authentic data" can be expressed end-to-end, and Scenario E shows how nested MCP results reuse the same slot. (2) *"Who pays for proving on every call?"*: often nobody should. `proofPolicy` and `verifiable-tools/prove` let the economic pattern (prove-always, prove-on-audit, prove-a-sample) be chosen per tool rather than baked into the protocol.
 
 ## Backward Compatibility
 
@@ -505,12 +573,14 @@ This extension is **fully backward compatible**.
 - **Circuit / program identity**: `circuitHash` must uniquely identify the computation. If the same hash can map to different implementations, the integrity guarantee is weakened.
 - **Proof format negotiation**: The client and server MUST intersect their advertised `proofFormats`. A server MUST NOT use an unadvertised format, and a client MUST reject a format it did not request.
 - **Side channels**: Proof generation time can leak information about inputs. Implementations SHOULD use constant-time or padded proving schedules where side-channel resistance is required.
-- **Availability**: If `requireProof: true` is set and the server cannot generate a proof, the server may refuse the call. Clients SHOULD handle this gracefully.
-- **Replay**: Without a `nonce`, a valid proof for an earlier call is also a valid proof for the current one. Clients MUST send a nonce for any tool whose correct output is time-dependent, and MUST reject results whose echoed nonce differs.
+- **Availability**: Under a `required` proof requirement the server refuses calls it cannot prove (`proofUnavailable` / `noProofFormat`). Clients SHOULD handle this gracefully; it is the price of "decide before acting".
+- **Silent downgrade**: A server (or a middlebox) that strips evidence turns a `verified` result into an `absent` one. Under `preferred` this is permitted, which is why `absent` MUST be surfaced as a distinct state and why `proofPolicy: "always"` violations MUST be treated as security events (§Proof requirement and verification outcome).
+- **Replay**: Without a `nonce`, a valid proof for an earlier call is also a valid proof for the current one. Clients MUST send a nonce for any tool whose expected output is time-dependent, and MUST reject results whose echoed nonce differs.
 - **Output substitution**: Without `outputCommitment` bound into the proof, a server can pair a genuine proof with a different `content`. Verifiers MUST recompute `outputCommitment` from `content`.
 - **Commitments are not hiding**: `inputCommitment` for `tools/call` is an unsalted hash, and an unsalted hash of low-entropy arguments (an account number, a yes/no flag) is trivially inverted by anyone who sees the commitment. This extension does not hide arguments from anyone who can read the request or the result metadata; deployments that need that property MUST use the companion blind-execution proposal, which fills the 32-byte salt branch of §Result binding.
 - **Deferred-proof retrieval**: `resultId` is a bearer capability to retained `content`. It MUST be unguessable, scoped to the original caller, and expire with `resultTtlMs`.
 - **Input provenance**: A verified proof over fabricated inputs is worthless. Clients acting on externally sourced data SHOULD require `inputAttestations` and verify them independently of the main proof.
+- **Authorization continuity**: Execution integrity does not carry authority. In a multi-hop chain (Scenario E) a verified result proves that `f` ran on `X`, not that the hop which supplied `X` was allowed to. Policy layers MUST evaluate the two separately and SHOULD key both on the same identifiers (`circuitHash`, tool name) so that a verified-but-unauthorized result is rejected by the authorization check, not accepted because it verified.
 - **Descriptor trust**: `tools/list` metadata is server-controlled. Pin `circuitHash` / keys out of band or on first use; treat changes as security events.
 - **Randomness reuse**: Ed25519 is deterministic, but Schnorr/ECDSA-style signing in custom TEE code, and Beaver-triple or mask reuse in MPC-based provers, leak keys or inputs when randomness is reused. Implementations MUST use fresh randomness per proof and SHOULD include a negative test for reuse.
 - **Key revocation**: Verification keys, TEE signing keys, and notary keys can be compromised. Clients SHOULD check a revocation source (a transparency log or a signed revocation list at a well-known URI relative to `verificationKeyUri`) before trusting a key they have not used recently.
@@ -614,12 +684,29 @@ only attaches attestations to appending formats (`riskScore` proves with
   wasm32; the demo attests against a loopback fixture host (`test-server.io`)
   standing in for a real exchange API.
 
-## Performance Implications
+## Cost model (Performance Implications)
 
-- Proof generation can be orders of magnitude slower than the underlying computation. This is why async generation via Tasks is the default pattern, and why `proofPolicy: "onDemand" | "sampled"` exists for high-volume tools.
-- Verification is typically fast (milliseconds to seconds) and should run on the client.
-- Large proofs SHOULD be served via `proofUri` or `verificationKeyUri` rather than inlined in `_meta`.
-- Every format definition MUST report: proving time and memory for the reference circuit, proof size, verification time, and verifier dependency footprint (npm/WASM vs. native). The reference implementation records these for the in-process formats (see [`docs/BENCHMARKS.md`](../BENCHMARKS.md)); for the sidecar formats it records time and sizes but not yet prover memory (Phase 3 rows of [`docs/PLAN.md`](../PLAN.md)), so that `proofFormats` negotiation can be cost-aware.
+Proving is orders of magnitude slower than executing; verifying is not. The extension is arranged so that the expensive step never has to sit on the response path, while the cheap step always runs where the decision is made.
+
+1. **Proving is off the response path by default.** A server that needs time to prove returns a task (§Asynchronous proof generation via Tasks) and does not block the tool response on the prover.
+2. **Proving is optional per call.** `proofPolicy: "onDemand" | "sampled"` plus `verifiable-tools/prove` (§Deferred proofs) return the result first and let the client choose which calls to have proven later.
+3. **These move *proving*, not the *decision*.** A client that must decide before acting still waits for evidence when its requirement is `required`; the choice is per call (`proofRequirement`), so a high-frequency caller can run `preferred` + sampled audits on `priceQuote` and `required` on `placeOrder` in the same session.
+4. **Verification is local and cheap, but the verifier is a dependency.** Each format brings its own verifier library into the client; the footprint, not the milliseconds, is usually the adoption cost.
+5. Large proofs SHOULD be served via `proofUri` / `verificationKeyUri` rather than inlined in `_meta`.
+
+Every format definition MUST report: proving time and memory for the reference circuit, proof size, verification time, and **verifier dependency footprint** (npm/WASM bytes vs. native sidecar), so that `proofFormats` negotiation can be cost-aware. Measured figures from the reference implementation ([`docs/BENCHMARKS.md`](../BENCHMARKS.md); `add(20, 22)`, 2-CPU Linux VM, Node 20; sidecar rows copied from the phase PRs):
+
+| Format | Prove (median) | Proof size | Verify (median, client) | Verifier footprint | Verifier language |
+|---|---:|---:|---:|---|---|
+| `snarkjs-v2` (Groth16) | 143 ms | 725 B | 9.2 ms | `snarkjs` npm, WASM curve ops | TS/WASM in-process |
+| `noir-v1` (UltraHonk) | 138 ms | 14.7 KB | 5.7 ms | `@aztec/bb.js` npm (WASM backend) | TS/WASM in-process |
+| `risc0-v1` (composite STARK) | ≈19 s docker / 40–50 s bare | ≈222 KB | ≈40–60 ms | wasm32 build of `risc0-zkvm`, ≈1.5 MB | WASM in-process |
+| `ezkl-v1` (Halo2-KZG) | ≈2–3 s | ≈20 KB | ≈240 ms | `@ezkljs/engine` wasm, ≈9.8 MB; version-pinned to prover | WASM in-process |
+| `tee-nitro-v1` (mock chain) | ≈ native | ~1–10 KB doc + chain | ms | COSE/CBOR + X.509 in TS | TS in-process |
+| `zktls-tlsn-v1` (provenance) | attest ≈1 s | ≈5.3 KB | ≈0.2 ms | none in-process; Rust sidecar `/verify` | sidecar |
+| `demo-sig-v1` / `demo-commit-v1` | ≈1 ms | 32–64 B | <0.5 ms | `node:crypto` only | TS in-process |
+
+Prover memory for the sidecar formats is not yet recorded (Phase 3 rows of [`docs/PLAN.md`](../PLAN.md)).
 
 ## Testing Plan
 
@@ -631,6 +718,7 @@ only attaches attestations to appending formats (`riskScore` proves with
 - Provenance tests: a result with a valid main proof but a missing or invalid required `inputAttestations` entry is rejected.
 - Deferred-proof tests: `verifiable-tools/prove` returns byte-identical plaintext `content` and a verifying proof; an expired `resultId` is rejected.
 - Descriptor tests: a `tools/list` entry whose `circuitHash` differs from the pinned value is surfaced, not silently accepted.
+- Proof-requirement tests (requirement × outcome): `required` × cannot-prove → server rejects with `proofUnavailable` / `noProofFormat`; `preferred` × `absent` → result delivered and surfaced as *unverified*, not as *verified*; `preferred` × `invalid` → rejected; `none` → evidence ignored; `proofPolicy: "always"` × `absent` → descriptor violation surfaced; `onDemand` / `sampled` × `absent` without `resultId` → descriptor violation.
 
 ## Alternatives Considered
 
@@ -639,6 +727,7 @@ only attaches attestations to appending formats (`riskScore` proves with
 - **Requiring every MCP server to verify proofs**: Rejected; verification is a client-side concern, and the extension only standardizes the transport of proof data.
 - **Plain signed results (no proof)**: Insufficient alone (see Rationale) but supported as the lowest rung of `proofFormat`, so adopters can start there.
 - **zkTLS-only (prove the data source, not the computation)**: Complementary, not alternative; adopted as `inputAttestations`.
+- **Log-and-audit-later (modelcontextprotocol#3112 style)**: Complementary, not alternative; a tamper-evident log cannot gate an irreversible action at call time, which is the case this extension exists for.
 - **Mandating a single proof system (e.g. Groth16) for interoperability**: Rejected; the field moves too fast, and TEE deployments would be excluded. Interoperability is addressed by per-format definitions and the binding rules, which are engine-independent.
 
 ## Open Questions

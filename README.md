@@ -86,6 +86,21 @@ Notes:
   vars; the others stay `skipped`. Ports and gated tests are listed in
   [docs/DEMOS.md](docs/DEMOS.md#sidecars).
 
+### Client-side requirement policy
+
+```ts
+const call = await client.callTool("add", { a: 20, b: 22 }, { proofRequirement: "preferred" });
+const result = call.result.resultType === "task" ? await client.poll(call.result) : call.result;
+const policy = await client.verifyWithRequirement(result, { a: 20, b: 22 }, "add", { nonce: call.nonce });
+if (policy.outcome === "verified") console.log("verified");
+else if (policy.outcome === "absent") console.log("unverified");
+else console.log(`rejected: ${policy.reason}`);
+```
+
+The policy layer keeps `absent`, `invalid`, and `verified` distinct. A required
+call can fail with `-32603 proofUnavailable`; incompatible formats fail with
+`-32602 noProofFormat`.
+
 To run the server standalone (default port 3939, override with `PORT`):
 
 ```sh

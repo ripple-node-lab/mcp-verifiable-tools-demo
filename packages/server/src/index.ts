@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import {
   CallToolResult, EXTENSION_ID, HPKE_INFO_ARGS, HPKE_INFO_REPLY, JsonRpcRequest, JsonRpcResponse,
   META_CLIENT_CAPABILITIES, META_SERVER_INFO, RequestMeta, RESULT_TTL_MS, b64u, hpkeOpen, hpkeSeal,
-  inputCommitment, InputAttestation, isRecord, isValidNonce, jcs, JsonValue, JsonRpcProtocolError, negotiateProofFormat, expectedCircuitHash,
+  inputCommitment, InputAttestation, isRecord, isValidNonce, jcs, JsonValue, JsonRpcProtocolError, negotiateProofFormat, effectiveProofRequirement, expectedCircuitHash,
   outputCommitment, parseAddArguments, parseEzklAddArguments, rawX25519Public, tasksDeclared, verifiableCapability
 } from "@demo/protocol";
 import { DemoCommitProver, DemoSigProver, Prover, TeeNitroProver, TeeNitroProverOptions, mockNitroFixturesDir } from "@demo/prover";
@@ -27,6 +27,7 @@ export interface DemoServerOptions {
   descriptorOverride?: DescriptorOverride;
   verificationKeyOverrides?: { [hash: string]: Uint8Array | string };
   provers?: Prover[];
+  proverOverrides?: Map<string, Prover>;
   risc0SidecarUrl?: string;
   risc0TimeoutMs?: number;
   ezklSidecarUrl?: string;
@@ -74,6 +75,7 @@ export class DemoServer {
       const tee = options.teeNitro ? new TeeNitroProver({ userData, ...options.teeNitro }) : TeeNitroProver.fromMockFixtures(mockNitroFixturesDir(), { userData });
       this.provers.set(tee.format, tee);
     }
+    for (const [format, prover] of options.proverOverrides ?? []) this.provers.set(format, prover);
     for (const prover of options.provers ?? []) {
       if (this.provers.has(prover.format)) throw new Error(`duplicate prover format: ${prover.format}`);
       this.provers.set(prover.format, prover);
@@ -170,9 +172,10 @@ export class DemoServer {
     if (nonce !== undefined && !isValidNonce(nonce)) throw new JsonRpcProtocolError(-32602, "invalid nonce");
     const capability = verifiableCapability(requestMeta?.[META_CLIENT_CAPABILITIES]);
     const requested = typeof extensionMeta?.requestedProofFormat === "string" ? extensionMeta.requestedProofFormat : undefined;
+    const requirement = effectiveProofRequirement(capability, extensionMeta?.proofRequirement);
     const toolFormats = this.toolFormats(tool);
     const format = negotiateProofFormat(capability, toolFormats, requested);
-    if (capability?.requireProof && !format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format");
+    if (requirement === "required" && !format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format", { reason: "noProofFormat" });
     if (tool === "add" && isZkFormat(format ?? "") && !parseAddArguments(params.arguments)) {
       throw new JsonRpcProtocolError(-32602, "invalid arguments for add");
     }
@@ -192,18 +195,24 @@ export class DemoServer {
           inputAttestations = [attestation];
         } catch (error) {
           if (signal?.aborted) throw error;
-          if (capability?.requireInputProvenance === true) throw new JsonRpcProtocolError(-32603, "input provenance unavailable");
+          if (capability?.requireInputProvenance === true) throw new JsonRpcProtocolError(-32603, "input provenance unavailable", { reason: "provenanceUnavailable" });
           throw error;
         }
       }
       const execution = executeTool(tool, params.arguments!, isZkFormat(format ?? ""), { price });
-      if (tool === "priceQuote" && capability && !capability.requireProof) {
+      if (tool === "priceQuote" && capability && requirement === "preferred") {
         const content = [{ type: "text" as const, text: execution.output }];
         const resultId = this.results.put({ tool, arguments: execution.arguments, content, nonce });
         return makeResult(execution.output, { [META_SERVER_INFO]: { name: "verifiable-tools-demo", version: "1.0.0" }, [EXTENSION_ID]: { resultId } });
       }
-      if (!format) return makeResult(execution.output);
-      return this.provenResult(tool, execution.arguments, execution.output, format, nonce, undefined, signal, undefined, inputAttestations);
+      if (!format || requirement === "none") return makeResult(execution.output);
+      try {
+        return await this.provenResult(tool, execution.arguments, execution.output, format, nonce, undefined, signal, undefined, inputAttestations);
+      } catch (error) {
+        if (error instanceof JsonRpcProtocolError || signal?.aborted) throw error;
+        if (requirement === "required") throw new JsonRpcProtocolError(-32603, "proof unavailable", { reason: "proofUnavailable" });
+        return makeResult(execution.output);
+      }
     };
     if (tasksDeclared(requestMeta?.[META_CLIENT_CAPABILITIES]) && (tool === "riskScore" || isZkFormat(format ?? ""))) {
       return { jsonrpc: "2.0", id: request.id, result: this.tasks.create(async (signal) => {
@@ -256,7 +265,7 @@ export class DemoServer {
     if (capability?.blindExecution !== true) throw new JsonRpcProtocolError(-32602, "client did not declare blindExecution");
     const toolFormats = this.toolFormats(params.tool as ToolName);
     const format = negotiateProofFormat(capability, toolFormats, typeof params.proofFormat === "string" ? params.proofFormat : undefined);
-    if (!format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format");
+    if (!format) throw new JsonRpcProtocolError(-32602, "no mutually supported proof format", { reason: "noProofFormat" });
     const raw = Buffer.from(params.encryptedArguments, "base64url");
     const aad = new TextEncoder().encode(jcs({ tool: params.tool, inputCommitment: params.inputCommitment, encryptionScheme: "hpke-v1" } as unknown as JsonValue));
     let payload: unknown;

@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import {
-  CallToolResult, ClientCapabilities, EXTENSION_ID, HPKE_INFO_REPLY, JsonValue, META_CLIENT_CAPABILITIES,
+  CallToolResult, ClientCapabilities, EXTENSION_ID, HPKE_INFO_REPLY, JsonValue, META_CLIENT_CAPABILITIES, ProofRequirement,
   PINNED_CIRCUITS, PROTOCOL_VERSION, RequestMeta, TASKS_EXTENSION_ID, ToolDescriptorMeta,
   VerifiableToolsCapability, b64u, clientCapabilities, expectedCircuitHash, freshNonce, hpkeOpen,
   isRecord, jcs, unb64u, verifiableCapability
 } from "@demo/protocol";
 import { mockNitroFixturesDir } from "@demo/prover";
-import { DemoCommitVerifier, DemoSigVerifier, OracleSigVerifier, ProvenanceVerifier, TeeNitroVerifier, TeeNitroVerifierOptions, VerificationKeyRegistry, Verifier, VerifyOutcome, verifyResult } from "@demo/verifier";
+import { classifyOutcome, DemoCommitVerifier, DemoSigVerifier, OracleSigVerifier, ProofOutcome, ProvenanceVerifier, TeeNitroVerifier, TeeNitroVerifierOptions, VerificationKeyRegistry, Verifier, VerifyOutcome, VerifyReason, verifyResult } from "@demo/verifier";
 import { NoirVerifier } from "@demo/prover-noir";
 import { Risc0Verifier } from "@demo/prover-risc0";
 import { EzklVerifier } from "@demo/prover-ezkl";
@@ -16,6 +16,13 @@ import { pollTask, RpcRequest } from "./tasks.js";
 
 export interface DiscoverResult { proofFormats: string[]; serverProofFormats: string[]; blindPublicKeys: { [scheme: string]: string }; blindEncryptionSchemes: string[]; blindExecution: boolean; resultTtlMs?: number; }
 export interface CallResponse { result: CallToolResult | TaskEnvelope; nonce: string; }
+export interface PolicyOutcome {
+  outcome: ProofOutcome;
+  requirement: ProofRequirement;
+  act: boolean;
+  reason?: VerifyReason | "notEvaluated";
+  descriptorViolation: boolean;
+}
 export type RpcTransport = (method: string, params: unknown) => Promise<{ result?: unknown; error?: { code: number; message: string; data?: unknown } }>;
 export interface VerifiableClientOptions {
   verifiers?: Verifier[];
@@ -106,10 +113,10 @@ export class VerifiableClient {
   descriptor(tool: string): ToolDescriptorMeta | undefined { return this.descriptors.get(tool); }
   setCapabilities(capability: VerifiableToolsCapability, tasks = false): void { this.capabilities = clientCapabilities(capability.proofFormats ?? [], { blindExecution: capability.blindExecution, requireProof: capability.requireProof, requireInputProvenance: capability.requireInputProvenance, tasks }); }
   addProvenanceVerifier(verifier: ProvenanceVerifier): void { this.provenanceVerifiers.push(verifier); }
-  async callTool(name: string, args: JsonValue, options: { proofFormat?: string; nonce?: string } = {}): Promise<CallResponse> {
+  async callTool(name: string, args: JsonValue, options: { proofFormat?: string; nonce?: string; proofRequirement?: ProofRequirement } = {}): Promise<CallResponse> {
     const nonce = options.nonce ?? freshNonce();
     const meta = this.requestMeta();
-    meta[EXTENSION_ID] = { ...(options.proofFormat ? { requestedProofFormat: options.proofFormat } : {}), nonce };
+    meta[EXTENSION_ID] = { ...(options.proofFormat ? { requestedProofFormat: options.proofFormat } : {}), ...(options.proofRequirement ? { proofRequirement: options.proofRequirement } : {}), nonce };
     const response = await this.request("tools/call", { name, arguments: args, _meta: meta });
     if (response.error) throw new Error(response.error.message);
     return { result: response.result as CallToolResult | TaskEnvelope, nonce };
@@ -148,11 +155,31 @@ export class VerifiableClient {
       // policy — only an explicit `externalInputs: false` waives attestations.
       { required: requireProvenance && descriptor?.externalInputs !== false, verifiers: this.provenanceVerifiers, registry: this.registry });
   }
-  async callAndVerify(name: string, args: JsonValue, proofFormat?: string): Promise<CallToolResult> {
-    const value = await this.callTool(name, args, { proofFormat });
+  async verifyWithRequirement(result: CallToolResult, args: JsonValue, tool: string, options: { nonce?: string; salt?: Uint8Array; proofRequirement?: ProofRequirement } = {}): Promise<PolicyOutcome> {
+    const capability = verifiableCapability(this.capabilities);
+    const requirement = options.proofRequirement ?? (capability?.requireProof === true ? "required" : "preferred");
+    if (requirement === "none") return { outcome: "absent", requirement, act: true, reason: "notEvaluated", descriptorViolation: false };
+    const verified = await this.verify(result, args, tool, options);
+    const outcome = classifyOutcome(verified);
+    let descriptor = this.descriptors.get(tool);
+    if (descriptor === undefined && this.discovered === undefined) {
+      await this.discover();
+      descriptor = this.descriptors.get(tool);
+    }
+    const resultId = result._meta?.[EXTENSION_ID]?.resultId;
+    const provable = typeof resultId === "string" && resultId.length > 0 && typeof this.discovered?.resultTtlMs === "number" && this.discovered.resultTtlMs > 0;
+    const descriptorViolation = outcome === "absent" && (
+      descriptor?.proofPolicy === "always" ||
+      ((descriptor?.proofPolicy === "onDemand" || descriptor?.proofPolicy === "sampled") && !provable)
+    );
+    const act = outcome === "verified" ? true : outcome === "invalid" ? false : requirement === "preferred" && !descriptorViolation;
+    return { outcome, requirement, act, ...(verified.ok ? {} : { reason: verified.reason }), descriptorViolation };
+  }
+  async callAndVerify(name: string, args: JsonValue, proofFormat?: string, proofRequirement?: Exclude<ProofRequirement, "none">): Promise<CallToolResult> {
+    const value = await this.callTool(name, args, { proofFormat, proofRequirement });
     const result = isTask(value.result) ? await this.poll(value.result) : value.result;
-    const outcome = await this.verify(result, args, name, { nonce: value.nonce });
-    if (!outcome.ok) throw new Error(`verification failed for ${name}: ${outcome.reason}`);
+    const outcome = await this.verifyWithRequirement(result, args, name, { nonce: value.nonce, proofRequirement });
+    if (outcome.outcome !== "verified") throw new Error(`verification failed for ${name}: ${outcome.outcome}${outcome.reason ? ` (${outcome.reason})` : ""}`);
     return result;
   }
   async poll(task: TaskEnvelope): Promise<CallToolResult> { return pollTask(this.request.bind(this) as RpcRequest, task, this.requestMeta(true)); }
