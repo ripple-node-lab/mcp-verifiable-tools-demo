@@ -375,7 +375,7 @@ This section is normative. It defines what a client may do with a result that ca
 
 | `proofRequirement` | Meaning |
 |---|---|
-| `required` | The client will not act without verified evidence. The server MUST NOT return a result it cannot prove. |
+| `required` | The client will not act without verified evidence. The server MUST NOT return a result it cannot prove, and MUST prove eagerly (inline or via a task) even on `onDemand` / `sampled` tools: the `resultId`-only deferred path is not available under `required`. |
 | `preferred` | The client wants evidence when available but will decide for itself what to do without it. The server MUST return the result either way. **Default.** |
 | `none` | The client does not want evidence for this call and will not verify any that arrives. |
 
@@ -385,8 +385,8 @@ The level is taken from `params._meta["io.github.ripple-node-lab/verifiable-tool
 
 | Outcome | Condition |
 |---|---|
-| `absent` | `_meta["io.github.ripple-node-lab/verifiable-tools"]` is missing, or carries neither `proof` nor `teeAttestation`, or carries evidence but lacks `inputCommitment` / `outputCommitment` (see §Verifiable tool result). A result carrying only `resultId` is `absent` until `verifiable-tools/prove` upgrades it. |
-| `invalid` | Evidence is present and at least one check of §Verification flow fails (unnegotiated format, `circuitHash` mismatch, commitment mismatch, nonce mismatch, proof or attestation does not verify, required provenance missing or failing). |
+| `absent` | `_meta["io.github.ripple-node-lab/verifiable-tools"]` is missing, or carries none of `proof`, `proofUri`, or `teeAttestation`, or carries evidence but lacks `inputCommitment` / `outputCommitment` (see §Verifiable tool result). A result carrying only `resultId` is `absent` until `verifiable-tools/prove` upgrades it. |
+| `invalid` | Evidence is present and at least one check of §Verification flow fails (unnegotiated format, `circuitHash` mismatch, commitment mismatch, nonce mismatch, proof or attestation does not verify, a `proofUri` that cannot be fetched, or — when the client declared `requireInputProvenance` and the tool is not explicitly marked `externalInputs: false` — a required `inputAttestations` entry missing or failing). |
 | `verified` | Evidence is present and every check passes. |
 
 **Normative behaviour.**
@@ -402,7 +402,7 @@ The level is taken from `params._meta["io.github.ripple-node-lab/verifiable-tool
 **Interaction with `proofPolicy`.** `proofPolicy` is a server promise in the tool descriptor (§Tool descriptor metadata):
 
 - A result on a `proofPolicy: "always"` tool that arrives `absent` is a **descriptor violation**. The client MUST surface it exactly as it would a `circuitHash` change for a known tool, regardless of its own requirement level (except `none`), and SHOULD treat the server as untrusted for the tool until the discrepancy is explained out of band.
-- Under `onDemand` and `sampled`, `absent` results MUST carry `resultId` so that the client can demand a proof (§Deferred proofs). An `absent` result without `resultId` on such a tool is likewise a descriptor violation.
+- Under `onDemand` and `sampled`, `absent` results MUST carry `resultId` so that the client can demand a proof (§Deferred proofs). An `absent` result without `resultId` on such a tool is likewise a descriptor violation. The deferred path exists for `preferred` callers only; a `required` call on such a tool is proven eagerly (or rejected with `proofUnavailable`), exactly as on an `always` tool.
 - Under `sampled`, the **server** chooses which calls it proves eagerly; the **client** chooses which additional calls to audit through `verifiable-tools/prove`, and MUST make that choice unpredictably to the server (e.g. uniformly at random) for the audit to have deterrent value. A `resultId` that the server cannot honour within `resultTtlMs` for a call it accepted (other than `resultExpired` after the TTL) is evidence of a broken promise, and the client SHOULD treat all results from that tool in the same period as `invalid`.
 
 **Distinguishing `absent` from `invalid` matters.** `invalid` is an active signal of tampering or misconfiguration and is never acceptable to act on. `absent` is a statement about coverage: the client knows it has no evidence, and only its own declared requirement decides whether that is acceptable. Implementations MUST keep the two apart in their APIs and logs.
