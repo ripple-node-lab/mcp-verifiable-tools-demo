@@ -1,5 +1,5 @@
 import { EXTENSION_ID, META_CLIENT_CAPABILITIES, META_VERIFIABLE_TOOLS, TASKS_EXTENSION_ID } from "./constants.js";
-import { ClientCapabilities, InputAttestation, JsonValue, RequestMeta, VerifiableToolsCapability } from "./types.js";
+import { ClientCapabilities, InputAttestation, JsonValue, ProofRequirement, RequestMeta, VerifiableToolsCapability } from "./types.js";
 import { createHash } from "node:crypto";
 import { sha256Hex } from "./jcs.js";
 
@@ -23,6 +23,10 @@ export function negotiateProofFormat(clientCap: VerifiableToolsCapability | unde
   const clientFormats = clientCap.proofFormats ?? [];
   if (requested !== undefined) return clientFormats.includes(requested) && serverFormats.includes(requested) ? requested : undefined;
   return serverFormats.find((format) => clientFormats.includes(format));
+}
+export function effectiveProofRequirement(capability: VerifiableToolsCapability | undefined, requested: unknown): ProofRequirement {
+  if (requested === "required" || requested === "preferred" || requested === "none") return requested;
+  return capability?.requireProof === true ? "required" : "preferred";
 }
 export function requestMeta(capabilities: ClientCapabilities, clientInfo = { name: "demo-client", version: "1.0.0" }): RequestMeta {
   return {

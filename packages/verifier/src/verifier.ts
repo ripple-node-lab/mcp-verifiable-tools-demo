@@ -17,9 +17,15 @@ export interface Verifier {
   readonly format: string;
   verify(meta: VerifiableToolsMeta, context: VerifyContext, options?: { signal?: AbortSignal }): Promise<boolean>;
 }
+export type VerifyReason = "noProof" | "formatNotNegotiated" | "circuitHashMismatch" | "missingCommitment" | "inputCommitmentMismatch" | "outputCommitmentMismatch" | "nonceMismatch" | "proofInvalid" | "provenanceMissing" | "provenanceMalformed" | "provenanceUnbound" | "provenanceUnsupported" | "provenanceInvalid";
 export type VerifyOutcome =
   | { ok: true }
-  | { ok: false; reason: "noProof" | "formatNotNegotiated" | "circuitHashMismatch" | "missingCommitment" | "inputCommitmentMismatch" | "outputCommitmentMismatch" | "nonceMismatch" | "proofInvalid" | "provenanceMissing" | "provenanceMalformed" | "provenanceUnbound" | "provenanceUnsupported" | "provenanceInvalid" };
+  | { ok: false; reason: VerifyReason };
+export type ProofOutcome = "absent" | "invalid" | "verified";
+export function classifyOutcome(outcome: VerifyOutcome): ProofOutcome {
+  if (outcome.ok) return "verified";
+  return outcome.reason === "noProof" || outcome.reason === "missingCommitment" ? "absent" : "invalid";
+}
 
 export interface ProvenanceVerificationOptions {
   required: boolean;
@@ -29,8 +35,8 @@ export interface ProvenanceVerificationOptions {
 }
 
 export async function verifyResult(meta: VerifiableToolsMeta | undefined, context: VerifyContext, verifiers: Verifier[], provenance?: ProvenanceVerificationOptions): Promise<VerifyOutcome> {
-  if (!meta?.proof || !meta.proofFormat) return { ok: false, reason: "noProof" };
-  const verifier = verifiers.find((candidate) => candidate.format === meta.proofFormat);
+  if (!meta || (!meta.proof && !meta.proofUri && !meta.teeAttestation)) return { ok: false, reason: "noProof" };
+  const verifier = meta.proofFormat ? verifiers.find((candidate) => candidate.format === meta.proofFormat) : undefined;
   if (!verifier) return { ok: false, reason: "formatNotNegotiated" };
   if (meta.circuitHash !== context.expectedCircuitHash) return { ok: false, reason: "circuitHashMismatch" };
   if (!meta.inputCommitment || !meta.outputCommitment) return { ok: false, reason: "missingCommitment" };

@@ -40,6 +40,18 @@ section; this file consolidates the demo-specific caveats.
   `u32` sum to fit in `[0, 2^32 - 1]`; invalid arguments are rejected with
   `-32602`.
 
+## Proof absent vs. invalid
+
+The client distinguishes three outcomes: `absent` means no usable evidence was
+returned, `invalid` means evidence failed verification, and `verified` means all
+checks passed. `verifyWithRequirement` applies the caller's `required`,
+`preferred`, or `none` policy; `invalid` is never actionable, while `absent`
+under `preferred` remains an explicit unverified state. An absent result from a
+`proofPolicy: "always"` tool is a descriptor violation and a security event.
+Servers that silently strip evidence can therefore cause a downgrade from
+verified to absent; clients must not present that as verified. See the
+[normative requirement section](spec/verifiable-tools.md#proof-requirement-and-verification-outcome).
+
 ## ZK proof binding
 
 The ZK proof formats bind `outputCommitment`, `inputCommitment`, and `nonce`
@@ -85,6 +97,9 @@ satisfying the spec's §Result binding requirement.
   expiry because the tombstone is retained, then `resultNotFound`.
 - No principal or session binding is implemented: `resultId` handles are not
   bound to a caller, and the demo has no authentication. Anyone who can reach
-  the endpoint can call any tool, claim any task by `taskId`, or prove any
-  live `resultId`.
+  the endpoint can call any tool, claim any task by `taskId`, or prove any live
+  `resultId`.
+- **Authorization continuity:** a verified result does not prove the caller was
+  entitled to supply the input `X`; authorization and execution integrity are
+  separate checks.
 - Do not use this implementation for production security.

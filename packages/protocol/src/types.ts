@@ -3,6 +3,7 @@ import { EXTENSION_ID, TASKS_EXTENSION_ID, META_CLIENT_CAPABILITIES, META_CLIENT
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type ProofFormat = "demo-sig-v1" | "demo-commit-v1" | string;
+export type ProofRequirement = "required" | "preferred" | "none";
 export interface VerifiableToolsCapability {
   proofFormats?: string[];
   blindExecution?: boolean;
@@ -32,6 +33,7 @@ export interface VerifiableToolsMeta {
   teeAttestation?: string;
   inputAttestations?: InputAttestation[];
   requestedProofFormat?: string;
+  proofRequirement?: ProofRequirement;
 }
 export interface InputAttestation {
   type: string;              // "oracle-sig-v1" | "zktls-tlsn-v1" | ...
