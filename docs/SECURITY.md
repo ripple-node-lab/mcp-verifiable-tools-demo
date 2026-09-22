@@ -101,5 +101,6 @@ satisfying the spec's §Result binding requirement.
   `resultId`.
 - **Authorization continuity:** a verified result does not prove the caller was
   entitled to supply the input `X`; authorization and execution integrity are
-  separate checks.
+  separate checks. The demo's negative fixture compares `inputCommitment`
+  against a fixed approved-argument commitment (tests/provenance.test.ts).
 - Do not use this implementation for production security.
