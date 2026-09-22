@@ -17,9 +17,15 @@ export interface Verifier {
   readonly format: string;
   verify(meta: VerifiableToolsMeta, context: VerifyContext, options?: { signal?: AbortSignal }): Promise<boolean>;
 }
+export type VerifyReason = "noProof" | "formatNotNegotiated" | "circuitHashMismatch" | "missingCommitment" | "inputCommitmentMismatch" | "outputCommitmentMismatch" | "nonceMismatch" | "proofInvalid" | "provenanceMissing" | "provenanceMalformed" | "provenanceUnbound" | "provenanceUnsupported" | "provenanceInvalid";
 export type VerifyOutcome =
   | { ok: true }
-  | { ok: false; reason: "noProof" | "formatNotNegotiated" | "circuitHashMismatch" | "missingCommitment" | "inputCommitmentMismatch" | "outputCommitmentMismatch" | "nonceMismatch" | "proofInvalid" | "provenanceMissing" | "provenanceMalformed" | "provenanceUnbound" | "provenanceUnsupported" | "provenanceInvalid" };
+  | { ok: false; reason: VerifyReason };
+export type ProofOutcome = "absent" | "invalid" | "verified";
+export function classifyOutcome(outcome: VerifyOutcome): ProofOutcome {
+  if (outcome.ok) return "verified";
+  return outcome.reason === "noProof" || outcome.reason === "missingCommitment" ? "absent" : "invalid";
+}
 
 export interface ProvenanceVerificationOptions {
   required: boolean;
