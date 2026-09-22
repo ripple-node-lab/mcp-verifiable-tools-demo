@@ -116,3 +116,24 @@ test("preferred proven results are verified and actionable", async () => withSer
   const outcome = await client.verifyWithRequirement(result, { a: 1, b: 2 }, "add", { nonce: call.nonce, proofRequirement: "preferred" });
   assert.deepEqual(outcome, { outcome: "verified", requirement: "preferred", act: true, descriptorViolation: false });
 }));
+
+test("evidence without proofFormat is invalid, not absent", async () => withServer(async (server) => {
+  const client = new VerifiableClient(server.mcpUrl);
+  await client.discover();
+  const call = await client.callTool("priceQuote", { symbol: "AAPL" }, { proofFormat: "demo-sig-v1", proofRequirement: "preferred" });
+  const result = expectComplete(call.result);
+  result._meta![EXTENSION_ID] = { ...result._meta![EXTENSION_ID], proof: "00" };
+  const outcome = await client.verifyWithRequirement(result, { symbol: "AAPL" }, "priceQuote", { nonce: call.nonce, proofRequirement: "preferred" });
+  assert.deepEqual(outcome, { outcome: "invalid", requirement: "preferred", act: false, reason: "formatNotNegotiated", descriptorViolation: false });
+}));
+
+test("a resultId from a server that advertises no resultTtlMs is a descriptor violation", async () => withServer(async (server) => {
+  const client = new VerifiableClient(server.mcpUrl);
+  const discovered = await client.discover();
+  delete discovered.resultTtlMs;
+  const call = await client.callTool("priceQuote", { symbol: "AAPL" }, { proofFormat: "demo-sig-v1", proofRequirement: "preferred" });
+  const result = expectComplete(call.result);
+  assert.equal(typeof result._meta?.[EXTENSION_ID]?.resultId, "string");
+  const outcome = await client.verifyWithRequirement(result, { symbol: "AAPL" }, "priceQuote", { nonce: call.nonce, proofRequirement: "preferred" });
+  assert.deepEqual(outcome, { outcome: "absent", requirement: "preferred", act: false, reason: "noProof", descriptorViolation: true });
+}));

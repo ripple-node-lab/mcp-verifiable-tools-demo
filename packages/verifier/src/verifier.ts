@@ -35,8 +35,8 @@ export interface ProvenanceVerificationOptions {
 }
 
 export async function verifyResult(meta: VerifiableToolsMeta | undefined, context: VerifyContext, verifiers: Verifier[], provenance?: ProvenanceVerificationOptions): Promise<VerifyOutcome> {
-  if (!meta?.proof || !meta.proofFormat) return { ok: false, reason: "noProof" };
-  const verifier = verifiers.find((candidate) => candidate.format === meta.proofFormat);
+  if (!meta || (!meta.proof && !meta.proofUri && !meta.teeAttestation)) return { ok: false, reason: "noProof" };
+  const verifier = meta.proofFormat ? verifiers.find((candidate) => candidate.format === meta.proofFormat) : undefined;
   if (!verifier) return { ok: false, reason: "formatNotNegotiated" };
   if (meta.circuitHash !== context.expectedCircuitHash) return { ok: false, reason: "circuitHashMismatch" };
   if (!meta.inputCommitment || !meta.outputCommitment) return { ok: false, reason: "missingCommitment" };

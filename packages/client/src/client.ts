@@ -167,9 +167,10 @@ export class VerifiableClient {
       descriptor = this.descriptors.get(tool);
     }
     const resultId = result._meta?.[EXTENSION_ID]?.resultId;
+    const provable = resultId !== undefined && typeof this.discovered?.resultTtlMs === "number" && this.discovered.resultTtlMs > 0;
     const descriptorViolation = outcome === "absent" && (
       descriptor?.proofPolicy === "always" ||
-      ((descriptor?.proofPolicy === "onDemand" || descriptor?.proofPolicy === "sampled") && resultId === undefined)
+      ((descriptor?.proofPolicy === "onDemand" || descriptor?.proofPolicy === "sampled") && !provable)
     );
     const act = outcome === "verified" ? true : outcome === "invalid" ? false : requirement === "preferred" && !descriptorViolation;
     return { outcome, requirement, act, ...(verified.ok ? {} : { reason: verified.reason }), descriptorViolation };
