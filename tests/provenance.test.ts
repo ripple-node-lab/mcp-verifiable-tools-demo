@@ -4,7 +4,7 @@ import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { VerifiableClient } from "@demo/client";
 import {
   CallToolResult, InputAttestation, META_CLIENT_CAPABILITIES, VerifiableToolsMeta,
-  attestationCommitment, clientCapabilities, jcs
+  attestationCommitment, clientCapabilities, inputCommitment, jcs
 } from "@demo/protocol";
 import { OracleSigVerifier, verifyResult } from "@demo/verifier";
 import { withServer, withServerOptions, rpc, expectComplete } from "./helpers.js";
@@ -92,6 +92,25 @@ test("a consistent commitment swap invalidates the bound proof", async () => wit
     const outcome = await client.verify(result, { symbol: "AAPL" }, "riskScore", { nonce });
     assert.deepEqual(outcome, { ok: false, reason: "proofInvalid" });
   }
+}));
+
+// Negative fixture from the authorization-continuity discussion: a schema-valid
+// but semantically widened call carries a fully valid execution proof. The proof
+// layer accepts it by design; rejection comes from comparing inputCommitment
+// against the commitment of the arguments the upstream authority approved.
+test("a valid proof over widened arguments is rejected by the approved-argument commitment, not by verification", async () => withServer(async (server) => {
+  const approvedArgs = { symbol: "AAPL" };
+  const widenedArgs = { symbol: "TSLA" };
+  const approvedCommitment = inputCommitment(approvedArgs);
+  const client = new VerifiableClient(server.mcpUrl);
+  await client.discover();
+  client.setCapabilities({ proofFormats: ["demo-commit-v1"], requireInputProvenance: true });
+  const call = await client.callTool("riskScore", widenedArgs, { proofFormat: "demo-commit-v1" });
+  const result = expectComplete(call.result);
+  assert.deepEqual(await client.verify(result, widenedArgs, "riskScore", { nonce: call.nonce }), { ok: true });
+  const value = meta(result);
+  assert.equal(value.inputCommitment, inputCommitment(widenedArgs));
+  assert.notEqual(value.inputCommitment, approvedCommitment);
 }));
 
 test("an unknown attestation type yields provenanceUnsupported", async () => withServer(async (server) => {

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { VerifiableClient, encryptArguments } from "@demo/client";
-import { EXTENSION_ID, HPKE_INFO_ARGS, META_CLIENT_CAPABILITIES, b64u, clientCapabilities, hpkeSeal, inputCommitment, jcs, unb64u } from "@demo/protocol";
+import { EXTENSION_ID, HPKE_INFO_ARGS, META_CLIENT_CAPABILITIES, b64u, clientCapabilities, hpkeSeal, inputCommitment, jcs, type VerifiableToolsMeta, unb64u } from "@demo/protocol";
 import { withServer, rpc, expectComplete } from "./helpers.js";
 test("binding rejects content mutation, replay nonce, and missing commitment", async () => withServer(async (server) => {
   const client = new VerifiableClient(server.mcpUrl);
@@ -23,6 +23,22 @@ test("binding rejects content mutation, replay nonce, and missing commitment", a
   if (missingOutcome.ok) throw new Error("missing commitment unexpectedly verified");
   assert.equal(missingOutcome.reason, "missingCommitment");
 }));
+
+test("publicInputs wire order is [outputCommitment, inputCommitment, nonce]", async () => withServer(async (server) => {
+  const client = new VerifiableClient(server.mcpUrl);
+  await client.discover();
+  const call = await client.callTool("add", { a: 20, b: 22 }, { proofFormat: "demo-sig-v1" });
+  const complete = expectComplete(call.result);
+  const value = complete._meta?.[EXTENSION_ID] as VerifiableToolsMeta;
+  assert.notEqual(value.inputCommitment, value.outputCommitment);
+  assert.deepEqual(value.publicInputs?.slice(0, 3), [value.outputCommitment, value.inputCommitment, call.nonce]);
+  assert.deepEqual(await client.verify(complete, { a: 20, b: 22 }, "add", { nonce: call.nonce }), { ok: true });
+  const swapped = structuredClone(value);
+  [swapped.publicInputs![0], swapped.publicInputs![1]] = [swapped.publicInputs![1], swapped.publicInputs![0]];
+  const outcome = await client.verify({ ...complete, _meta: { ...complete._meta, [EXTENSION_ID]: swapped } }, { a: 20, b: 22 }, "add", { nonce: call.nonce });
+  assert.deepEqual(outcome, { ok: false, reason: "proofInvalid" });
+}));
+
 test("blind nonce validation rejects malformed requests", async () => withServer(async (server) => {
   const client = new VerifiableClient(server.mcpUrl);
   const discovery = await client.discover();
