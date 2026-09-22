@@ -20,6 +20,7 @@ test("missing Mcp-Name on tools/call is rejected", async () => withServer(async 
 test("unsupported requested proof format is rejected when required", async () => withServer(async (server) => {
   const response = await rpc(server, "tools/call", { name: "add", arguments: { a: 1, b: 2 }, _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["demo-sig-v1"], { requireProof: true }), [EXTENSION_ID]: { requestedProofFormat: "nope" } } }, { "Mcp-Name": "add" });
   assert.equal(response.error?.code, -32602);
+  assert.equal(response.error?.data?.reason, "noProofFormat");
 }));
 
 test("tampered proof does not verify", async () => withServer(async (server) => {

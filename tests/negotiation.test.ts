@@ -9,6 +9,7 @@ test("negotiation controls evidence metadata", async () => withServer(async (ser
   assert.equal((verified.result?._meta as Record<string, unknown>)[EXTENSION_ID] !== undefined, true);
   const rejected = await rpc(server, "tools/call", { name: "add", arguments: { a: 1, b: 2 }, _meta: { [META_CLIENT_CAPABILITIES]: clientCapabilities(["unknown"], { requireProof: true }) } }, { "Mcp-Name": "add" });
   assert.equal(rejected.error?.code, -32602);
+  assert.equal(rejected.error?.data?.reason, "noProofFormat");
 }));
 
 test("a primitive extension value in client capabilities is treated as absent", async () => withServer(async (server) => {
